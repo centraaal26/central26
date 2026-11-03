@@ -142,6 +142,40 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    chat: {
+      async resumo() { return ok(await sb.rpc("chat_resumo")) || []; },
+      async mensagens(canal, antes) {
+        let q = sb.from("chat_mensagens").select("*").eq("canal_id", canal).order("criado_em", { ascending: false }).limit(60);
+        if (antes) q = q.lt("criado_em", antes);
+        return ok(await q).reverse();
+      },
+      async enviar(canal, texto, mencoes) { return ok(await sb.from("chat_mensagens").insert({ canal_id: canal, texto, mencoes }).select().single()); },
+      async atualizar(id, campos) { return ok(await sb.from("chat_mensagens").update(campos).eq("id", id).select().single()); },
+      async direto(outro) { return ok(await sb.rpc("chat_canal_direto", { p_outro: outro })); },
+      async marcarLido(canal) { ok(await sb.rpc("chat_marcar_lido", { p_canal: canal })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-chat")
+          .on("postgres_changes", { event: "*", schema: "public", table: "chat_mensagens" }, (p) => cb("chat_mensagens", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_canais" }, (p) => cb("chat_canais", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
+    agenda: {
+      async listar() {
+        const desde = new Date(Date.now() - 120 * 864e5).toISOString();
+        return todas(() => sb.from("agenda_eventos").select("*").gte("inicio", desde).order("inicio"));
+      },
+      async criar(e) { return ok(await sb.from("agenda_eventos").insert(e).select().single()); },
+      async atualizar(id, campos) { return ok(await sb.from("agenda_eventos").update(campos).eq("id", id).select().single()); },
+      async apagar(id) { ok(await sb.from("agenda_eventos").delete().eq("id", id)); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-agenda")
+          .on("postgres_changes", { event: "*", schema: "public", table: "agenda_eventos" }, (p) => cb(p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     async empregados(acao, dados) {
       const chamada = {
         criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",

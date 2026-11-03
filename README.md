@@ -25,6 +25,15 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Funil de vendas.
   - Análise: vendas por mês e por linha de negócio, mais e menos vendidos, ofertas, devoluções, clientes a contactar, aniversários e clientes e leads por distrito.
   - Importação do SAF-T do Multixop. Só a administração, o CEO e o departamento Comercial veem o CRM.
+- **Mensagens:** canal Geral, um canal por departamento (o departamento e a direção) e conversas diretas.
+  - Menções com @nome, que avisam a pessoa mencionada.
+  - Editar e apagar as próprias mensagens, com «Anular».
+  - Contagem das mensagens por ler. Uma conversa direta gera um só aviso até ser lida.
+  - Ninguém lê conversas diretas dos outros, nem a administração.
+- **Agenda do CEO:** vista do mês e dos próximos eventos, com as tuas tarefas com prazo.
+  - Só o CEO e quem tiver a permissão «Pode gerir a agenda do CEO» criam e mudam eventos.
+  - Cada evento pode ter participantes (veem-no e recebem convite e lembrete) ou ser visível para toda a equipa.
+  - O CEO é avisado quando outra pessoa lhe marca, muda ou cancela algo.
 - **Modelos sugeridos:** rotinas de cada marca, rotinas da Logística e os problemas encontrados nas auditorias aos sites.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
 
@@ -57,6 +66,11 @@ O editor do Supabase sugere um nome automático (por exemplo «hyper-function»)
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/03-crm.sql` → **Run**.
 2. Na app: **Comercial** → **Importar** → escolhe o ficheiro `central26-dados-iniciais.json` (enviado à parte, **nunca** o carregues para o GitHub) → **Importar agora**.
 3. Todos os meses, exporta o SAF-T no Multixop e importa-o da mesma forma. O que foi preenchido no CRM não é apagado.
+
+### 3d. Mensagens e agenda
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/04-chat-agenda.sql` → **Run**.
+2. Se aparecer o aviso «pg_cron indisponível», vai a **Database → Extensions**, ativa **pg_cron** e corre o script outra vez. É o que envia os lembretes da agenda.
+3. Na app: **Equipa** → **Samuel Maia** → marca «Pode gerir a agenda do CEO» → **Guardar alterações**.
 
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
@@ -92,7 +106,6 @@ supabase/functions/                         funções de servidor
 A chave em `js/config.js` é a chave **publishable**, pública por natureza. **Nunca** coloques neste repositório a chave secret / service_role nem a palavra-passe da base de dados.
 
 ## Próximas fases
-2. Chat interno e agenda do CEO (só o CEO e o Samuel acrescentam eventos).
 3. Logística: encomendas com fatura e rotas otimizadas.
 4. Mapa de clientes por concelho e freguesia (precisa das moradas preenchidas no CRM).
 5. Marketing, Operacional (fornecedores) e Tecnológico.

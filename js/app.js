@@ -6,6 +6,8 @@ import {
 } from "./dados.js";
 import { MODELOS } from "./modelos.js";
 import { criarCrm, podeCrm } from "./crm.js";
+import { criarChat } from "./chat.js";
+import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { VERSAO } from "./config.js";
 
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -50,6 +52,7 @@ const I = {
   equipa: '<svg class="i" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.2"/><path d="M2 13c.6-2.2 2-3.2 4-3.2s3.4 1 4 3.2"/><circle cx="11.5" cy="6" r="1.8"/><path d="M11 9.8c1.6 0 2.6.9 3 2.7"/></svg>',
   grafico: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 13.5h11"/><path d="M4.5 11V8M8 11V4.5M11.5 11V6.5"/></svg>',
   mais: '<svg class="i" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></svg>',
+  balao: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 4a1.5 1.5 0 011.5-1.5h8A1.5 1.5 0 0113.5 4v5.5A1.5 1.5 0 0112 11H7l-3 2.5V11H4a1.5 1.5 0 01-1.5-1.5z"/></svg>',
   loja: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 6.5L3.5 3h9l1 3.5"/><path d="M2.5 6.5a1.8 1.8 0 003.6 0 1.8 1.8 0 003.8 0 1.8 1.8 0 003.6 0"/><path d="M3.5 8.5v5h9v-5M6.5 13.5V10h3v3.5"/></svg>',
   roda: '<svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
   tel: '<svg class="i" viewBox="0 0 16 16"><path d="M4 2.5h2l1 3-1.5 1a7 7 0 003.5 3.5l1-1.5 3 1v2a1 1 0 01-1 1A10.5 10.5 0 013 3.5a1 1 0 011-1z"/></svg>',
@@ -177,6 +180,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
+  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar();
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -193,6 +197,8 @@ async function entrarNaApp(u) {
   desligar = api.subscrever(eu.id, aoMudar);
   if (S.rota === "tarefa" && S.param) abrirTarefa(S.param);
   if (S.rota === "cliente" && S.param) { S.aberto = { tipo: "cliente", id: S.param }; render(); }
+  if (S.rota === "agenda" && S.param) { S.aberto = { tipo: "evento", id: S.param }; render(); }
+  CHAT.carregar();
 }
 
 async function recarregar() {
@@ -225,7 +231,11 @@ function aoMudar(tabela, ev, novo, antigo) {
   } else if (tabela === "atividade") {
     if (!S.atividade.some((a) => a.id === novo.id)) S.atividade.unshift(novo);
   } else if (tabela === "notificacoes") {
-    if (ev === "INSERT") { S.notifs.unshift(novo); toast(novo.titulo + " · " + novo.corpo); }
+    if (ev === "INSERT") {
+      const naConversa = S.rota === "chat" && S.chat?.ativo && novo.link === "#chat-" + S.chat.ativo;
+      S.notifs.unshift(naConversa ? { ...novo, lida: true } : novo);
+      if (!naConversa) toast(novo.titulo + " · " + novo.corpo);
+    }
     else if (ev === "UPDATE") S.notifs = S.notifs.map((n) => (n.id === novo.id ? novo : n));
     else if (ev === "DELETE") S.notifs = S.notifs.filter((n) => n.id !== antigo.id);
   }
@@ -242,6 +252,8 @@ function lerRota(desenhar = true) {
     if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes"].includes(r)) rota = r;
     else if (r === "comercial") { rota = "comercial"; param = ["funil", "analise", "importar", "clientes"].includes(p) ? p : null; }
     else if (r === "cliente" && p) { rota = "cliente"; param = p; }
+    else if (r === "chat") { rota = "chat"; param = p || null; }
+    else if (r === "agenda") { rota = "agenda"; param = p || null; }
     else if (r === "marca" && MARCA[p]) { rota = "marca"; param = p; }
     else if (r === "pessoa" && p) { rota = "pessoa"; param = p; }
     else if (r === "tarefa" && p) { rota = "tarefa"; param = p; }
@@ -253,6 +265,8 @@ function lerRota(desenhar = true) {
   if (rota === "tarefa" && S.fase === "app") { abrirTarefa(param); return; }
   if (rota === "comercial" && param && S.crm) S.crm.tab = param;
   if (rota === "cliente" && S.fase === "app") { if (S.crm) S.crm.tab = "clientes"; S.aberto = { tipo: "cliente", id: param }; }
+  if (rota === "agenda" && param && S.fase === "app") S.aberto = { tipo: "evento", id: param };
+  if (rota === "chat" && S.fase === "app") CHAT.aoEntrarNaRota(param);
   render();
   const m2 = $(".main"); if (m2) m2.scrollTop = 0;
 }
@@ -326,6 +340,9 @@ function vistaApp() {
   let side = '<aside class="side"><div class="ws"><span class="ws-nome">Central <b>26</b></span><span class="ws-sub">Grupo TwentySix</span></div><nav class="nav" aria-label="Navegação">';
   side += '<a href="#inicio"' + atual("inicio") + ">" + I.casa + '<span class="nm">Início</span></a>';
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
+  const porLerChat = CHAT.naoLidas();
+  side += '<a href="#chat"' + atual("chat") + ">" + I.balao + '<span class="nm">Mensagens</span>' + (porLerChat ? '<span class="ct">' + porLerChat + "</span>" : "") + "</a>";
+  side += '<a href="#agenda"' + atual("agenda") + ">" + I.cal + '<span class="nm">Agenda</span></a>';
   side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
   side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
   if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
@@ -343,8 +360,8 @@ function vistaApp() {
   const tab = '<nav class="tabbar" aria-label="Navegação">' +
     '<a href="#inicio"' + atual("inicio") + ">" + I.casa + "Início</a>" +
     '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + "Tarefas" + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>" +
-    '<a href="#equipa"' + (S.rota === "equipa" || S.rota === "pessoa" ? ' aria-current="page"' : "") + ">" + I.equipa + "Equipa</a>" +
-    (podeCrm(S.eu) ? '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + "Comercial</a>" : '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + "Atividade</a>") +
+    '<a href="#chat"' + atual("chat") + ">" + I.balao + "Mensagens" + (CHAT.naoLidas() ? '<span class="ct">' + CHAT.naoLidas() + "</span>" : "") + "</a>" +
+    (podeCrm(S.eu) ? '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + "Comercial</a>" : '<a href="#equipa"' + (S.rota === "equipa" || S.rota === "pessoa" ? ' aria-current="page"' : "") + ">" + I.equipa + "Equipa</a>") +
     '<a href="#definicoes"' + atual("definicoes") + ">" + I.mais + "Mais</a></nav>";
 
   let corpo;
@@ -357,11 +374,13 @@ function vistaApp() {
   else if (S.rota === "notificacoes") corpo = vistaNotificacoes();
   else if (S.rota === "definicoes") corpo = vistaDefinicoes();
   else if ((S.rota === "comercial" || S.rota === "cliente") && podeCrm(S.eu)) corpo = CRM.vista();
+  else if (S.rota === "chat") corpo = CHAT.vista();
+  else if (S.rota === "agenda") corpo = AGENDA.vista();
   else corpo = g ? vistaInicioGestor() : vistaInicioMembro();
 
   const demo = api.modo === "demo" ? '<div class="demo-faixa"><span>Modo de demonstração: os dados ficam só neste aparelho.</span><span><button data-acao="demo-repor">Repor dados</button> · <button data-acao="sair">Trocar de pessoa</button></span></div>' : "";
   const marcaAtual = S.rota === "marca" ? S.param : "twentysix";
-  return '<div class="app">' + side + '<main class="main">' + topo + '<div class="wrap" data-marca="' + marcaAtual + '">' + demo + corpo + "</div></main>" + tab + "</div>";
+  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + '" data-marca="' + marcaAtual + '">' + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
 }
 
 function esqueleto() {
@@ -486,6 +505,7 @@ function vistaInicioGestor() {
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(cap(DIA[d.getDay()])) + ", " + d.getDate() + " de " + MES_L[d.getMonth()] + " de " + d.getFullYear() + " · semana " + semanaIso(d)[1] + "</div><h1>Olá, " + esc(S.eu.nome.split(" ")[0]) + '</h1><p class="sub-cab">Rotinas, prazos e equipa das marcas do grupo num só sítio.</p></div>' +
     '<div class="acts"><button class="btn sec" data-acao="modelos">Carregar modelos</button><button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div></div>";
   h += avisoInstalar();
+  h += AGENDA.blocoHoje();
   if (!lista.length) {
     h += '<div class="vazio"><h3>Ainda não há tarefas</h3><p>Podes começar pelos modelos sugeridos: rotinas de cada marca, rotinas da Logística e a lista de problemas encontrados nas auditorias aos sites. Depois atribuis cada tarefa à pessoa certa.</p><div class="acts"><button class="btn pri" data-acao="modelos">Escolher modelos</button></div></div>';
   }
@@ -527,6 +547,7 @@ function vistaInicioMembro() {
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(cap(DIA[d.getDay()])) + ", " + d.getDate() + " de " + MES_L[d.getMonth()] + '</div><h1>Olá, ' + esc(S.eu.nome.split(" ")[0]) + '</h1><p class="sub-cab">' + esc(depNome(S.eu.departamento_id)) + "</p></div>" +
     '<button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div>";
   h += avisoInstalar();
+  h += AGENDA.blocoHoje();
   h += '<section data-marca="twentysix"><h2>Para hoje <span class="n">' + hoje.length + " por fazer · " + feitasHoje + " concluídas</span></h2><div class=\"tabela\">" +
     (hoje.length ? hoje.map((t) => linhaTarefa(t, { marca: true, compacta: true, semResp: true })).join("") : '<div class="vazio-linha">Não tens nada pendente para hoje.</div>') + "</div></section>";
   const resto = ordenar(minhas.filter((t) => !concluida(t) && t.freq !== "diaria" && !(t.prazo && t.prazo <= S.hoje)));
@@ -606,6 +627,7 @@ function vistaPessoa(p) {
   const dele = ordenar(todas().filter((t) => t.responsavel_id === p.id && !concluida(t)));
   let h = '<a href="#equipa" class="eyebrow neutro" style="text-decoration:none">← Equipa</a>';
   h += '<div class="ficha">' + av(p.id, "xg") + '<div class="bmeta"><span class="eyebrow neutro">' + esc(PAPEIS[p.papel]) + " · " + esc(depNome(p.departamento_id)) + (p.ativo ? "" : " · Conta desativada") + "</span><h1>" + esc(p.nome) + '</h1><p class="sub-cab">' + esc(p.cargo || "") + '</p><div class="contactos"><span>' + I.mail + esc(p.email) + "</span>" + (p.telefone ? "<span>" + I.tel + esc(p.telefone) + "</span>" : "") + "</div></div></div>";
+  if (p.id !== S.eu.id && p.ativo) h += '<div class="acts"><button class="btn sec" data-acao="chat-direto" data-id="' + p.id + '">' + I.balao + "Enviar mensagem</button></div>";
   h += '<div class="dados"><div class="dado"><span>Por fazer</span><b>' + c.abertas + '</b></div><div class="dado"><span>Em atraso</span><b class="' + (c.atraso ? "at" : "") + '">' + c.atraso + '</b></div><div class="dado"><span>Concluídas esta semana</span><b>' + c.semana + '</b></div><div class="dado"><span>Concluídas este mês</span><b>' + c.mes + "</b></div></div>";
   const podeDar = podeAtribuirA(S.eu, p);
   h += '<section data-marca="twentysix"><h2>Tarefas atribuídas <span class="n">' + dele.length + " por fazer</span>" + (podeDar && p.ativo ? '<button class="btn pri" style="margin-left:auto" data-acao="nova-tarefa" data-resp="' + p.id + '">' + I.plus + "Dar tarefa</button>" : "") + '</h2><div class="tabela">' +
@@ -618,6 +640,7 @@ function vistaPessoa(p) {
       '<div class="campo"><label for="ep-tel">Telefone</label><input id="ep-tel" type="tel" value="' + esc(p.telefone) + '"></div></div>' +
       '<div class="campos-2"><div class="campo"><label for="ep-dep">Departamento</label><select id="ep-dep">' + opcoesDeps(p.departamento_id) + "</select></div>" +
       '<div class="campo"><label for="ep-papel">Papel</label><select id="ep-papel">' + opcoesPapel(p.papel) + "</select></div></div>" +
+      (p.papel !== "ceo" ? '<label class="chk-txt"><input type="checkbox" id="ep-agenda"' + (p.gere_agenda ? " checked" : "") + "> Pode gerir a agenda do CEO (criar, mudar e cancelar eventos)</label>" : "") +
       '<div class="acts"><button class="btn pri" type="submit">Guardar alterações</button><button class="btn sec" type="button" data-acao="repor-pass" data-id="' + p.id + '">Repor palavra-passe</button>' +
       (p.ativo ? '<button class="btn perigo-sec" type="button" data-acao="ativar" data-id="' + p.id + '" data-ativo="0">Desativar conta</button>' : '<button class="btn sec" type="button" data-acao="ativar" data-id="' + p.id + '" data-ativo="1">Reativar conta</button>') +
       "</div></form>" + (S.novaPass && S.novaPass.id === p.id ? senhaHTML(S.novaPass.password, p.nome) : "") + "</section>";
@@ -715,7 +738,7 @@ function estadoPush() {
 function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
-  h += '<nav class="atalhos" aria-label="Secções">' + [["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : [])]
+  h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : [])]
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   h += '<section class="cartao-sec"><h3>O meu perfil</h3><form class="form" id="form-perfil"><div class="campos-2"><div class="campo"><label for="pf-nome">Nome</label><input id="pf-nome" value="' + esc(S.eu.nome) + '" autocomplete="name"></div><div class="campo"><label for="pf-tel">Telefone</label><input id="pf-tel" type="tel" value="' + esc(S.eu.telefone) + '" autocomplete="tel"></div></div>' +
     '<p class="campo ajuda" style="margin:0">Cargo: ' + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + " · " + esc(PAPEIS[S.eu.papel]) + '. Estes dados são alterados pela administração.</p><div class="acts"><button class="btn pri" type="submit">Guardar</button></div></form></section>';
@@ -748,6 +771,7 @@ function painelHTML() {
   if (a.tipo === "dep") return painelDep();
   if (a.tipo === "modelos") return painelModelos();
   if (a.tipo === "cliente" || a.tipo === "crm-novo") return CRM.painel(a);
+  if (a.tipo === "evento") return AGENDA.painel(a);
   return "";
 }
 const moldura = (marca, label, conteudo, pe) =>
@@ -839,13 +863,14 @@ function abrirTarefa(id) { S.aberto = { tipo: "tarefa", id }; S.confirmar = fals
 function abrir(o) { S.aberto = o; S.confirmar = false; renderPainel(true); focarPainel(); }
 function focarPainel() {
   const r = $("#painel-root");
-  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome, #cn-nome") || r.querySelector('.ib[data-acao="fechar"]');
+  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome, #cn-nome, #ev-titulo") || r.querySelector('.ib[data-acao="fechar"]');
   if (alvo) alvo.focus();
 }
 function fechar() {
   S.aberto = null; S.confirmar = false; renderPainel(true);
   if (S.rota === "tarefa") history.replaceState(null, "", "#inicio"), lerRota();
   if (S.rota === "cliente") history.replaceState(null, "", "#comercial"), lerRota();
+  if (S.rota === "agenda" && S.param) history.replaceState(null, "", "#agenda"), lerRota();
 }
 
 /* ============================== Ações sobre tarefas ============================== */
@@ -956,14 +981,14 @@ document.addEventListener("click", async (e) => {
     case "instalar": if (S.instalar) { S.instalar.prompt(); const r = await S.instalar.userChoice.catch(() => null); if (r?.outcome === "accepted") S.instalar = null; render(); } break;
     case "push": ativarPush(); break;
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
-    default: CRM.clique(acao, el);
+    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el);
   }
 });
 
 document.addEventListener("submit", async (e) => {
   const f = e.target;
   e.preventDefault();
-  if (await CRM.submeter(f)) return;
+  if ((await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f))) return;
   if (f.id === "form-entrar") {
     const email = $("#e-email").value, pass = $("#e-pass").value;
     if (!email || !pass) { S.erroEntrada = "Indica o email e a palavra-passe."; render(); return; }
@@ -1009,7 +1034,9 @@ document.addEventListener("submit", async (e) => {
   } else if (f.id === "form-pessoa") {
     const pid = f.dataset.id;
     try {
-      const r = await api.perfis.atualizar(pid, { cargo: $("#ep-cargo").value.trim(), telefone: $("#ep-tel").value.trim(), departamento_id: $("#ep-dep").value || null, papel: $("#ep-papel").value });
+      const campos = { cargo: $("#ep-cargo").value.trim(), telefone: $("#ep-tel").value.trim(), departamento_id: $("#ep-dep").value || null, papel: $("#ep-papel").value };
+      if ($("#ep-agenda")) campos.gere_agenda = $("#ep-agenda").checked;
+      const r = await api.perfis.atualizar(pid, campos);
       S.perfis[pid] = r; render(); toast("Alterações guardadas");
     } catch (err) { falha(err); }
   } else if (f.id === "form-modelos") {
@@ -1039,6 +1066,7 @@ function validarPass(a, b) {
 
 document.addEventListener("keydown", async (e) => {
   const t = e.target;
+  if (CHAT.tecla(e)) return;
   if (e.key === "Escape" && $("#menu-root")?.innerHTML) { fecharMenu(); return; }
   if (e.key === "Escape" && S.aberto) { fechar(); return; }
   if (e.key === "Escape" && S.selecao) { S.selecao = null; render(); return; }
@@ -1065,7 +1093,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (CRM.escrever(e)) return;
+  if (CRM.escrever(e) || CHAT.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1080,7 +1108,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (CRM.mudar(e)) return;
+  if (CRM.mudar(e) || AGENDA.mudar(e)) return;
   if (t.id === "filtro-resp") { S.filtroResp = t.value; render(); return; }
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
   if (t.id === "sel-resp" && t.value && S.selecao?.size) {
@@ -1134,4 +1162,6 @@ async function ativarPush() {
 }
 
 const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $ });
+const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $ });
+const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, abrirTarefa, $ });
 arrancar();

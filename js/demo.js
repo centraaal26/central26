@@ -20,7 +20,7 @@ const PESSOAS = [
   ["p-rui", "Rui Neves", "Departamento de Logística", "logistica", "chefe"],
   ["p-isaac", "Isaac Maia", "Departamento Tecnológico", "tecnologico", "admin"],
 ].map(([id, nome, cargo, departamento_id, papel]) => ({
-  id, nome, cargo, departamento_id, papel, email: id.slice(2) + "@exemplo.pt", telefone: "", ativo: true, mudar_password: false,
+  id, nome, cargo, departamento_id, papel, email: id.slice(2) + "@exemplo.pt", telefone: "", ativo: true, mudar_password: false, gere_agenda: id === "p-samuel",
   criado_em: new Date(Date.now() - 30 * 864e5).toISOString(),
 }));
 
@@ -239,6 +239,93 @@ export function criarDemo() {
             clientes: p.registo.clientes, leads: p.registo.leads, produtos: p.registo.produtos, vendas: p.registo.vendas, total: p.registo.total, criado_em: agora() });
           guardar(); return { ok: true };
         },
+      };
+    })(),
+    chat: (() => {
+      const K = "central26-demo-chat-v1";
+      let c = null;
+      const ler = () => {
+        if (c) return c;
+        try { c = JSON.parse(localStorage.getItem(K) || "null"); } catch { c = null; }
+        if (!c) {
+          c = { canais: [{ id: "geral", tipo: "geral", nome: "Geral", departamento_id: null }].concat(db.departamentos.map((d) => ({ id: "dep-" + d.id, tipo: "departamento", nome: d.nome, departamento_id: d.id }))),
+            membros: [], mensagens: [], seq: 1 };
+          const t0 = Date.now() - 3 * 3600e3;
+          [["p-samuel", "geral", "Bom dia a todos. Exemplo: a reunião de equipa passa para quinta às 10h."], ["p-rui", "geral", "Exemplo: amanhã de manhã levo a Lather Machine a Santo Ovídio."],
+           ["p-wembley", "dep-comercial", "Exemplo: tenho 8 clientes regulares atrasados no CRM, vou ligar hoje."]].forEach(([a, canal, texto], i) =>
+            c.mensagens.push({ id: c.seq++, canal_id: canal, autor_id: a, texto, mencoes: [], criado_em: new Date(t0 + i * 600e3).toISOString(), editado_em: null, apagado: false }));
+        }
+        return c;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(c)); } catch { /* */ } };
+      const vejo = (cn) => { const e = eu(); return cn.tipo === "geral" || (cn.tipo === "departamento" && (eGestor(e) || cn.departamento_id === e.departamento_id)) || (cn.tipo === "direto" && c.membros.some((m) => m.canal_id === cn.id && m.perfil_id === euId)); };
+      const lido = (canal) => c.membros.find((m) => m.canal_id === canal && m.perfil_id === euId)?.lido_ate || eu().criado_em;
+      return {
+        async resumo() {
+          ler();
+          return c.canais.filter(vejo).map((cn) => {
+            const ms = c.mensagens.filter((m) => m.canal_id === cn.id), u = ms[ms.length - 1];
+            return { canal_id: cn.id, tipo: cn.tipo, nome: cn.nome, departamento_id: cn.departamento_id, outro_id: c.membros.find((m) => m.canal_id === cn.id && m.perfil_id !== euId)?.perfil_id || null,
+              ultima_em: u?.criado_em || null, ultima_texto: u ? (u.apagado ? "" : u.texto.slice(0, 140)) : null, ultimo_autor: u?.autor_id || null,
+              por_ler: ms.filter((m) => !m.apagado && m.autor_id !== euId && m.criado_em > lido(cn.id)).length };
+          });
+        },
+        async mensagens(canal, antes) { ler(); const l = c.mensagens.filter((m) => m.canal_id === canal && (!antes || m.criado_em < antes)); return structuredClone(l.slice(-60)); },
+        async enviar(canal, texto, mencoes) {
+          ler(); const m = { id: c.seq++, canal_id: canal, autor_id: euId, texto: texto.trim(), mencoes, criado_em: agora(), editado_em: null, apagado: false };
+          c.mensagens.push(m); guardar();
+          const cn = c.canais.find((x) => x.id === canal);
+          const dest = cn.tipo === "direto" ? c.membros.filter((x) => x.canal_id === canal && x.perfil_id !== euId).map((x) => x.perfil_id) : mencoes;
+          dest.forEach((d) => { const n = db.notificacoes.find((x) => x.destinatario_id === d && x.link === "#chat-" + canal && !x.lida);
+            if (n) { n.corpo = texto.slice(0, 120); n.criado_em = agora(); } else notificar(d, "mensagem", cn.tipo === "direto" ? "Mensagem de " + nome(euId) : nome(euId) + " mencionou-te em #" + cn.nome, texto.slice(0, 120), "#chat-" + canal); });
+          gravar(db); return structuredClone(m);
+        },
+        async atualizar(id, campos) {
+          ler(); const m = c.mensagens.find((x) => x.id === id); if (!m || m.autor_id !== euId) throw new Error("Só podes alterar as tuas mensagens.");
+          if (campos.apagado) Object.assign(m, { apagado: true, texto: "", editado_em: agora() }); else if ("texto" in campos) Object.assign(m, { texto: campos.texto.trim(), editado_em: agora() });
+          guardar(); return structuredClone(m);
+        },
+        async direto(outro) {
+          ler(); const chave = [euId, outro].sort().join("|"); let cn = c.canais.find((x) => x.chave === chave);
+          if (!cn) { cn = { id: "dm-" + uid(), tipo: "direto", nome: "", departamento_id: null, chave }; c.canais.push(cn);
+            c.membros.push({ canal_id: cn.id, perfil_id: euId, lido_ate: agora() }, { canal_id: cn.id, perfil_id: outro, lido_ate: agora() }); guardar(); }
+          return cn.id;
+        },
+        async marcarLido(canal) {
+          ler(); const m = c.membros.find((x) => x.canal_id === canal && x.perfil_id === euId);
+          if (m) m.lido_ate = agora(); else c.membros.push({ canal_id: canal, perfil_id: euId, lido_ate: agora() });
+          db.notificacoes.forEach((n) => { if (n.destinatario_id === euId && n.link === "#chat-" + canal) n.lida = true; }); gravar(db); guardar();
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
+    agenda: (() => {
+      const K = "central26-demo-agenda-v1";
+      let a = null;
+      const ler = () => {
+        if (a) return a;
+        try { a = JSON.parse(localStorage.getItem(K) || "null"); } catch { a = null; }
+        if (!a) {
+          const em = (dias, h, m = 0) => { const d = new Date(); d.setDate(d.getDate() + dias); d.setHours(h, m, 0, 0); return d.toISOString(); };
+          a = [["Exemplo · Reunião com fornecedor de cadeiras", 1, 10, 11, "Escritório de Gaia", ["p-samuel", "p-wembley"], false],
+               ["Exemplo · Visita à barbearia de Arcozelo", 2, 15, 16, "Arcozelo", ["p-bruno"], false],
+               ["Exemplo · Reunião geral de equipa", 4, 9, 10, "Escritório de Gaia", [], true]].map(([titulo, d, h1, h2, local, participantes, visivel_equipa]) => ({
+            id: uid(), titulo, inicio: em(d, h1), fim: em(d, h2), dia_inteiro: false, local, notas: "", participantes, visivel_equipa, lembrete_min: 30, lembrete_enviado: false,
+            criado_por: "p-samuel", criado_em: agora(), atualizado_em: agora(), atualizado_por: "p-samuel" }));
+        }
+        return a;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(a)); } catch { /* */ } };
+      const gere = () => { const e = eu(); return e.papel === "ceo" || !!e.gere_agenda; };
+      return {
+        async listar() { const e = eu(); return structuredClone(ler().filter((x) => gere() || x.visivel_equipa || x.participantes.includes(euId))); },
+        async criar(o) { if (!gere()) throw new Error("Só o CEO e quem gere a agenda podem criar eventos."); const r = { id: uid(), criado_por: euId, criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, lembrete_enviado: false, ...o };
+          ler().push(r); guardar(); r.participantes.filter((p) => p !== euId).forEach((p) => notificar(p, "agenda", "Convite para um evento", r.titulo, "#agenda-" + r.id));
+          const ceo = db.perfis.find((p) => p.papel === "ceo"); if (ceo && ceo.id !== euId) notificar(ceo.id, "agenda", "Novo evento na tua agenda", nome(euId) + " marcou: " + r.titulo, "#agenda-" + r.id);
+          gravar(db); return structuredClone(r); },
+        async atualizar(id, campos) { if (!gere()) throw new Error("Só o CEO e quem gere a agenda podem alterar eventos."); const r = ler().find((x) => x.id === id); Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(r); },
+        async apagar(id) { if (!gere()) throw new Error("Só o CEO e quem gere a agenda podem cancelar eventos."); a = ler().filter((x) => x.id !== id); guardar(); },
+        subscrever() { return () => {}; },
       };
     })(),
     push: {

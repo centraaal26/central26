@@ -612,5 +612,6 @@ export function criarCrm(ctx) {
   }
   function mudarEtapa(id, etapa) { if (C.clientes[id] && C.clientes[id].etapa !== etapa) gravar(id, { etapa }); }
 
-  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, estado: () => C.estado };
+  function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
+  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, reiniciar, estado: () => C.estado };
 }

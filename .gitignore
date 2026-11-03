@@ -1,0 +1,6 @@
+# Dados de clientes e faturação: nunca vão para o repositório público
+*.xml
+*.xlsx
+*.csv
+central26-dados*.json
+.DS_Store

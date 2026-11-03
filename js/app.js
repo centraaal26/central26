@@ -5,6 +5,7 @@ import {
   podeEditar, podeApagar, iniciais, normalizar, semanaIso,
 } from "./dados.js";
 import { MODELOS } from "./modelos.js";
+import { criarCrm, podeCrm } from "./crm.js";
 import { VERSAO } from "./config.js";
 
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -49,6 +50,7 @@ const I = {
   equipa: '<svg class="i" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.2"/><path d="M2 13c.6-2.2 2-3.2 4-3.2s3.4 1 4 3.2"/><circle cx="11.5" cy="6" r="1.8"/><path d="M11 9.8c1.6 0 2.6.9 3 2.7"/></svg>',
   grafico: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 13.5h11"/><path d="M4.5 11V8M8 11V4.5M11.5 11V6.5"/></svg>',
   mais: '<svg class="i" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></svg>',
+  loja: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 6.5L3.5 3h9l1 3.5"/><path d="M2.5 6.5a1.8 1.8 0 003.6 0 1.8 1.8 0 003.8 0 1.8 1.8 0 003.6 0"/><path d="M3.5 8.5v5h9v-5M6.5 13.5V10h3v3.5"/></svg>',
   roda: '<svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg>',
   tel: '<svg class="i" viewBox="0 0 16 16"><path d="M4 2.5h2l1 3-1.5 1a7 7 0 003.5 3.5l1-1.5 3 1v2a1 1 0 01-1 1A10.5 10.5 0 013 3.5a1 1 0 011-1z"/></svg>',
   mail: '<svg class="i" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>',
@@ -190,6 +192,7 @@ async function entrarNaApp(u) {
   if (desligar) desligar();
   desligar = api.subscrever(eu.id, aoMudar);
   if (S.rota === "tarefa" && S.param) abrirTarefa(S.param);
+  if (S.rota === "cliente" && S.param) { S.aberto = { tipo: "cliente", id: S.param }; render(); }
 }
 
 async function recarregar() {
@@ -237,6 +240,8 @@ function lerRota(desenhar = true) {
   if (m) {
     const [, r, p] = m;
     if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes"].includes(r)) rota = r;
+    else if (r === "comercial") { rota = "comercial"; param = ["funil", "analise", "importar", "clientes"].includes(p) ? p : null; }
+    else if (r === "cliente" && p) { rota = "cliente"; param = p; }
     else if (r === "marca" && MARCA[p]) { rota = "marca"; param = p; }
     else if (r === "pessoa" && p) { rota = "pessoa"; param = p; }
     else if (r === "tarefa" && p) { rota = "tarefa"; param = p; }
@@ -246,6 +251,8 @@ function lerRota(desenhar = true) {
   S.rota = rota; S.param = param;
   if (!desenhar) return;
   if (rota === "tarefa" && S.fase === "app") { abrirTarefa(param); return; }
+  if (rota === "comercial" && param && S.crm) S.crm.tab = param;
+  if (rota === "cliente" && S.fase === "app") { if (S.crm) S.crm.tab = "clientes"; S.aberto = { tipo: "cliente", id: param }; }
   render();
   const m2 = $(".main"); if (m2) m2.scrollTop = 0;
 }
@@ -321,6 +328,7 @@ function vistaApp() {
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
   side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
   side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
+  if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
   side += '<div class="nav-rot">Marcas</div>';
   MARCAS.forEach((m) => {
     const n = contagemMarca(m.id);
@@ -336,7 +344,7 @@ function vistaApp() {
     '<a href="#inicio"' + atual("inicio") + ">" + I.casa + "Início</a>" +
     '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + "Tarefas" + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>" +
     '<a href="#equipa"' + (S.rota === "equipa" || S.rota === "pessoa" ? ' aria-current="page"' : "") + ">" + I.equipa + "Equipa</a>" +
-    '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + "Atividade</a>" +
+    (podeCrm(S.eu) ? '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + "Comercial</a>" : '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + "Atividade</a>") +
     '<a href="#definicoes"' + atual("definicoes") + ">" + I.mais + "Mais</a></nav>";
 
   let corpo;
@@ -348,6 +356,7 @@ function vistaApp() {
   else if (S.rota === "atividade") corpo = vistaAtividade();
   else if (S.rota === "notificacoes") corpo = vistaNotificacoes();
   else if (S.rota === "definicoes") corpo = vistaDefinicoes();
+  else if ((S.rota === "comercial" || S.rota === "cliente") && podeCrm(S.eu)) corpo = CRM.vista();
   else corpo = g ? vistaInicioGestor() : vistaInicioMembro();
 
   const demo = api.modo === "demo" ? '<div class="demo-faixa"><span>Modo de demonstração: os dados ficam só neste aparelho.</span><span><button data-acao="demo-repor">Repor dados</button> · <button data-acao="sair">Trocar de pessoa</button></span></div>' : "";
@@ -705,7 +714,9 @@ function estadoPush() {
 
 function vistaDefinicoes() {
   const p = estadoPush();
-  let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Definições</h1></div></div>";
+  let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
+  h += '<nav class="atalhos" aria-label="Secções">' + [["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : [])]
+    .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   h += '<section class="cartao-sec"><h3>O meu perfil</h3><form class="form" id="form-perfil"><div class="campos-2"><div class="campo"><label for="pf-nome">Nome</label><input id="pf-nome" value="' + esc(S.eu.nome) + '" autocomplete="name"></div><div class="campo"><label for="pf-tel">Telefone</label><input id="pf-tel" type="tel" value="' + esc(S.eu.telefone) + '" autocomplete="tel"></div></div>' +
     '<p class="campo ajuda" style="margin:0">Cargo: ' + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + " · " + esc(PAPEIS[S.eu.papel]) + '. Estes dados são alterados pela administração.</p><div class="acts"><button class="btn pri" type="submit">Guardar</button></div></form></section>';
   h += '<section class="cartao-sec"><h3>Notificações neste aparelho</h3><p>' + esc(p.txt) + '</p><div class="acts">' +
@@ -736,6 +747,7 @@ function painelHTML() {
   if (a.tipo === "empregado") return painelEmpregado(a);
   if (a.tipo === "dep") return painelDep();
   if (a.tipo === "modelos") return painelModelos();
+  if (a.tipo === "cliente" || a.tipo === "crm-novo") return CRM.painel(a);
   return "";
 }
 const moldura = (marca, label, conteudo, pe) =>
@@ -827,12 +839,13 @@ function abrirTarefa(id) { S.aberto = { tipo: "tarefa", id }; S.confirmar = fals
 function abrir(o) { S.aberto = o; S.confirmar = false; renderPainel(true); focarPainel(); }
 function focarPainel() {
   const r = $("#painel-root");
-  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome") || r.querySelector('.ib[data-acao="fechar"]');
+  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome, #cn-nome") || r.querySelector('.ib[data-acao="fechar"]');
   if (alvo) alvo.focus();
 }
 function fechar() {
   S.aberto = null; S.confirmar = false; renderPainel(true);
   if (S.rota === "tarefa") history.replaceState(null, "", "#inicio"), lerRota();
+  if (S.rota === "cliente") history.replaceState(null, "", "#comercial"), lerRota();
 }
 
 /* ============================== Ações sobre tarefas ============================== */
@@ -943,12 +956,14 @@ document.addEventListener("click", async (e) => {
     case "instalar": if (S.instalar) { S.instalar.prompt(); const r = await S.instalar.userChoice.catch(() => null); if (r?.outcome === "accepted") S.instalar = null; render(); } break;
     case "push": ativarPush(); break;
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
+    default: CRM.clique(acao, el);
   }
 });
 
 document.addEventListener("submit", async (e) => {
   const f = e.target;
   e.preventDefault();
+  if (await CRM.submeter(f)) return;
   if (f.id === "form-entrar") {
     const email = $("#e-email").value, pass = $("#e-pass").value;
     if (!email || !pass) { S.erroEntrada = "Indica o email e a palavra-passe."; render(); return; }
@@ -1044,11 +1059,13 @@ document.addEventListener("keydown", async (e) => {
     renderPainel(true); $("#t-novoitem")?.focus();
   }
   if (t.id === "t-titulo" && e.key === "Enter") { e.preventDefault(); t.blur(); }
-  if (t.classList?.contains("cartao") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); abrirTarefa(t.dataset.id); }
+  if (t.classList?.contains("cartao") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t.dataset.cliente ? abrir({ tipo: "cliente", id: t.dataset.id }) : abrirTarefa(t.dataset.id); }
+  if (t.closest?.(".crm-tabela") && t.tagName === "TR" && e.key === "Enter") { e.preventDefault(); abrir({ tipo: "cliente", id: t.dataset.id }); }
 });
 
 document.addEventListener("input", (e) => {
   const t = e.target;
+  if (CRM.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1063,6 +1080,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
+  if (CRM.mudar(e)) return;
   if (t.id === "filtro-resp") { S.filtroResp = t.value; render(); return; }
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
   if (t.id === "sel-resp" && t.value && S.selecao?.size) {
@@ -1087,8 +1105,8 @@ document.addEventListener("change", (e) => {
 let arrastado = null;
 document.addEventListener("dragstart", (e) => { const c = e.target.closest?.(".cartao"); if (!c) return; arrastado = c.dataset.id; c.classList.add("arrastar"); try { e.dataTransfer.setData("text/plain", arrastado); e.dataTransfer.effectAllowed = "move"; } catch { /* */ } });
 document.addEventListener("dragend", () => { document.querySelectorAll(".arrastar,.sobre").forEach((x) => x.classList.remove("arrastar", "sobre")); arrastado = null; });
-document.addEventListener("dragover", (e) => { const col = e.target.closest?.("[data-largar]"); if (col && arrastado) { e.preventDefault(); document.querySelectorAll(".col.sobre").forEach((x) => x !== col && x.classList.remove("sobre")); col.classList.add("sobre"); } });
-document.addEventListener("drop", (e) => { const col = e.target.closest?.("[data-largar]"); if (col && arrastado) { e.preventDefault(); const id = arrastado; arrastado = null; if (estadoAtual(S.tarefas[id]) !== col.dataset.largar) definirEstado(id, col.dataset.largar); else render(); } });
+document.addEventListener("dragover", (e) => { const col = e.target.closest?.("[data-largar],[data-etapa]"); if (col && arrastado) { e.preventDefault(); document.querySelectorAll(".col.sobre").forEach((x) => x !== col && x.classList.remove("sobre")); col.classList.add("sobre"); } });
+document.addEventListener("drop", (e) => { const col = e.target.closest?.("[data-largar],[data-etapa]"); if (col && arrastado) { e.preventDefault(); const id = arrastado; arrastado = null; if (col.dataset.etapa) { CRM.mudarEtapa(id, col.dataset.etapa); return; } if (estadoAtual(S.tarefas[id]) !== col.dataset.largar) definirEstado(id, col.dataset.largar); else render(); } });
 
 /* ============================== Notificações push ============================== */
 const b64uParaBytes = (s) => { const p = "=".repeat((4 - (s.length % 4)) % 4); const b = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
@@ -1115,4 +1133,5 @@ async function ativarPush() {
   } catch (e) { render(); falha(e); }
 }
 
+const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $ });
 arrancar();

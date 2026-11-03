@@ -118,6 +118,30 @@ export function criarApi() {
       async atualizar(id, campos) { return ok(await sb.from("departamentos").update(campos).eq("id", id).select().single()); },
     },
     // Gestão da equipa pelas funções SQL do script 02; se ainda não existirem, tenta a função de servidor antiga
+    crm: {
+      async carregar() {
+        const [clientes, produtos, vendas, contactos, importacoes] = await Promise.all([
+          todas(() => sb.from("crm_clientes").select("*").order("nome")),
+          todas(() => sb.from("crm_produtos").select("*").order("codigo")),
+          todas(() => sb.from("crm_vendas").select("documento,linha,tipo,data,cliente_codigo,produto_codigo,descricao,qtd,preco,valor").order("data").order("documento").order("linha")),
+          todas(() => sb.from("crm_contactos").select("*").order("criado_em", { ascending: false })),
+          sb.from("crm_importacoes").select("*").order("criado_em", { ascending: false }).limit(20),
+        ]);
+        return { clientes, produtos, vendas, contactos, importacoes: ok(importacoes) };
+      },
+      async criar(c) { return ok(await sb.from("crm_clientes").insert(c).select().single()); },
+      async atualizar(id, campos) { return ok(await sb.from("crm_clientes").update(campos).eq("id", id).select().single()); },
+      async apagar(id) { ok(await sb.from("crm_clientes").delete().eq("id", id)); },
+      async contacto(c) { return ok(await sb.from("crm_contactos").insert(c).select().single()); },
+      async importar(lote) { return ok(await sb.rpc("crm_importar", { p: lote })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-crm")
+          .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes" }, (p) => cb("crm_clientes", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "crm_contactos" }, (p) => cb("crm_contactos", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     async empregados(acao, dados) {
       const chamada = {
         criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",

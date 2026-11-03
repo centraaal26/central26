@@ -19,6 +19,12 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Quem fez o quê:** tarefas concluídas por pessoa (hoje, semana, mês), tarefas em atraso e registo de todas as ações.
 - **Eliminar, anular e selecionar várias:** menu ⋯ em cada tarefa, botão «Anular» durante 7 segundos depois de eliminar, e modo «Selecionar» para concluir, atribuir ou eliminar várias tarefas de uma vez.
 - **Notificações:** dentro da app e no telemóvel, quando alguém te atribui uma tarefa ou quando concluem uma tarefa que criaste.
+- **Comercial (CRM):** clientes do Multixop e barbearias das bases de leads.
+  - Ficha editável: aniversário, contactos, morada, distrito, responsável e notas.
+  - Registo de contactos, que pode criar uma tarefa com o próximo passo.
+  - Funil de vendas.
+  - Análise: vendas por mês e por linha de negócio, mais e menos vendidos, ofertas, devoluções, clientes a contactar, aniversários e clientes e leads por distrito.
+  - Importação do SAF-T do Multixop. Só a administração, o CEO e o departamento Comercial veem o CRM.
 - **Modelos sugeridos:** rotinas de cada marca, rotinas da Logística e os problemas encontrados nas auditorias aos sites.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
 
@@ -46,6 +52,11 @@ Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam se
 | `enviar-push` | `supabase/functions/enviar-push/index.ts` |
 
 O editor do Supabase sugere um nome automático (por exemplo «hyper-function»). Apaga-o e escreve `enviar-push` antes de carregar em **Deploy**.
+
+### 3c. CRM comercial
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/03-crm.sql` → **Run**.
+2. Na app: **Comercial** → **Importar** → escolhe o ficheiro `central26-dados-iniciais.json` (enviado à parte, **nunca** o carregues para o GitHub) → **Importar agora**.
+3. Todos os meses, exporta o SAF-T no Multixop e importa-o da mesma forma. O que foi preenchido no CRM não é apagado.
 
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
@@ -83,5 +94,5 @@ A chave em `js/config.js` é a chave **publishable**, pública por natureza. **N
 ## Próximas fases
 2. Chat interno e agenda do CEO (só o CEO e o Samuel acrescentam eventos).
 3. Logística: encomendas com fatura e rotas otimizadas.
-4. CRM comercial: barbearias, clientes, funil e mapa.
+4. Mapa de clientes por concelho e freguesia (precisa das moradas preenchidas no CRM).
 5. Marketing, Operacional (fornecedores) e Tecnológico.

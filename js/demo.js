@@ -204,6 +204,43 @@ export function criarDemo() {
       if (acao === "definir_ativo") { const p = db.perfis.find((x) => x.id === dados.id); p.ativo = !!dados.ativo; gravar(db); emitir("perfis", "UPDATE", p); return { ok: true }; }
       throw new Error("Ação desconhecida.");
     },
+    crm: (() => {
+      const K = "central26-demo-crm-v1";
+      let c = null;
+      const ler = () => { if (c) return c; try { c = JSON.parse(localStorage.getItem(K) || "null"); } catch { c = null; } return (c ||= { clientes: [], produtos: [], vendas: [], contactos: [], importacoes: [], seq: 1 }); };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(c)); } catch { /* sem espaço: fica só em memória */ } };
+      const novoCliente = (o) => ({ id: uid(), codigo_multixop: null, chave_lead: null, nome: "", nome_corrigido: false, nif: "", tipo: "lead", etapa: "lead", origem: "manual", morada: "", codigo_postal: "",
+        freguesia: "", concelho: "", distrito: "", telefone: "", email: "", website: "", instagram: "", data_aniversario: null, responsavel_id: null, score: null, notas: "",
+        criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, ...o });
+      return {
+        async carregar() { const d = ler(); return structuredClone({ clientes: d.clientes, produtos: d.produtos, vendas: d.vendas, contactos: d.contactos, importacoes: d.importacoes }); },
+        async criar(o) { const d = ler(), r = novoCliente(o); d.clientes.push(r); guardar(); return structuredClone(r); },
+        async atualizar(id, campos) {
+          const d = ler(), r = d.clientes.find((x) => x.id === id); if (!r) throw new Error("O cliente já não existe.");
+          if ("nome" in campos && campos.nome !== r.nome) r.nome_corrigido = true;
+          Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(r);
+        },
+        async apagar(id) { const d = ler(); d.clientes = d.clientes.filter((x) => x.id !== id); d.contactos = d.contactos.filter((x) => x.cliente_id !== id); guardar(); },
+        async contacto(o) { const d = ler(), r = { id: d.seq++, autor_id: euId, criado_em: agora(), ...o }; d.contactos.unshift(r); guardar(); return structuredClone(r); },
+        async importar(p) {
+          const d = ler(), por = (campo) => new Map(d.clientes.filter((x) => x[campo]).map((x) => [x[campo], x]));
+          if (p.produtos) { const m = new Map(d.produtos.map((x) => [x.codigo, x])); p.produtos.forEach((x) => m.set(x.codigo, { ...m.get(x.codigo), ...x })); d.produtos = [...m.values()]; }
+          if (p.clientes) { const m = por("codigo_multixop"); p.clientes.forEach((x) => { const e = m.get(x.codigo);
+            if (e) { if (!e.nome_corrigido) e.nome = x.nome; e.nif = x.nif; if (e.tipo === "lead") e.tipo = x.tipo; if (!e.morada) e.morada = x.morada || ""; }
+            else d.clientes.push(novoCliente({ codigo_multixop: x.codigo, nome: x.nome, nif: x.nif || "", tipo: x.tipo || "particular", morada: x.morada || "", origem: "multixop", etapa: "cliente" })); }); }
+          if (p.leads) { const m = por("chave_lead"); p.leads.forEach((x) => { if (m.has(x.chave)) return;
+            d.clientes.push(novoCliente({ chave_lead: x.chave, nome: x.nome, origem: "base_leads", distrito: x.distrito || "", concelho: x.concelho || "", morada: x.morada || "",
+              telefone: x.telefone || "", email: x.email || "", website: x.website || "", instagram: x.instagram || "", score: x.score ?? null, notas: x.notas || "" })); }); }
+          if (p.limpar_de) d.vendas = d.vendas.filter((v) => v.data < p.limpar_de || v.data > p.limpar_ate);
+          if (p.vendas) { const k = (v) => v.documento + "#" + v.linha, m = new Map(d.vendas.map((v) => [k(v), v]));
+            p.vendas.forEach((v) => m.set(k(v), { documento: v.documento, linha: v.linha, tipo: v.tipo, data: v.data, cliente_codigo: v.cliente, produto_codigo: v.produto, descricao: v.descricao, qtd: v.qtd, preco: v.preco, valor: v.valor }));
+            d.vendas = [...m.values()].sort((a, b) => a.data.localeCompare(b.data)); }
+          if (p.registo) d.importacoes.unshift({ id: d.seq++, autor_id: euId, ficheiro: p.registo.ficheiro, periodo_de: p.registo.de, periodo_ate: p.registo.ate,
+            clientes: p.registo.clientes, leads: p.registo.leads, produtos: p.registo.produtos, vendas: p.registo.vendas, total: p.registo.total, criado_em: agora() });
+          guardar(); return { ok: true };
+        },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

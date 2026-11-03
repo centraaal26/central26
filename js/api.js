@@ -176,6 +176,48 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    log: {
+      async carregar() {
+        const desde = new Date(Date.now() - 90 * 864e5).toISOString();
+        const [locais, ativas, antigas, rotas] = await Promise.all([
+          todas(() => sb.from("log_locais").select("*").eq("ativo", true).order("ordem").order("nome")),
+          todas(() => sb.from("log_encomendas").select("*").not("estado", "in", "(entregue,cancelada)").order("criado_em")),
+          todas(() => sb.from("log_encomendas").select("*").in("estado", ["entregue", "cancelada"]).gte("atualizado_em", desde).order("atualizado_em", { ascending: false })),
+          todas(() => sb.from("log_rotas").select("*").gte("data", desde.slice(0, 10)).order("data", { ascending: false })),
+        ]);
+        return { locais, encomendas: ativas.concat(antigas), rotas };
+      },
+      encomendas: {
+        async criar(e) { return ok(await sb.from("log_encomendas").insert(e).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("log_encomendas").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("log_encomendas").delete().eq("id", id)); },
+      },
+      rotas: {
+        async criar(r) { return ok(await sb.from("log_rotas").insert(r).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("log_rotas").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("log_rotas").delete().eq("id", id)); },
+      },
+      locais: {
+        async criar(l) { return ok(await sb.from("log_locais").insert(l).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("log_locais").update(campos).eq("id", id).select().single()); },
+      },
+      async enviarFatura(encId, ficheiro) {
+        const nome = ficheiro.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-80);
+        const caminho = "encomendas/" + encId + "/" + Date.now() + "-" + nome;
+        const { error } = await sb.storage.from("faturas").upload(caminho, ficheiro, { contentType: ficheiro.type || "application/octet-stream", upsert: false });
+        if (error) throw new Error(/bucket|not found/i.test(error.message) ? "Falta criar o armazenamento das faturas: corre o script supabase/05-logistica.sql." : /size|large/i.test(error.message) ? "A fatura tem mais de 10 MB." : /mime|type/i.test(error.message) ? "Só são aceites faturas em PDF ou imagem." : error.message);
+        return caminho;
+      },
+      async urlFatura(caminho) { const { data, error } = await sb.storage.from("faturas").createSignedUrl(caminho, 3600); if (error) throw erroPt(error); return data.signedUrl; },
+      subscrever(cb) {
+        const canal = sb.channel("central26-log")
+          .on("postgres_changes", { event: "*", schema: "public", table: "log_encomendas" }, (p) => cb("encomendas", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "log_rotas" }, (p) => cb("rotas", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "log_locais" }, (p) => cb("locais", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     async empregados(acao, dados) {
       const chamada = {
         criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",

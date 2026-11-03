@@ -328,6 +328,70 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    log: (() => {
+      const K = "central26-demo-log-v1", ficheiros = {};
+      let d = null;
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const L = (nome, morada, tipo, ordem, lat = null, lng = null) => ({ id: uid(), nome, morada, tipo, ordem, lat, lng, ativo: true, criado_em: agora() });
+          d = { seq: 1, rotas: [], locais: [
+            L("Sede · Ondina e Maia", "Rua do Crasto, 123, 4405-742 Vila Nova de Gaia", "sede", 1), L("26 Tech · Serzedo", "Rua Santa Apolónia, 307, 4410-022 Serzedo, Vila Nova de Gaia", "armazem", 2),
+            L("Av. da República, 370 (26 Academy e Grooms)", "Avenida da República, 370, 4430-188 Vila Nova de Gaia", "academia", 3),
+            ...["Jardim do Morro", "Madalena", "Santo Ovídio", "Praça da República", "Arcozelo"].map((n, i) => L("Barbearia · " + n, "", "barbearia", 10 + i))], encomendas: [] };
+          const amanha = new Date(); amanha.setDate(amanha.getDate() + 1);
+          [["Exemplo · Barbearia do Zela", "Rua Dom António Barroso, 120, Barcelos", "encomenda", [["MIST", 12], ["CLAY", 6], ["BOOSTER", 4]], "p-wembley", "nova"],
+           ["Exemplo · Clínica Estética Coimbra", "Praça 8 de Maio, Coimbra", "maquina", [["Máquina Dioso Laser - 4 Ondas", 1], ["Case Máq. Laser", 1]], "p-samuel", "pronta"],
+           ["Exemplo · Barbearia Arcozelo (reposição)", "Arcozelo, Vila Nova de Gaia", "interna", [["Toalhas", 40], ["SPARK", 10]], "p-marcos", "em_preparacao"]].forEach(([cliente_nome, morada, tipo, itens, por, estado], i) =>
+            d.encomendas.push({ id: uid(), numero: d.seq++, tipo, estado, prioridade: i === 1 ? "alta" : "media", cliente_nome, crm_cliente_id: null, contacto: "", morada, lat: null, lng: null, morada_geo: "",
+              itens: itens.map(([descricao, qtd], j) => ({ id: "i" + j, descricao, qtd, preparado: estado !== "nova" && j === 0 })), notas: "", fatura_numero: "Fac 26DNT/" + (510 + i), fatura_ficheiro: "", fatura_nome: "",
+              data_prevista: ymd(amanha), responsavel_id: null, rota_id: null, criado_por: por, criado_em: agora(), atualizado_em: agora(), atualizado_por: por, entregue_em: null, entregue_por: null }));
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const logi = () => { const e = eu(); return eGestor(e) || e.departamento_id === "logistica"; };
+      const podeVer = () => { const e = eu(); return logi() || e.departamento_id === "comercial"; };
+      return {
+        async carregar() { const x = ler(); if (!podeVer()) return { locais: [], encomendas: [], rotas: [] }; return structuredClone({ locais: x.locais.filter((l) => l.ativo), encomendas: x.encomendas, rotas: logi() ? x.rotas : [] }); },
+        encomendas: {
+          async criar(o) {
+            if (!podeVer()) throw new Error("Sem permissão para criar encomendas.");
+            const x = ler(), r = { id: uid(), numero: x.seq++, tipo: "encomenda", estado: "nova", prioridade: "media", crm_cliente_id: null, contacto: "", morada: "", lat: null, lng: null, morada_geo: "", itens: [], notas: "",
+              fatura_numero: "", fatura_ficheiro: "", fatura_nome: "", data_prevista: null, responsavel_id: null, rota_id: null, ...o, criado_por: euId, criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, entregue_em: null, entregue_por: null };
+            x.encomendas.push(r); guardar();
+            db.perfis.filter((p) => p.ativo && p.id !== euId && (r.responsavel_id ? p.id === r.responsavel_id : p.departamento_id === "logistica"))
+              .forEach((p) => notificar(p.id, "encomenda", "Nova encomenda E-" + String(r.numero).padStart(4, "0"), nome(euId) + " · " + r.cliente_nome, "#encomenda-" + r.id));
+            gravar(db); return structuredClone(r);
+          },
+          async atualizar(id, campos) {
+            const x = ler(), r = x.encomendas.find((e) => e.id === id); if (!r) throw new Error("A encomenda já não existe.");
+            if (!logi()) { if (r.criado_por !== euId) throw new Error("Só a Logística e a direção alteram encomendas de outras pessoas."); if (r.estado !== "nova" && campos.estado !== "cancelada") throw new Error("Esta encomenda já está com a Logística. Pede as alterações à Logística ou cancela-a."); }
+            const antes = r.estado;
+            if ("morada" in campos && campos.morada !== r.morada && !("morada_geo" in campos)) Object.assign(r, { lat: null, lng: null, morada_geo: "" });
+            Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId });
+            if (r.estado === "entregue" && antes !== "entregue") { r.entregue_em = agora(); r.entregue_por = euId; }
+            if (r.estado !== antes && ["pronta", "entregue", "cancelada"].includes(r.estado) && r.criado_por !== euId)
+              notificar(r.criado_por, "encomenda", "Encomenda E-" + String(r.numero).padStart(4, "0") + " " + ({ pronta: "pronta", entregue: "entregue", cancelada: "cancelada" })[r.estado], r.cliente_nome + " · " + nome(euId), "#encomenda-" + r.id);
+            guardar(); gravar(db); return structuredClone(r);
+          },
+          async apagar(id) { const x = ler(); x.encomendas = x.encomendas.filter((e) => e.id !== id); guardar(); },
+        },
+        rotas: {
+          async criar(o) { if (!logi()) throw new Error("Só a Logística e a direção gerem rotas."); const x = ler(), r = { id: uid(), estado: "planeada", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...o }; x.rotas.unshift(r); guardar(); return structuredClone(r); },
+          async atualizar(id, campos) { const x = ler(), r = x.rotas.find((e) => e.id === id); Object.assign(r, campos, { atualizado_em: agora() }); guardar(); return structuredClone(r); },
+          async apagar(id) { const x = ler(); x.rotas = x.rotas.filter((e) => e.id !== id); guardar(); },
+        },
+        locais: {
+          async criar(o) { const x = ler(), r = { id: uid(), tipo: "outro", ordem: 100, ativo: true, lat: null, lng: null, criado_em: agora(), ...o }; x.locais.push(r); guardar(); return structuredClone(r); },
+          async atualizar(id, campos) { const x = ler(), r = x.locais.find((e) => e.id === id); Object.assign(r, campos); guardar(); return structuredClone(r); },
+        },
+        async enviarFatura(encId, f) { const c = "demo/" + encId + "/" + f.name; ficheiros[c] = URL.createObjectURL(f); return c; },
+        async urlFatura(c) { if (ficheiros[c]) return ficheiros[c]; throw new Error("No modo de demonstração, a fatura só fica disponível até recarregar a página."); },
+        subscrever() { return () => {}; },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

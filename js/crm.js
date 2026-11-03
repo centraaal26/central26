@@ -456,6 +456,7 @@ export function criarCrm(ctx) {
     const s = statsDe(c), e = s?.estado || "sem";
     let h = '<div class="p-topo"><span class="migalha"><i></i>Comercial / ' + esc(c.etapa === "cliente" ? "Cliente" : "Lead") + '</span><span class="acts">' +
       '<button class="ib" data-acao="crm-tarefa" data-id="' + c.id + '">' + I.plus + "Tarefa</button>" +
+      (c.tipo !== "interno" ? '<button class="ib" data-acao="enc-nova" data-cliente="' + c.id + '">' + (I.camiao || I.plus) + "Encomenda</button>" : "") +
       (podeImportar(S.eu) ? '<button class="ib perigo" data-acao="crm-apagar" data-id="' + c.id + '">' + I.lixo + "Eliminar</button>" : "") +
       '<button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + "</button></span></div>";
     if (a.confirmarApagar) h += '<div class="aviso erro" style="justify-content:space-between;flex-wrap:wrap">Eliminar «' + esc(c.nome) + '» e o histórico de contactos? As vendas do Multixop não são apagadas.<span class="acts"><button class="btn sec" data-acao="crm-apagar-nao">Cancelar</button><button class="btn perigo" data-acao="crm-apagar-sim" data-id="' + c.id + '">Eliminar</button></span></div>';

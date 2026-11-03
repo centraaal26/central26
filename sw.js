@@ -1,8 +1,8 @@
 // Central 26 — service worker: abre a app sem rede e mostra as notificações.
-const VERSAO = "central26-v1.3.0";
+const VERSAO = "central26-v1.4.0";
 const BASE = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/app.js", "js/api.js", "js/crm.js", "js/chat.js", "js/agenda.js", "js/demo.js", "js/dados.js", "js/modelos.js", "js/config.js",
+  "js/app.js", "js/api.js", "js/crm.js", "js/chat.js", "js/agenda.js", "js/logistica.js", "js/geo.js", "js/demo.js", "js/dados.js", "js/modelos.js", "js/config.js",
   "img/icone-192.png", "img/icone-512.png", "img/badge-96.png",
   "img/logo-twentysix.webp", "img/logo-barbearia.webp", "img/logo-academy.webp", "img/logo-tech.webp",
 ];

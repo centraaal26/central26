@@ -30,13 +30,29 @@ export function criarApi() {
       let msg = "Não foi possível contactar o servidor. Tenta outra vez.";
       try {
         const r = error.context;
-        if (r && typeof r.json === "function") { const j = await r.json(); if (j && j.erro) msg = j.erro; }
+        if (r && r.status === 404) {
+          msg = nome === "enviar-push"
+            ? "As notificações no telemóvel precisam da função «enviar-push» instalada no Supabase (ver README, passo 3)."
+            : "Falta correr o script supabase/02-equipa.sql no Supabase (SQL Editor).";
+        } else if (r && typeof r.json === "function") { const j = await r.json(); if (j && j.erro) msg = j.erro; }
       } catch { /* mantém a mensagem genérica */ }
       throw new Error(msg);
     }
     if (data && data.erro) throw new Error(data.erro);
     return data;
   }
+
+  // O Supabase devolve no máximo 1000 linhas por pedido: lê por páginas
+  async function todas(construir, tamanho = 1000) {
+    const out = [];
+    for (let de = 0; ; de += tamanho) {
+      const { data, error } = await construir().range(de, de + tamanho - 1);
+      if (error) throw erroPt(error);
+      out.push(...data);
+      if (data.length < tamanho) return out;
+    }
+  }
+  const semFuncao = (e) => /PGRST202|Could not find the function/i.test(String(e?.code) + " " + String(e?.message));
 
   return {
     modo: "real",
@@ -52,16 +68,16 @@ export function criarApi() {
     async carregar() {
       const desde = new Date(Date.now() - 120 * 864e5).toISOString();
       const [perfis, deps, tarefas, notifs, ativ, config] = await Promise.all([
-        sb.from("perfis").select("*").order("nome"),
-        sb.from("departamentos").select("*").order("ordem"),
-        sb.from("tarefas").select("*"),
+        todas(() => sb.from("perfis").select("*").order("nome")),
+        todas(() => sb.from("departamentos").select("*").order("ordem")),
+        todas(() => sb.from("tarefas").select("*").order("criado_em")),
         sb.from("notificacoes").select("*").order("criado_em", { ascending: false }).limit(100),
-        sb.from("atividade").select("*").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(3000),
+        todas(() => sb.from("atividade").select("*").gte("criado_em", desde).order("criado_em", { ascending: false })),
         sb.from("configuracao").select("*"),
       ]);
       return {
-        perfis: ok(perfis), departamentos: ok(deps), tarefas: ok(tarefas),
-        notificacoes: ok(notifs), atividade: ok(ativ), configuracao: ok(config),
+        perfis, departamentos: deps, tarefas,
+        notificacoes: ok(notifs), atividade: ativ, configuracao: ok(config),
       };
     },
 
@@ -81,10 +97,17 @@ export function criarApi() {
       async criarVarias(lista) { return ok(await sb.from("tarefas").upsert(lista, { onConflict: "modelo", ignoreDuplicates: true }).select()); },
       async atualizar(id, campos) { return ok(await sb.from("tarefas").update(campos).eq("id", id).select().single()); },
       async apagar(id) { ok(await sb.from("tarefas").delete().eq("id", id)); },
+      // Devolve os ids que foram mesmo apagados (as regras da base de dados ignoram os que não podes apagar)
+      async apagarVarias(ids) {
+        const out = [];
+        for (let i = 0; i < ids.length; i += 100) out.push(...ok(await sb.from("tarefas").delete().in("id", ids.slice(i, i + 100)).select("id")).map((r) => r.id));
+        return out;
+      },
       async obter(id) { return ok(await sb.from("tarefas").select("*").eq("id", id).maybeSingle()); },
     },
     notificacoes: {
       async marcarLidas(ids) { if (ids.length) ok(await sb.from("notificacoes").update({ lida: true }).in("id", ids)); },
+      async apagar(ids) { if (ids.length) ok(await sb.from("notificacoes").delete().in("id", ids)); },
     },
     perfis: {
       async atualizar(id, campos) { return ok(await sb.from("perfis").update(campos).eq("id", id).select().single()); },
@@ -94,7 +117,20 @@ export function criarApi() {
       async criar(d) { return ok(await sb.from("departamentos").insert(d).select().single()); },
       async atualizar(id, campos) { return ok(await sb.from("departamentos").update(campos).eq("id", id).select().single()); },
     },
-    async empregados(acao, dados) { return invocar("gerir-empregados", { acao, ...dados }); },
+    // Gestão da equipa pelas funções SQL do script 02; se ainda não existirem, tenta a função de servidor antiga
+    async empregados(acao, dados) {
+      const chamada = {
+        criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",
+          p_departamento: dados.departamento_id || null, p_papel: dados.papel || "colaborador" }],
+        repor_password: ["admin_repor_password", { p_id: dados.id }],
+        definir_ativo: ["admin_definir_ativo", { p_id: dados.id, p_ativo: !!dados.ativo }],
+      }[acao];
+      if (!chamada) throw new Error("Ação desconhecida.");
+      const { data, error } = await sb.rpc(chamada[0], chamada[1]);
+      if (!error) return data;
+      if (semFuncao(error)) return invocar("gerir-empregados", { acao, ...dados });
+      throw erroPt(error);
+    },
     push: {
       async chave() { const r = await invocar("enviar-push", { acao: "chave" }); return r.chave; },
       async registar(endpoint, p256dh, auth, aparelho) {

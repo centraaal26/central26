@@ -17,6 +17,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Separadores Diárias, Semanais, Mensais, Anuais e Pontuais. As tarefas repetidas voltam sozinhas a «Por fazer».
   - Vistas Lista e Quadro, responsável, prazo, prioridade, checklist e notas.
 - **Quem fez o quê:** tarefas concluídas por pessoa (hoje, semana, mês), tarefas em atraso e registo de todas as ações.
+- **Eliminar, anular e selecionar várias:** menu ⋯ em cada tarefa, botão «Anular» durante 7 segundos depois de eliminar, e modo «Selecionar» para concluir, atribuir ou eliminar várias tarefas de uma vez.
 - **Notificações:** dentro da app e no telemóvel, quando alguém te atribui uma tarefa ou quando concluem uma tarefa que criaste.
 - **Modelos sugeridos:** rotinas de cada marca, rotinas da Logística e os problemas encontrados nas auditorias aos sites.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
@@ -30,17 +31,21 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 ### 2. Fechar os registos públicos
 Supabase → **Authentication** → **Sign In / Providers**: desliga **Allow new users to sign up**. As contas passam a ser criadas só pela administração.
 
-### 3. Funções de servidor
-Faz isto para cada uma das duas funções:
+### 3. Gestão da equipa
+SQL Editor → **New query** → cola o conteúdo de `supabase/02-equipa.sql` → **Run**. É isto que permite criar empregados, repor palavras-passe e desativar contas a partir da app.
+
+### 3b. Notificações no telemóvel (opcional)
+Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam sem isto. Instala esta função:
 
 1. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**.
 2. Dá-lhe o nome exato da tabela abaixo, cola o código do ficheiro indicado e carrega em **Deploy**.
 3. Na página da função, desliga **Verify JWT** (ou «Enforce JWT verification»). A função valida a sessão no próprio código.
 
-| Nome | Ficheiro |
+| Nome (tem de ser exatamente este) | Ficheiro |
 |---|---|
-| `gerir-empregados` | `supabase/functions/gerir-empregados/index.ts` |
 | `enviar-push` | `supabase/functions/enviar-push/index.ts` |
+
+O editor do Supabase sugere um nome automático (por exemplo «hyper-function»). Apaga-o e escreve `enviar-push` antes de carregar em **Deploy**.
 
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.

@@ -21,6 +21,7 @@ const S = {
   periodoAtiv: "semana", filtroDep: "",
   hoje: ymd(new Date()), erroEntrada: "", aEntrar: false, offline: false,
   instalar: null, carregou: false,
+  selecao: null, visiveis: [],
 };
 let desligar = null;
 try { const p = JSON.parse(localStorage.getItem("central26-prefs") || "{}"); if (p.tab) S.tab = p.tab; if (p.vista) S.vista = p.vista; } catch { /* */ }
@@ -53,14 +54,89 @@ const I = {
   mail: '<svg class="i" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>',
 };
 
-let toastT;
-function toast(msg, erro) {
+let toastT, toastAcao = null;
+// toast(msg) · toast(msg, true) para erro · toast(msg, { acao: { rotulo, fn }, ms })
+function toast(msg, op) {
+  const o = typeof op === "object" && op ? op : { erro: !!op };
   const r = $("#toast-root");
-  r.innerHTML = '<div class="toast' + (erro ? " erro" : "") + '" role="status">' + esc(msg) + "</div>";
+  toastAcao = o.acao ? o.acao.fn : null;
+  r.innerHTML = '<div class="toast' + (o.erro ? " erro" : "") + '" role="status"><span>' + esc(msg) + "</span>" +
+    (o.acao ? '<button class="toast-acao" data-acao="toast-acao">' + esc(o.acao.rotulo) + "</button>" : "") + "</div>";
   clearTimeout(toastT);
-  toastT = setTimeout(() => { r.innerHTML = ""; }, erro ? 5200 : 3200);
+  toastT = setTimeout(() => { r.innerHTML = ""; toastAcao = null; }, o.ms || (o.erro ? 5200 : 3200));
 }
 const falha = (e) => toast(e?.message || "Ocorreu um erro. Tenta outra vez.", true);
+
+/* ---------- eliminar com «Anular» ----------
+   As tarefas desaparecem logo do ecrã, mas só são apagadas na base de dados ao fim de 7 segundos.
+   «Anular» repõe-nas sem deixar rasto. Se a app for fechada antes, a eliminação é feita nesse momento. */
+const pendentes = new Map();
+const emEspera = (id) => [...pendentes.values()].some((p) => p.lote.some(([x]) => x === id));
+function eliminarTarefas(ids) {
+  const permitidas = ids.filter((id) => S.tarefas[id] && podeApagar(S.eu, S.tarefas[id]));
+  const recusadas = ids.length - permitidas.length;
+  if (!permitidas.length) { toast("Não tens permissão para eliminar " + (ids.length === 1 ? "esta tarefa." : "estas tarefas."), true); return; }
+  const lote = permitidas.map((id) => [id, S.tarefas[id]]);
+  lote.forEach(([id]) => { delete S.tarefas[id]; S.selecao?.delete(id); });
+  if (S.aberto?.tipo === "tarefa" && permitidas.includes(S.aberto.id)) { S.aberto = null; renderPainel(true); }
+  const chave = "l" + Date.now() + Math.random();
+  pendentes.set(chave, { lote, timer: setTimeout(() => confirmarEliminacao(chave), 7000) });
+  render();
+  const n = permitidas.length;
+  toast((n === 1 ? "Tarefa eliminada" : n + " tarefas eliminadas") + (recusadas ? " · " + recusadas + " sem permissão" : ""),
+    { acao: { rotulo: "Anular", fn: () => anularEliminacao(chave) }, ms: 7000 });
+}
+async function confirmarEliminacao(chave) {
+  const p = pendentes.get(chave);
+  if (!p) return;
+  pendentes.delete(chave); clearTimeout(p.timer);
+  try {
+    const apagadas = new Set(await api.tarefas.apagarVarias(p.lote.map(([id]) => id)));
+    const falharam = p.lote.filter(([id]) => !apagadas.has(id));
+    if (falharam.length) { falharam.forEach(([id, t]) => { S.tarefas[id] = t; }); agendarRender(); toast("Não foi possível eliminar " + falharam.length + (falharam.length === 1 ? " tarefa." : " tarefas."), true); }
+  } catch (e) { p.lote.forEach(([id, t]) => { S.tarefas[id] = t; }); agendarRender(); falha(e); }
+}
+function anularEliminacao(chave) {
+  const p = pendentes.get(chave);
+  if (!p) return;
+  clearTimeout(p.timer); pendentes.delete(chave);
+  p.lote.forEach(([id, t]) => { S.tarefas[id] = t; });
+  render(); toast("Eliminação anulada");
+}
+const confirmarTudo = () => [...pendentes.keys()].forEach(confirmarEliminacao);
+window.addEventListener("pagehide", confirmarTudo);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") confirmarTudo(); });
+
+async function duplicarTarefa(id) {
+  const t = S.tarefas[id]; if (!t) return;
+  try {
+    const r = await api.tarefas.criar({ titulo: t.titulo + " (cópia)", marca: t.marca, freq: t.freq, prioridade: t.prioridade,
+      responsavel_id: podeAtribuirA(S.eu, S.perfis[t.responsavel_id]) ? t.responsavel_id : S.eu.id,
+      departamento_id: t.departamento_id, prazo: t.prazo, notas: t.notas, checklist: itensChecklist(t).map((i) => ({ ...i, feito: false })),
+      checklist_periodo: "", estado: "por_fazer", estado_periodo: periodo(t.freq) });
+    S.tarefas[r.id] = r; abrirTarefa(r.id); toast("Tarefa duplicada");
+  } catch (err) { falha(err); }
+}
+
+/* ---------- menu ⋯ de cada tarefa ---------- */
+function abrirMenu(botao, id) {
+  const t = S.tarefas[id]; if (!t) return;
+  const pode = podeEditar(S.eu, t), apaga = podeApagar(S.eu, t), feita = concluida(t);
+  const root = $("#menu-root");
+  root.innerHTML = '<div class="menu" role="menu" data-id="' + id + '">' +
+    '<button role="menuitem" data-acao="m-abrir">' + I.nota + "Abrir</button>" +
+    (pode ? '<button role="menuitem" data-acao="m-alternar">' + I.tarefas + (feita ? "Marcar como por fazer" : "Marcar como concluída") + "</button>" : "") +
+    (pode ? '<button role="menuitem" data-acao="m-duplicar">' + I.copiar + "Duplicar</button>" : "") +
+    (apaga ? '<button role="menuitem" class="perigo" data-acao="m-eliminar">' + I.lixo + "Eliminar</button>" : "") +
+    "</div>";
+  const m = root.firstChild, r = botao.getBoundingClientRect();
+  const larg = m.offsetWidth, alt = m.offsetHeight;
+  let left = Math.min(r.right - larg, innerWidth - larg - 8), top = r.bottom + 4;
+  if (top + alt > innerHeight - 8) top = Math.max(8, r.top - alt - 4);
+  m.style.left = Math.max(8, left) + "px"; m.style.top = top + "px";
+  m.querySelector("button")?.focus();
+}
+const fecharMenu = () => { const r = $("#menu-root"); if (r && r.innerHTML) r.innerHTML = ""; };
 
 const timers = {};
 const adiar = (k, fn, ms = 600) => { clearTimeout(timers[k]); timers[k] = setTimeout(fn, ms); };
@@ -82,6 +158,8 @@ async function arrancar() {
   window.addEventListener("online", () => { S.offline = false; agendarRender(); });
   window.addEventListener("offline", () => { S.offline = true; agendarRender(); });
   window.addEventListener("hashchange", lerRota);
+  document.addEventListener("scroll", fecharMenu, true);
+  window.addEventListener("resize", fecharMenu);
   setInterval(() => { const h = ymd(new Date()); if (h !== S.hoje) { S.hoje = h; agendarRender(); } }, 60000);
   api.aoMudarSessao((ev) => { if (ev === "SIGNED_OUT") { S.fase = "entrar"; limparDados(); render(); } });
   lerRota(false);
@@ -132,7 +210,7 @@ async function recarregar() {
 function aoMudar(tabela, ev, novo, antigo) {
   if (tabela === "tarefas") {
     if (ev === "DELETE") delete S.tarefas[antigo.id];
-    else S.tarefas[novo.id] = novo;
+    else if (!emEspera(novo.id)) S.tarefas[novo.id] = novo;
   } else if (tabela === "perfis") {
     if (ev === "DELETE") delete S.perfis[antigo.id]; else S.perfis[novo.id] = novo;
     if (novo && S.eu && novo.id === S.eu.id) {
@@ -163,7 +241,8 @@ function lerRota(desenhar = true) {
     else if (r === "pessoa" && p) { rota = "pessoa"; param = p; }
     else if (r === "tarefa" && p) { rota = "tarefa"; param = p; }
   }
-  if (rota !== S.rota || param !== S.param) { S.q = ""; S.filtroResp = ""; S.mostrarFeitas = false; }
+  if (rota !== S.rota || param !== S.param) { S.q = ""; S.filtroResp = ""; S.mostrarFeitas = false; S.selecao = null; }
+  fecharMenu();
   S.rota = rota; S.param = param;
   if (!desenhar) return;
   if (rota === "tarefa" && S.fase === "app") { abrirTarefa(param); return; }
@@ -294,27 +373,44 @@ function linhaTarefa(t, o = {}) {
   if (t.notas) sub.push('<span title="Tem notas">' + I.nota + "</span>");
   if (t.responsavel_id && !o.semResp) sub.push('<span class="so-m">' + I.pessoa + esc(nomeDe(t.responsavel_id)) + "</span>");
   if (t.prazo) sub.push('<span class="so-m' + (atraso ? " prazo atraso" : "") + '">' + I.cal + esc(rotuloPrazo(t.prazo)) + "</span>");
-  const chk = '<button class="chk' + (feita ? " on" : est === "em_curso" ? " meio" : "") + '" data-acao="alternar" data-id="' + t.id + '" aria-label="' + (feita ? "Marcar como por fazer" : "Marcar como concluída") + '" aria-pressed="' + feita + '"' + (pode ? "" : " disabled") + ">" + I.check + "</button>";
-  const ttl = '<button class="ttl" data-acao="abrir" data-id="' + t.id + '"><span class="t">' + (esc(t.titulo) || '<span style="color:var(--faint)">Sem título</span>') + "</span>" + (sub.length ? '<span class="sub">' + sub.join("") + "</span>" : "") + "</button>";
+  const sel = !!S.selecao && !o.compacta, marcada = sel && S.selecao.has(t.id);
+  const chk = sel
+    ? '<button class="sel-box' + (marcada ? " on" : "") + '" data-acao="sel" data-id="' + t.id + '" aria-label="Selecionar tarefa" aria-pressed="' + marcada + '">' + I.check + "</button>"
+    : '<button class="chk' + (feita ? " on" : est === "em_curso" ? " meio" : "") + '" data-acao="alternar" data-id="' + t.id + '" aria-label="' + (feita ? "Marcar como por fazer" : "Marcar como concluída") + '" aria-pressed="' + feita + '"' + (pode ? "" : " disabled") + ">" + I.check + "</button>";
+  const ttl = '<button class="ttl" data-acao="' + (sel ? "sel" : "abrir") + '" data-id="' + t.id + '"><span class="t">' + (esc(t.titulo) || '<span style="color:var(--faint)">Sem título</span>') + "</span>" + (sub.length ? '<span class="sub">' + sub.join("") + "</span>" : "") + "</button>";
   const cauda = o.compacta
     ? (atraso ? '<span class="prazo atraso">Em atraso</span>' : '<span class="pri-tag ' + t.prioridade + '">' + PRIORIDADES[t.prioridade] + "</span>")
-    : '<span class="pri-tag ' + t.prioridade + '">' + PRIORIDADES[t.prioridade] + '</span><span class="resp' + (t.responsavel_id ? "" : " vazio") + '">' + (t.responsavel_id ? av(t.responsavel_id) + "<span>" + esc(nomeDe(t.responsavel_id)) + "</span>" : "<span>Sem responsável</span>") + '</span><span class="prazo col' + (atraso ? " atraso" : hoje ? " hoje" : "") + '">' + (t.prazo ? esc(rotuloPrazo(t.prazo)) : "—") + "</span>";
-  const estilo = o.compacta ? ' style="grid-template-columns:28px minmax(0,1fr) auto"' : "";
-  return '<div class="linha' + (feita ? " feita" : "") + '" data-marca="' + t.marca + '"' + estilo + ">" + chk + ttl + cauda + "</div>";
+    : '<span class="pri-tag ' + t.prioridade + '">' + PRIORIDADES[t.prioridade] + '</span><span class="resp' + (t.responsavel_id ? "" : " vazio") + '">' + (t.responsavel_id ? av(t.responsavel_id) + "<span>" + esc(nomeDe(t.responsavel_id)) + "</span>" : "<span>Sem responsável</span>") + '</span><span class="prazo col-prazo' + (atraso ? " atraso" : hoje ? " hoje" : "") + '">' + (t.prazo ? esc(rotuloPrazo(t.prazo)) : "—") + "</span>";
+  const mais = sel ? "<span></span>" : '<button class="mais-btn" data-acao="menu" data-id="' + t.id + '" aria-label="Mais ações" aria-haspopup="menu">' + I.mais + "</button>";
+  return '<div class="linha' + (o.compacta ? " compacta" : "") + (feita ? " feita" : "") + (marcada ? " marcada" : "") + '" data-marca="' + t.marca + '">' + chk + ttl + cauda + mais + "</div>";
+}
+
+function barraSelecao() {
+  if (!S.selecao) return "";
+  const n = S.selecao.size, todasMarcadas = S.visiveis.length > 0 && S.visiveis.every((id) => S.selecao.has(id));
+  const pessoas = ativos().filter((p) => podeAtribuirA(S.eu, p));
+  return '<div class="barra-sel" role="region" aria-label="Ações sobre as tarefas selecionadas"><b>' + (n === 1 ? "1 selecionada" : n + " selecionadas") + "</b>" +
+    '<button class="btn sec" data-acao="sel-todas">' + (todasMarcadas ? "Desmarcar todas" : "Selecionar todas (" + S.visiveis.length + ")") + "</button>" +
+    '<span class="grupo-sel"><button class="btn sec" data-acao="sel-concluir"' + (n ? "" : " disabled") + ">" + I.tarefas + "Concluir</button>" +
+    '<label class="sr" for="sel-resp">Atribuir a</label><select class="sel" id="sel-resp"' + (n ? "" : " disabled") + '><option value="">Atribuir a…</option><option value="nenhum">Sem responsável</option>' +
+    pessoas.map((p) => '<option value="' + p.id + '">' + esc(p.nome) + "</option>").join("") + "</select>" +
+    '<button class="btn perigo" data-acao="sel-eliminar"' + (n ? "" : " disabled") + ">" + I.lixo + "Eliminar</button></span>" +
+    '<button class="btn sec" data-acao="sel-cancelar">Cancelar</button></div>';
 }
 
 function tabelaTarefas(lista, ctx) {
   const abertas = lista.filter((t) => !concluida(t)), feitas = lista.filter(concluida);
-  let h = '<div class="tabela"><div class="thead"><span></span><span>Tarefa</span><span>Prioridade</span><span>Responsável</span><span>Prazo</span></div>';
+  S.visiveis = (S.mostrarFeitas ? abertas.concat(feitas) : abertas).map((t) => t.id);
+  let h = '<div class="tabela"><div class="thead"><span></span><span>Tarefa</span><span>Prioridade</span><span>Responsável</span><span>Prazo</span><span></span></div>';
   h += abertas.map((t) => linhaTarefa(t, ctx.opcoes || {})).join("");
   if (!abertas.length) h += '<div class="vazio-linha">' + (S.q || S.filtroResp ? "Nenhuma tarefa corresponde ao filtro." : lista.length ? "Tudo concluído neste período." : ctx.vazio) + "</div>";
-  if (ctx.rapida) h += '<label class="rapida">' + I.plus + '<span class="sr">Nova tarefa</span><input id="rapida" placeholder="Escreve uma tarefa e carrega em Enter" value="' + esc(S.rascunho) + '" autocomplete="off" enterkeyhint="done"></label>';
+  if (ctx.rapida && !S.selecao) h += '<label class="rapida">' + I.plus + '<span class="sr">Nova tarefa</span><input id="rapida" placeholder="Escreve uma tarefa e carrega em Enter" value="' + esc(S.rascunho) + '" autocomplete="off" enterkeyhint="done"></label>';
   h += "</div>";
   if (feitas.length) {
     h += '<button class="mostrar-feitas" data-acao="mostrar-feitas" aria-expanded="' + S.mostrarFeitas + '">' + I.seta + "Concluídas (" + feitas.length + ")</button>";
     if (S.mostrarFeitas) h += '<div class="tabela">' + feitas.map((t) => linhaTarefa(t, ctx.opcoes || {})).join("") + "</div>";
   }
-  return h;
+  return h + barraSelecao();
 }
 
 function quadroTarefas(lista) {
@@ -370,6 +466,7 @@ function barraFerramentas(tab, comResp) {
   return '<div class="barra"><div class="periodo"><b>' + esc(rotuloPeriodo(tab)) + "</b><span>" + FREQ[tab].reset + '</span></div><div class="ferr">' +
     '<label class="pesq">' + I.lupa + '<span class="sr">Pesquisar tarefas</span><input id="pesquisa" type="search" placeholder="Pesquisar" value="' + esc(S.q) + '"></label>' + filtro +
     '<div class="seg" role="group" aria-label="Vista"><button data-acao="vista" data-vista="lista" aria-pressed="' + (S.vista === "lista") + '">Lista</button><button data-acao="vista" data-vista="quadro" aria-pressed="' + (S.vista === "quadro") + '">Quadro</button></div>' +
+    (S.vista === "lista" ? '<button class="btn sec" data-acao="selecionar" aria-pressed="' + !!S.selecao + '">' + I.lista + (S.selecao ? "Terminar seleção" : "Selecionar") + "</button>" : "") +
     '<button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div></div>";
 }
 
@@ -586,7 +683,9 @@ function vistaAtividade() {
 /* ---------- notificações ---------- */
 function vistaNotificacoes() {
   const nl = S.notifs.filter((n) => !n.lida).length;
-  let h = '<div class="cab"><div><div class="eyebrow neutro">' + (nl ? nl + " por ler" : "Tudo lido") + "</div><h1>Notificações</h1></div>" + (nl ? '<button class="btn sec" data-acao="ler-todas">Marcar todas como lidas</button>' : "") + "</div>";
+  const lidas = S.notifs.length - nl;
+  let h = '<div class="cab"><div><div class="eyebrow neutro">' + (nl ? nl + " por ler" : "Tudo lido") + "</div><h1>Notificações</h1></div>" +
+    '<div class="acts">' + (nl ? '<button class="btn sec" data-acao="ler-todas">Marcar todas como lidas</button>' : "") + (lidas ? '<button class="btn sec" data-acao="limpar-lidas">' + I.lixo + "Apagar as lidas (" + lidas + ")</button>" : "") + "</div></div>";
   if (!S.notifs.length) return h + '<div class="vazio"><h3>Sem notificações</h3><p>Aqui aparecem as tarefas que te atribuírem e as tarefas que criaste quando forem concluídas.</p></div>';
   return h + "<div>" + S.notifs.map((n) => '<button class="notif' + (n.lida ? "" : " nova") + '" data-acao="abrir-notif" data-id="' + n.id + '"><span class="ponto"></span><span><span class="t">' + esc(n.titulo) + '</span><br><span class="c">' + esc(n.corpo) + '</span></span><span class="q">' + haQuanto(n.criado_em) + "</span></button>").join("") + "</div>";
 }
@@ -651,7 +750,10 @@ function painelTarefa(t) {
   if (!t) return moldura("twentysix", "Tarefa", '<div class="p-topo"><span class="migalha">Tarefa</span><button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + '</button></div><div class="vazio"><h3>Tarefa indisponível</h3><p>Foi eliminada ou não tens acesso a ela.</p></div>');
   const pode = podeEditar(S.eu, t), dis = pode ? "" : " disabled", its = itensChecklist(t), est = estadoAtual(t), m = MARCA[t.marca] || MARCA.grupo;
   const dica = t.freq === "unica" ? "" : "Volta a «Por fazer» " + ({ diaria: "amanhã", semanal: "na próxima segunda-feira", mensal: "no dia 1 do próximo mês", anual: "a 1 de janeiro" })[t.freq] + ".";
-  let c = '<div class="p-topo"><span class="migalha"><i></i>' + esc(m.nome) + " / " + esc(FREQ[t.freq].tab) + '</span><span class="acts">' + (pode ? '<button class="ib" data-acao="duplicar">' + I.copiar + "Duplicar</button>" : "") + '<button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + "</button></span></div>";
+  let c = '<div class="p-topo"><span class="migalha"><i></i>' + esc(m.nome) + " / " + esc(FREQ[t.freq].tab) + '</span><span class="acts">' +
+    (pode ? '<button class="ib" data-acao="duplicar">' + I.copiar + "Duplicar</button>" : "") +
+    (podeApagar(S.eu, t) ? '<button class="ib perigo" data-acao="apagar">' + I.lixo + "Eliminar</button>" : "") +
+    '<button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + "</button></span></div>";
   c += '<textarea id="t-titulo" class="p-titulo" rows="1" placeholder="Sem título"' + dis + ">" + esc(t.titulo) + "</textarea>";
   if (!pode) c += '<div class="aviso">Podes ver esta tarefa, mas só o responsável, quem a criou e a chefia a podem alterar.</div>';
   c += '<div class="props">' +
@@ -672,7 +774,7 @@ function painelTarefa(t) {
   const hist = S.atividade.filter((a) => a.tarefa_id === t.id).slice(0, 8);
   if (hist.length) c += '<section class="p-sec"><h3>Histórico</h3><div class="hist">' + hist.map((a) => "<div><span>" + esc(nomeDe(a.autor_id) || "Alguém") + " " + (ACOES[a.acao] || a.acao) + (a.acao === "atribuiu" && a.responsavel_id ? " a " + esc(nomeDe(a.responsavel_id)) : "") + '</span><span class="q">' + haQuanto(a.criado_em) + "</span></div>").join("") + "</div></section>";
   const pe = "<span>Criada por " + esc(nomeDe(t.criado_por) || "—") + (t.criado_em ? " a " + dataLonga(t.criado_em) : "") + "</span>" +
-    (podeApagar(S.eu, t) ? (S.confirmar ? '<span class="confirmar">Eliminar esta tarefa?<button class="btn sec" data-acao="apagar-nao">Cancelar</button><button class="btn perigo" data-acao="apagar-sim">Eliminar</button></span>' : '<button class="apagar" data-acao="apagar">' + I.lixo + "Eliminar tarefa</button>") : "");
+    (podeApagar(S.eu, t) ? '<button class="apagar" data-acao="apagar">' + I.lixo + "Eliminar tarefa</button>" : "");
   return moldura(t.marca, "Detalhes da tarefa", c, pe);
 }
 
@@ -766,8 +868,11 @@ async function criarTarefa(dados) {
 /* ============================== Eventos ============================== */
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-acao]");
+  const noMenu = e.target.closest("#menu-root");
+  if (!noMenu && (!el || el.dataset.acao !== "menu")) fecharMenu();
   if (!el) return;
-  const acao = el.dataset.acao, id = el.dataset.id;
+  const acao = el.dataset.acao, id = el.dataset.id || el.closest(".menu")?.dataset.id;
+  if (acao.startsWith("m-")) fecharMenu();
   const marcaAtual = S.rota === "marca" ? S.param : null;
   const chaveTab = marcaAtual || (S.rota === "minhas" ? "minhas" : null);
   switch (acao) {
@@ -778,7 +883,30 @@ document.addEventListener("click", async (e) => {
     case "abrir": if (!el.classList.contains("arrastar")) abrirTarefa(id); break;
     case "fechar": fechar(); break;
     case "tab": if (chaveTab) { S.tab[chaveTab] = el.dataset.tab; S.q = ""; guardarPrefs(); render(); } break;
-    case "vista": S.vista = el.dataset.vista; guardarPrefs(); render(); break;
+    case "vista": S.vista = el.dataset.vista; if (S.vista !== "lista") S.selecao = null; guardarPrefs(); render(); break;
+    case "menu": if ($("#menu-root .menu")?.dataset.id === id) fecharMenu(); else abrirMenu(el, id); break;
+    case "m-abrir": abrirTarefa(id); break;
+    case "m-alternar": alternar(id); break;
+    case "m-duplicar": duplicarTarefa(id); break;
+    case "m-eliminar": eliminarTarefas([id]); break;
+    case "toast-acao": { const fn = toastAcao; toastAcao = null; $("#toast-root").innerHTML = ""; if (fn) fn(); break; }
+    case "selecionar": S.selecao = S.selecao ? null : new Set(); render(); break;
+    case "sel": if (S.selecao) { S.selecao.has(id) ? S.selecao.delete(id) : S.selecao.add(id); render(); } break;
+    case "sel-todas": { const todasM = S.visiveis.every((x) => S.selecao.has(x)); S.selecao = todasM ? new Set() : new Set(S.visiveis); render(); break; }
+    case "sel-cancelar": S.selecao = null; render(); break;
+    case "sel-eliminar": if (S.selecao?.size) { eliminarTarefas([...S.selecao]); S.selecao = new Set(); render(); } break;
+    case "sel-concluir": {
+      const ids = [...(S.selecao || [])].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x]) && !concluida(S.tarefas[x]));
+      ids.forEach((x) => definirEstado(x, "concluido"));
+      S.selecao = new Set(); render(); toast(ids.length ? (ids.length === 1 ? "1 tarefa concluída" : ids.length + " tarefas concluídas") : "Nada para concluir.");
+      break;
+    }
+    case "limpar-lidas": {
+      const ids = S.notifs.filter((n) => n.lida).map((n) => n.id), antes = S.notifs;
+      S.notifs = S.notifs.filter((n) => !n.lida); render();
+      api.notificacoes.apagar(ids).then(() => toast("Notificações lidas apagadas")).catch((err) => { S.notifs = antes; render(); falha(err); });
+      break;
+    }
     case "mostrar-feitas": S.mostrarFeitas = !S.mostrarFeitas; render(); break;
     case "nova-tarefa": abrir({ tipo: "nova", marca: marcaAtual || "grupo", freq: chaveTab ? S.tab[chaveTab] || "diaria" : "unica", resp: el.dataset.resp }); break;
     case "novo-empregado": abrir({ tipo: "empregado" }); break;
@@ -786,23 +914,8 @@ document.addEventListener("click", async (e) => {
     case "modelos": abrir({ tipo: "modelos" }); break;
     case "item": alternarItem(S.aberto.id, el.dataset.item); renderPainel(true); break;
     case "item-apagar": { const t = S.tarefas[S.aberto.id]; if (t) { await gravar(t.id, { checklist: (t.checklist || []).filter((i) => i.id !== el.dataset.item) }); renderPainel(true); } break; }
-    case "duplicar": {
-      const t = S.tarefas[S.aberto.id]; if (!t) break;
-      try {
-        const r = await api.tarefas.criar({ titulo: t.titulo + " (cópia)", marca: t.marca, freq: t.freq, prioridade: t.prioridade, responsavel_id: podeAtribuirA(S.eu, S.perfis[t.responsavel_id]) ? t.responsavel_id : S.eu.id,
-          departamento_id: t.departamento_id, prazo: t.prazo, notas: t.notas, checklist: itensChecklist(t).map((i) => ({ ...i, feito: false })), checklist_periodo: "", estado: "por_fazer", estado_periodo: periodo(t.freq) });
-        S.tarefas[r.id] = r; abrirTarefa(r.id); toast("Tarefa duplicada");
-      } catch (err) { falha(err); }
-      break;
-    }
-    case "apagar": S.confirmar = true; renderPainel(true); break;
-    case "apagar-nao": S.confirmar = false; renderPainel(true); break;
-    case "apagar-sim": {
-      const tid = S.aberto.id, antes = S.tarefas[tid];
-      fechar(); delete S.tarefas[tid]; render();
-      try { await api.tarefas.apagar(tid); toast("Tarefa eliminada"); } catch (err) { S.tarefas[tid] = antes; render(); falha(err); }
-      break;
-    }
+    case "duplicar": if (S.aberto?.id) duplicarTarefa(S.aberto.id); break;
+    case "apagar": if (S.aberto?.id) { const tid = S.aberto.id; fechar(); eliminarTarefas([tid]); } break;
     case "per-ativ": S.periodoAtiv = el.dataset.p; render(); break;
     case "ler-todas": { const ids = S.notifs.filter((n) => !n.lida).map((n) => n.id); S.notifs = S.notifs.map((n) => ({ ...n, lida: true })); render(); api.notificacoes.marcarLidas(ids).catch(falha); break; }
     case "abrir-notif": {
@@ -911,7 +1024,9 @@ function validarPass(a, b) {
 
 document.addEventListener("keydown", async (e) => {
   const t = e.target;
+  if (e.key === "Escape" && $("#menu-root")?.innerHTML) { fecharMenu(); return; }
   if (e.key === "Escape" && S.aberto) { fechar(); return; }
+  if (e.key === "Escape" && S.selecao) { S.selecao = null; render(); return; }
   if (t.id === "rapida" && e.key === "Enter" && t.value.trim()) {
     e.preventDefault();
     const marca = S.rota === "marca" ? S.param : "grupo";
@@ -950,6 +1065,14 @@ document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.id === "filtro-resp") { S.filtroResp = t.value; render(); return; }
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
+  if (t.id === "sel-resp" && t.value && S.selecao?.size) {
+    const destino = t.value === "nenhum" ? null : t.value;
+    const ids = [...S.selecao].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x]));
+    ids.forEach((x) => gravar(x, { responsavel_id: destino, ...(destino && S.perfis[destino]?.departamento_id && !S.tarefas[x].departamento_id ? { departamento_id: S.perfis[destino].departamento_id } : {}) }));
+    S.selecao = new Set(); render();
+    toast((ids.length === 1 ? "1 tarefa atribuída" : ids.length + " tarefas atribuídas") + (destino ? " a " + nomeDe(destino) : " a ninguém"));
+    return;
+  }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
   const id = S.aberto.id, tk = S.tarefas[id]; if (!tk) return;
   const mapa = { "t-prio": "prioridade", "t-prazo": "prazo", "t-marca": "marca", "t-dep": "departamento_id", "t-resp": "responsavel_id" };

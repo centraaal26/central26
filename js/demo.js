@@ -164,9 +164,18 @@ export function criarDemo() {
         const [t] = db.tarefas.splice(i, 1); registar(t, "eliminou"); gravar(db);
       },
       async obter(id) { return structuredClone(db.tarefas.find((x) => x.id === id) || null); },
+      async apagarVarias(ids) {
+        const e = eu(), out = [];
+        for (const id of ids) {
+          const t = db.tarefas.find((x) => x.id === id);
+          if (t && (eGestor(e) || t.criado_por === euId || (e.papel === "chefe" && t.departamento_id === e.departamento_id))) { await this.apagar(id); out.push(id); }
+        }
+        return out;
+      },
     },
     notificacoes: {
       async marcarLidas(ids) { db.notificacoes.forEach((n) => { if (ids.includes(n.id)) n.lida = true; }); gravar(db); },
+      async apagar(ids) { db.notificacoes = db.notificacoes.filter((n) => !ids.includes(n.id)); gravar(db); },
     },
     perfis: {
       async atualizar(id, campos) {

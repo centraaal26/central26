@@ -10,7 +10,7 @@
 insert into public.perfis (id, nome, email, cargo, departamento_id, papel, mudar_password)
 select id, 'Isaac Maia', email, 'Departamento Tecnológico', 'tecnologico', 'admin', false
 from auth.users
-where email = lower('COLOCA-AQUI-O-TEU-EMAIL')
+where email = lower('isaac.leonardo.cristina.maia.26@gmail.com')
 on conflict (id) do update set papel = 'admin', ativo = true;
 
 -- Deve aparecer uma linha com o teu nome:

@@ -34,6 +34,7 @@ export function criarAuditoria(ctx) {
     if (A.estado === "a-carregar") return;
     A.estado = "a-carregar";
     try {
+      if (!api.aud) throw new Error("A app foi atualizada a meio. Recarrega a página para terminar a atualização.");
       const d = await api.aud.carregar();
       A.itens = Object.fromEntries(d.itens.map((x) => [x.id, x]));
       A.plano = d.plano; A.referencias = d.referencias; A.config = d.config || { inicio: null };

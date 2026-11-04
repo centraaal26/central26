@@ -163,7 +163,19 @@ const av = (id, cls = "") => '<span class="av ' + cls + '" aria-hidden="true">' 
 
 /* ============================== Arranque e sessão ============================== */
 async function arrancar() {
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    const tinha = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      // procurar versões novas quando a app volta a ficar visível e a cada 30 minutos
+      const ver = () => reg.update().catch(() => {});
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") ver(); });
+      setInterval(ver, 30 * 60 * 1000);
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!tinha || S.versaoNova) return;
+      S.versaoNova = true; agendarRender();
+    });
+  }
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); S.instalar = e; agendarRender(); });
   window.addEventListener("online", () => { S.offline = false; agendarRender(); });
   window.addEventListener("offline", () => { S.offline = true; agendarRender(); });
@@ -401,7 +413,8 @@ function vistaApp() {
 
   const demo = api.modo === "demo" ? '<div class="demo-faixa"><span>Modo de demonstração: os dados ficam só neste aparelho.</span><span><button data-acao="demo-repor">Repor dados</button> · <button data-acao="sair">Trocar de pessoa</button></span></div>' : "";
   const marcaAtual = S.rota === "marca" ? S.param : "twentysix";
-  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + '" data-marca="' + marcaAtual + '">' + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
+  const nova = S.versaoNova ? '<div class="aviso aviso-acao versao-nova" role="status"><span><b>Há uma versão nova da Central 26.</b> Atualiza para ficares com as últimas correções.</span><button class="btn pri" data-acao="atualizar-app">Atualizar agora</button></div>' : "";
+  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + '" data-marca="' + marcaAtual + '">' + nova + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
 }
 
 function esqueleto() {
@@ -1007,6 +1020,7 @@ document.addEventListener("click", async (e) => {
       catch { const r = document.createRange(); r.selectNodeContents($("#senha-txt")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Seleciona e copia o texto"); }
       break;
     }
+    case "atualizar-app": location.reload(); break;
     case "instalar": if (S.instalar) { S.instalar.prompt(); const r = await S.instalar.userChoice.catch(() => null); if (r?.outcome === "accepted") S.instalar = null; render(); } break;
     case "push": ativarPush(); break;
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;

@@ -1,5 +1,5 @@
 // Central 26 — service worker: abre a app sem rede e mostra as notificações.
-const VERSAO = "central26-v1.6.0";
+const VERSAO = "central26-v1.6.1";
 const BASE = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "js/app.js", "js/api.js", "js/crm.js", "js/chat.js", "js/agenda.js", "js/logistica.js", "js/geo.js", "js/mapa.js", "js/auditoria.js", "geo/portugal.json", "js/demo.js", "js/dados.js", "js/modelos.js", "js/config.js",
@@ -8,7 +8,8 @@ const BASE = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(BASE)).then(() => self.skipWaiting()));
+  // «reload» ignora a cache do browser: a versão nova fica completa, sem ficheiros antigos misturados
+  e.waitUntil(caches.open(VERSAO).then((c) => c.addAll(BASE.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -18,12 +19,14 @@ self.addEventListener("activate", (e) => {
 });
 
 // Ficheiros da app: primeiro a rede (para receber atualizações), depois a cópia guardada.
+// «no-cache» obriga a confirmar com o servidor (o GitHub Pages deixa os ficheiros 10 minutos na cache do browser).
 // Pedidos à base de dados e a outros sites passam diretamente.
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+  const pedido = e.request.mode === "navigate" ? fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(e.request, { cache: "no-cache" });
   e.respondWith(
-    fetch(e.request)
+    pedido
       .then((r) => { if (r.ok) { const copia = r.clone(); caches.open(VERSAO).then((c) => c.put(e.request, copia)); } return r; })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html"))),
   );

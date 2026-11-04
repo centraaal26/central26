@@ -11,10 +11,13 @@ const rotData = (s) => { if (!s) return "—"; const [y, m, d] = s.split("-").ma
 const diaLongo = (s) => { const d = new Date(s + "T12:00:00"); return DIA[d.getDay()].replace(/^./, (x) => x.toUpperCase()) + ", " + d.getDate() + " de " + MES_L[d.getMonth()]; };
 const km = (m) => (m == null ? "—" : (m / 1000).toLocaleString("pt-PT", { maximumFractionDigits: m < 10000 ? 1 : 0 }) + " km");
 const tempo = (s) => { if (s == null) return "—"; const h = Math.floor(s / 3600), mi = Math.round((s % 3600) / 60); return (h ? h + " h " : "") + mi + " min"; };
+const nPar = (n) => n + (n === 1 ? " paragem" : " paragens");
 const uidc = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 export const eLogistica = (eu) => !!eu && (eGestor(eu) || eu.departamento_id === "logistica");
 export const podeEncomendas = (eu) => !!eu && (eLogistica(eu) || eu.departamento_id === "comercial");
+// O Comercial também faz entregas: vê e planeia rotas e marca entregas (não prepara encomendas).
+export const podeRotas = (eu) => podeEncomendas(eu);
 
 export function criarLogistica(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, crm, podeCrm, $ } = ctx;
@@ -43,6 +46,8 @@ export function criarLogistica(ctx) {
     if (S.aberto?.tipo === "encomenda") renderPainel();
   }
   const podeTratar = () => eLogistica(S.eu);
+  const podeEntregar = () => podeRotas(S.eu);
+  const entregavel = (e) => ["pronta", "em_rota"].includes(e.estado);
   const podeEditar = (e) => podeTratar() || (e.criado_por === S.eu.id && e.estado === "nova");
   const encomendas = () => Object.values(G.encomendas);
   const locais = () => Object.values(G.locais).sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, "pt"));
@@ -59,15 +64,15 @@ export function criarLogistica(ctx) {
   function vista(param) {
     if (G.estado === "por-carregar") carregar();
     if (param && param.startsWith("rota:")) return vistaRota(G.rotas[param.slice(5)]);
-    let h = '<div class="cab"><div><div class="eyebrow neutro">' + (podeTratar() ? "Encomendas, entregas e rotas" : "Envia encomendas para a Logística") + "</div><h1>Logística</h1></div>" +
-      (G.estado === "pronto" ? '<div class="acts">' + (podeTratar() ? '<button class="btn sec" data-acao="rota-nova">' + I.mapa + "Nova rota</button>" : "") + '<button class="btn pri" data-acao="enc-nova">' + I.plus + "Nova encomenda</button></div>" : "") + "</div>";
-    const tabs = [["encomendas", "Encomendas"]].concat(podeTratar() ? [["rotas", "Rotas"], ["locais", "Locais"]] : []);
+    let h = '<div class="cab"><div><div class="eyebrow neutro">' + (podeTratar() ? "Encomendas, entregas e rotas" : "Encomendas para a Logística e rotas de entrega") + "</div><h1>Logística</h1></div>" +
+      (G.estado === "pronto" ? '<div class="acts">' + (podeEntregar() ? '<button class="btn sec" data-acao="rota-nova">' + I.mapa + "Nova rota</button>" : "") + '<button class="btn pri" data-acao="enc-nova">' + I.plus + "Nova encomenda</button></div>" : "") + "</div>";
+    const tabs = [["encomendas", "Encomendas"]].concat(podeEntregar() ? [["rotas", "Rotas"], ["locais", "Locais"]] : []);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="log-tab" data-tab="' + k + '" aria-selected="' + (G.tab === k) + '">' + r + (k === "encomendas" ? '<span class="n">' + porTratar().length + "</span>" : "") + "</button>").join("") + "</div>";
     if (G.estado === "falta-script") return h + '<div class="vazio"><h3>Falta instalar a Logística na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/05-logistica.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
     if (G.estado === "erro") return h + '<div class="aviso erro">Não foi possível abrir a Logística: ' + esc(G.erro || "") + "</div>";
     if (G.estado !== "pronto") return h + '<div class="tabela"><div class="esqueleto"><i style="width:50%"></i></div></div>';
-    if (G.tab === "rotas" && podeTratar()) return h + vistaRotas();
-    if (G.tab === "locais" && podeTratar()) return h + vistaLocais();
+    if (G.tab === "rotas" && podeEntregar()) return h + vistaRotas();
+    if (G.tab === "locais" && podeEntregar()) return h + vistaLocais();
     return h + vistaEncomendas();
   }
 
@@ -82,7 +87,7 @@ export function criarLogistica(ctx) {
       "<small>" + esc(resumo || "Sem artigos") + "</small><small>" + [e.morada ? esc(e.morada) : '<span class="at">sem morada</span>', "pedida por " + esc((nomeDe(e.criado_por) || "—").split(" ")[0]), e.fatura_numero ? esc(e.fatura_numero) : ""].filter(Boolean).join(" · ") + "</small></span>" +
       '<span class="enc-m">' + cartaoEstado(e) + (tot && ATIVOS.includes(e.estado) ? '<small class="mono">' + prep + "/" + tot + " preparados</small>" : "") +
       (e.data_prevista ? '<small class="' + (atraso ? "at" : "") + '">' + (atraso ? "Atrasada · " : "Para ") + esc(rotData(e.data_prevista)) + "</small>" : "") + "</span></button>" +
-      (podeTratar() && proxima ? '<button class="btn sec enc-passo" data-acao="enc-estado" data-id="' + e.id + '" data-v="' + proxima[0] + '">' + proxima[1] + "</button>" : "") + "</div>";
+      ((podeTratar() || (podeEntregar() && entregavel(e))) && proxima ? '<button class="btn sec enc-passo" data-acao="enc-estado" data-id="' + e.id + '" data-v="' + proxima[0] + '">' + proxima[1] + "</button>" : "") + "</div>";
   }
 
   function vistaEncomendas() {
@@ -122,7 +127,7 @@ export function criarLogistica(ctx) {
     if (!l.length) return '<div class="vazio"><h3>Ainda não há rotas</h3><p>Uma rota junta as encomendas e os pontos do dia. A app põe-nos pela ordem mais curta e abre a navegação no Google Maps.</p><div class="acts"><button class="btn pri" data-acao="rota-nova">' + I.mapa + "Planear a primeira rota</button></div></div>";
     return '<div class="enc-lista">' + l.map((r) => {
       const feitas = r.paragens.filter((p) => p.feito).length;
-      return '<div class="enc-linha"><a class="enc-abrir" href="#logistica-rota:' + r.id + '"><span class="enc-ref mono">' + esc(rotData(r.data)) + '</span><span class="enc-t"><b>' + esc(r.titulo || "Rota") + "</b><small>" + r.paragens.length + " paragens · " + km(r.distancia_m) + " · " + tempo(r.duracao_s) +
+      return '<div class="enc-linha"><a class="enc-abrir" href="#logistica-rota:' + r.id + '"><span class="enc-ref mono">' + esc(rotData(r.data)) + '</span><span class="enc-t"><b>' + esc(r.titulo || "Rota") + "</b><small>" + nPar(r.paragens.length) + " · " + km(r.distancia_m) + " · " + tempo(r.duracao_s) +
         "</small><small>" + esc(r.paragens.map((p) => p.nome).slice(0, 4).join(" → ")) + (r.paragens.length > 4 ? " → …" : "") + '</small></span><span class="enc-m"><span class="est est-' + (r.estado === "concluida" ? "entregue" : r.estado === "em_curso" ? "em_rota" : "nova") + '">' +
         ({ planeada: "Planeada", em_curso: "Em curso", concluida: "Concluída" })[r.estado] + '</span><small class="mono">' + feitas + "/" + r.paragens.length + " feitas</small></span></a></div>";
     }).join("") + "</div>";
@@ -135,7 +140,7 @@ export function criarLogistica(ctx) {
     const links = ligacoesGoogle(pontos);
     const semLocal = r.paragens.filter((p) => p.lat == null);
     let h = '<a href="#logistica" class="eyebrow neutro" style="text-decoration:none" data-acao="log-tab" data-tab="rotas">← Rotas</a>';
-    h += '<div class="cab"><div><div class="eyebrow neutro">' + esc(diaLongo(r.data)) + "</div><h1>" + esc(r.titulo || "Rota") + '</h1><p class="sub-cab">' + r.paragens.length + " paragens · " + km(r.distancia_m) + " · cerca de " + tempo(r.duracao_s) + " a conduzir" +
+    h += '<div class="cab"><div><div class="eyebrow neutro">' + esc(diaLongo(r.data)) + "</div><h1>" + esc(r.titulo || "Rota") + '</h1><p class="sub-cab">' + nPar(r.paragens.length) + " · " + km(r.distancia_m) + " · cerca de " + tempo(r.duracao_s) + " a conduzir" +
       (r.voltar ? " · volta a " + esc(partida?.nome || "partida") : fim ? " · termina em " + esc(fim.nome) : "") + '</p></div><div class="acts">' +
       (r.estado === "planeada" ? '<button class="btn pri" data-acao="rota-estado" data-id="' + r.id + '" data-v="em_curso">Começar rota</button>' : r.estado === "em_curso" ? '<button class="btn pri" data-acao="rota-estado" data-id="' + r.id + '" data-v="concluida">Concluir rota</button>' : "") +
       '<button class="btn sec" data-acao="rota-recalcular" data-id="' + r.id + '">Recalcular</button><button class="btn perigo-sec" data-acao="rota-apagar" data-id="' + r.id + '">' + I.lixo + "Eliminar</button></div></div>";
@@ -185,6 +190,8 @@ export function criarLogistica(ctx) {
     h += '<div class="chips">' + cartaoEstado(e) + "<span>" + esc(TIPOS_ENC[e.tipo]) + "</span><span>Pedida por " + esc(nomeDe(e.criado_por) || "—") + " " + haQuanto(e.criado_em) + "</span></div>";
     if (!trata && e.estado !== "nova" && e.criado_por === S.eu.id && ATIVOS.includes(e.estado)) h += '<div class="aviso">A Logística já está a tratar desta encomenda. Para mudar alguma coisa, fala com a Logística ou cancela-a.</div>';
     // passos de estado
+    if (!trata && podeEntregar() && entregavel(e)) h += '<div class="acts"><button class="btn pri" data-acao="enc-estado" data-id="' + e.id + '" data-v="entregue">' + I.check + "Marcar como entregue</button>" + (e.estado === "pronta" ? '<button class="btn sec" data-acao="rota-nova" data-enc="' + e.id + '">' + I.mapa + "Planear rota</button>" : "") + "</div>";
+    if (!trata && e.estado === "entregue" && podeEntregar()) h += '<div class="acts"><button class="btn sec" data-acao="enc-estado" data-id="' + e.id + '" data-v="em_rota">Afinal não foi entregue</button></div>';
     if (trata) {
       const passos = [["nova", "Nova"], ["em_preparacao", "Em preparação"], ["pronta", "Pronta"], ["em_rota", "Em rota"], ["entregue", "Entregue"]];
       h += '<div class="passos" role="group" aria-label="Estado">' + passos.map(([k, r]) => '<button data-acao="enc-estado" data-id="' + e.id + '" data-v="' + k + '" aria-pressed="' + (e.estado === k) + '">' + r + "</button>").join("") + "</div>";
@@ -200,7 +207,7 @@ export function criarLogistica(ctx) {
     if (ed) h += '<label class="cl-add">' + I.plus + '<span class="sr">Adicionar artigo</span><input id="enc-novoitem" placeholder="Adicionar artigo (ex.: 6 CLAY) e carregar em Enter" autocomplete="off" list="lista-produtos"></label>' + listaProdutos();
     h += "</section>";
     // dados
-    const pessoasLog = ativos().filter((p) => p.departamento_id === "logistica" || eGestor(p));
+    const pessoasLog = ativos().filter((p) => ["logistica", "comercial"].includes(p.departamento_id) || eGestor(p));
     h += '<div class="props">' +
       '<label for="enc-tipo">Tipo</label><select id="enc-tipo"' + dis + ">" + Object.entries(TIPOS_ENC).map(([k, r]) => '<option value="' + k + '"' + (e.tipo === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
       '<label for="enc-prio">Prioridade</label><select id="enc-prio"' + dis + ">" + Object.entries(PRIORIDADES).map(([k, r]) => '<option value="' + k + '"' + (e.prioridade === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
@@ -249,6 +256,7 @@ export function criarLogistica(ctx) {
 
   function painelRota(a) {
     const hoje = ymd(new Date());
+    const trata = podeTratar();
     const cand = porTratar().filter((e) => e.estado !== "em_rota").sort((x, y) => String(x.data_prevista || "9999").localeCompare(String(y.data_prevista || "9999")));
     const ls = locais(), sede = ls.find((l) => l.tipo === "sede") || ls[0];
     let c = '<div class="p-topo"><span class="migalha"><i></i>Logística</span><button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + '</button></div><h2 style="margin:0">Planear rota</h2>' +
@@ -256,7 +264,8 @@ export function criarLogistica(ctx) {
       '<form class="form" id="form-rota" novalidate><div class="campos-2"><div class="campo"><label for="nr-data">Dia</label><input id="nr-data" type="date" value="' + hoje + '"></div><div class="campo"><label for="nr-titulo">Nome</label><input id="nr-titulo" placeholder="Ex.: Porto e Gaia" autocomplete="off"></div></div>' +
       '<div class="campos-2"><div class="campo"><label for="nr-partida">Partida</label><select id="nr-partida">' + ls.filter((l) => l.morada).map((l) => '<option value="' + l.id + '"' + (l.id === sede?.id ? " selected" : "") + ">" + esc(l.nome) + "</option>").join("") + "</select></div>" +
       '<div class="campo"><label for="nr-fim">Terminar</label><select id="nr-fim"><option value="voltar">Voltar à partida</option><option value="ultima">Na última paragem</option>' + ls.filter((l) => l.morada).map((l) => '<option value="' + l.id + '">Em ' + esc(l.nome) + "</option>").join("") + "</select></div></div>" +
-      '<div class="campo"><span class="rot">Encomendas por entregar</span><div class="ev-pessoas">' + (cand.length ? cand.map((e) => '<label class="chk-txt"><input type="checkbox" name="nr-enc" value="' + e.id + '"' + (e.estado === "pronta" || (a.pre || []).includes(e.id) ? " checked" : "") + (e.morada ? "" : " disabled") + "> " + ref(e) + " · " + esc(e.cliente_nome) + (e.morada ? "" : " (sem morada)") + "</label>").join("") : '<span class="muted">Não há encomendas por entregar.</span>') + "</div></div>" +
+      '<div class="campo"><span class="rot">Encomendas por entregar</span><div class="ev-pessoas">' + (cand.length ? cand.map((e) => { const bloq = !e.morada || (!trata && e.estado !== "pronta"), marcada = !bloq && ((a.pre || []).includes(e.id) || (trata && e.estado === "pronta"));
+        return '<label class="chk-txt"><input type="checkbox" name="nr-enc" value="' + e.id + '"' + (marcada ? " checked" : "") + (bloq ? " disabled" : "") + "> " + ref(e) + " · " + esc(e.cliente_nome) + (!e.morada ? " (sem morada)" : !trata && e.estado !== "pronta" ? " (ainda não está pronta)" : "") + "</label>"; }).join("") : '<span class="muted">Não há encomendas por entregar.</span>') + "</div></div>" +
       '<div class="campo"><span class="rot">Locais (barbearias, armazém…)</span><div class="ev-pessoas">' + ls.map((l) => '<label class="chk-txt"><input type="checkbox" name="nr-local" value="' + l.id + '"' + (l.morada ? "" : " disabled") + "> " + esc(l.nome) + (l.morada ? "" : " (sem morada)") + "</label>").join("") + "</div></div>" +
       '<div class="campo"><label for="nr-extra">Outras moradas (uma por linha)</label><textarea id="nr-extra" placeholder="Ex.: Rua de Santa Catarina 100, 4000-447 Porto"></textarea></div>' +
       '<div class="acts"><button class="btn pri" type="submit"' + (G.aCalcular ? " disabled" : "") + ">" + (G.aCalcular ? esc(G.aCalcular) : "Calcular a rota") + '</button><button class="btn sec" type="button" data-acao="fechar">Cancelar</button></div></form>';
@@ -319,7 +328,7 @@ export function criarLogistica(ctx) {
       G.rotas[guardada.id] = guardada;
       for (const e of encs) if (["pronta", "em_preparacao", "nova"].includes(e.estado)) await gravarEnc(e.id, { rota_id: guardada.id, ...(e.estado === "pronta" ? { estado: "em_rota" } : {}) });
       G.aCalcular = null; fechar(); location.hash = "logistica-rota:" + guardada.id;
-      toast("Rota calculada: " + guardada.paragens.length + " paragens, " + km(guardada.distancia_m));
+      toast("Rota calculada: " + nPar(guardada.paragens.length) + ", " + km(guardada.distancia_m));
     } catch (e) { G.aCalcular = null; renderPainel(true); render(); falha(e); }
   }
 

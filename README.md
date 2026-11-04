@@ -24,6 +24,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Registo de contactos, que pode criar uma tarefa com o próximo passo.
   - Funil de vendas.
   - Análise: vendas por mês e por linha de negócio, mais e menos vendidos, ofertas, devoluções, clientes a contactar, aniversários e clientes e leads por distrito.
+  - Mapa: clientes, clientes ativos, leads e vendas por distrito, concelho e freguesia (limites oficiais CAOP 2025). Toca num distrito para ver os concelhos e num concelho para ver as freguesias e cada cliente no mapa. O botão «Localizar moradas» procura as moradas no mapa e preenche a freguesia.
   - Importação do SAF-T do Multixop. Só a administração, o CEO e o departamento Comercial veem o CRM.
 - **Mensagens:** canal Geral, um canal por departamento (o departamento e a direção) e conversas diretas.
   - Menções com @nome, que avisam a pessoa mencionada.
@@ -38,6 +39,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - O Comercial e a direção enviam a encomenda com os artigos, a morada, o número da fatura e o ficheiro da fatura (PDF ou fotografia). A Logística recebe um aviso.
   - A Logística marca os artigos à medida que os prepara e muda o estado: Nova, Em preparação, Pronta, Em rota, Entregue. Quem pediu é avisado quando fica pronta e quando é entregue.
   - O Comercial só altera ou elimina as suas encomendas enquanto estão «Nova». Depois disso, só a pode cancelar.
+  - O Comercial também faz entregas: vê e planeia rotas, junta encomendas prontas e marca-as como entregues. Preparar os artigos continua a ser da Logística.
   - Rotas: escolhes as encomendas e os locais (barbearias, armazém, outras moradas) e a app põe as paragens pela ordem mais curta, com mapa, quilómetros e tempo. Abre a navegação no Google Maps (todas as paragens) ou no Waze (uma a uma). Ao marcar uma paragem como feita, a encomenda passa a «Entregue».
   - Locais fixos: sede, 26 Tech, Avenida da República e as barbearias. Falta preencher a morada das barbearias em Logística → Locais.
 - **Modelos sugeridos:** rotinas de cada marca, rotinas da Logística e os problemas encontrados nas auditorias aos sites.
@@ -85,6 +87,13 @@ O editor do Supabase sugere um nome automático (por exemplo «hyper-function»)
 
 As moradas são procuradas no mapa com o OpenStreetMap e os trajetos são calculados pelo serviço público OSRM. Ambos são gratuitos e não precisam de conta.
 
+### 3f. Mapa de clientes
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/06-mapa.sql` → **Run**.
+2. Corre também outra vez o `supabase/05-logistica.sql`, para o Comercial passar a ver e fazer rotas.
+3. Na app: **Comercial** → **Mapa** → **Localizar moradas**. Deixa a página aberta até terminar (cerca de um segundo por morada). Fica guardado para toda a equipa.
+
+Os clientes vindos do Multixop só aparecem no mapa depois de terem código postal ou concelho na ficha, porque o SAF-T exportado não traz a localidade.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -113,6 +122,7 @@ js/api.js                                   ligação ao Supabase
 js/demo.js                                  modo de demonstração (?demo)
 js/crm.js · js/chat.js · js/agenda.js       Comercial, Mensagens e Agenda
 js/logistica.js · js/geo.js                 Logística, moradas no mapa e rotas
+js/mapa.js · geo/                           mapa do Comercial e limites CAOP 2025 (DGT), simplificados
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor
@@ -121,5 +131,6 @@ supabase/functions/                         funções de servidor
 A chave em `js/config.js` é a chave **publishable**, pública por natureza. **Nunca** coloques neste repositório a chave secret / service_role nem a palavra-passe da base de dados.
 
 ## Próximas fases
-4. Mapa de clientes por concelho e freguesia (precisa das moradas preenchidas no CRM).
-5. Marketing, Operacional (fornecedores) e Tecnológico.
+- Operacional: fornecedores e contactos com empresas.
+- Financeiro: custos fixos e despesas mensais.
+- Marketing (precisa da exportação da página do Notion).

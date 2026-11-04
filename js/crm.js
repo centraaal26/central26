@@ -1,5 +1,6 @@
 // Central 26 — CRM comercial: clientes e leads, ficha, funil, análise de vendas e importação do SAF-T.
 import { MES, MES_L, ymd, normalizar, dataLonga, haQuanto, eGestor } from "./dados.js";
+import { criarMapaCrm } from "./mapa.js";
 
 export const DISTRITOS = ["Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", "Évora", "Faro", "Guarda", "Leiria", "Lisboa",
   "Portalegre", "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu", "Açores", "Madeira"];
@@ -166,13 +167,15 @@ export function criarCrm(ctx) {
   }
   const adiar = (k, fn, ms = 700) => { clearTimeout(timers[k]); timers[k] = setTimeout(fn, ms); };
 
+  const MAPA = criarMapaCrm({ C, S, esc, I, toast, falha, render, abrir, api, visiveis, statsDe, eur, num, podeLocalizar: () => podeCrm(S.eu) });
+
   /* ============================== Vistas ============================== */
   function vista() {
     if (C.estado === "por-carregar") carregar();
     const ref = C.estado === "pronto" ? calc().ref : "";
     let h = '<div class="cab"><div><div class="eyebrow neutro">Departamento Comercial' + (ref ? " · faturação até " + esc(rotData(ref)) : "") + "</div><h1>Comercial</h1></div>" +
       (C.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="crm-novo">' + I.plus + "Novo cliente ou lead</button></div>" : "") + "</div>";
-    const tabs = [["clientes", "Clientes e leads"], ["funil", "Funil"], ["analise", "Análise"]];
+    const tabs = [["clientes", "Clientes e leads"], ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"]];
     if (podeImportar(S.eu)) tabs.push(["importar", "Importar"]);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="crm-tab" data-tab="' + k + '" aria-selected="' + (C.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (C.estado === "erro") {
@@ -186,6 +189,7 @@ export function criarCrm(ctx) {
     }
     if (C.tab === "funil") return h + vistaFunil();
     if (C.tab === "analise") return h + vistaAnalise();
+    if (C.tab === "mapa") return h + MAPA.vista();
     if (C.tab === "importar") return h + vistaImportar();
     return h + vistaClientes();
   }
@@ -520,6 +524,7 @@ export function criarCrm(ctx) {
     "cf-freg": "freguesia", "cf-conc": "concelho", "cf-nif": "nif", "cf-notas": "notas", "cf-nome": "nome" };
 
   function clique(acao, el) {
+    if (MAPA.clique(acao, el)) return true;
     const id = el.dataset.id;
     switch (acao) {
       case "crm-tab": C.tab = el.dataset.tab; render(); return true;
@@ -555,6 +560,7 @@ export function criarCrm(ctx) {
   }
 
   function mudar(e) {
+    if (MAPA.mudar(e)) return true;
     const t = e.target, id = S.aberto?.tipo === "cliente" ? S.aberto.id : null;
     const filtros = { "crm-fetapa": "fEtapa", "crm-festado": "fEstado", "crm-fdist": "fDistrito", "crm-fresp": "fResp", "crm-ordem": "ordem", "crm-fundist": "funilDistrito", "crm-funresp": "funilResp", "crm-periodo": "periodo" };
     if (filtros[t.id]) { C[filtros[t.id]] = t.value; C.limite = 150; render(); return true; }
@@ -613,6 +619,6 @@ export function criarCrm(ctx) {
   }
   function mudarEtapa(id, etapa) { if (C.clientes[id] && C.clientes[id].etapa !== etapa) gravar(id, { etapa }); }
 
-  function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
+  function reiniciar() { MAPA.reiniciar(); if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
   return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, reiniciar, estado: () => C.estado };
 }

@@ -60,7 +60,7 @@ export async function localizar(morada) {
       if (bom) { const v = { lat: +bom.lat, lng: +bom.lon, rotulo: bom.display_name, aproximada }; cache[k] = v; guardar(); return v; }
     } catch { /* tenta a alternativa */ }
     try {
-      const r = await json(PHOTON + "?limit=5&lang=pt&q=" + encodeURIComponent(q + ", Portugal"));
+      const r = await json(PHOTON + "?limit=5&lang=default&q=" + encodeURIComponent(q + ", Portugal"));
       const bom = escolher((r?.features || []).filter((f) => (f.properties?.countrycode || "").toUpperCase() === "PT"),
         (f) => [f.properties.city, f.properties.district, f.properties.locality, f.properties.type === "city" ? f.properties.name : ""], (f) => f.properties.postcode, alvo);
       if (bom) {

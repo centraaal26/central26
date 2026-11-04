@@ -4,8 +4,8 @@
 -- Pode voltar a ser corrido sem apagar dados.
 --
 -- Quem vê as encomendas: direção, Logística, Comercial e quem as criou.
--- Quem cria: direção, Comercial e Logística. Quem trata (prepara e entrega): direção e Logística.
--- Rotas e locais: direção e Logística.
+-- Quem cria: direção, Comercial e Logística. Quem prepara (artigos e estado): direção e Logística.
+-- Rotas, entregas e locais: direção, Logística e Comercial (o Comercial também faz entregas).
 -- =====================================================================
 
 create or replace function public.e_logistica() returns boolean
@@ -15,6 +15,10 @@ $$;
 create or replace function public.pode_encomendas() returns boolean
 language sql stable security definer set search_path = public as $$
   select public.e_logistica() or coalesce(public.meu_departamento() = 'comercial', false)
+$$;
+create or replace function public.pode_rotas() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.pode_encomendas()
 $$;
 
 -- ---------------------------------------------------------------------
@@ -91,11 +95,25 @@ begin
     return new;
   end if;
   new.numero := old.numero; new.criado_por := old.criado_por; new.criado_em := old.criado_em;
-  -- o Comercial só mexe nas suas encomendas enquanto estão «nova»; preparar e entregar é da Logística
+  -- Quem não é da Logística:
+  --  · entrega: pode pôr em rota, entregar e voltar atrás numa encomenda já pronta (só estado, rota e coordenadas);
+  --  · as suas encomendas: altera tudo enquanto estão «nova» e pode sempre cancelá-las.
   if auth.uid() is not null and not public.e_logistica() then
-    if old.criado_por is distinct from auth.uid() then raise exception 'Só a Logística e a direção alteram encomendas de outras pessoas.'; end if;
-    if old.estado <> 'nova' and new.estado <> 'cancelada' then raise exception 'Esta encomenda já está com a Logística. Pede as alterações à Logística ou cancela-a.'; end if;
-    if new.estado not in ('nova','cancelada') then raise exception 'Só a Logística muda o estado da encomenda.'; end if;
+    if public.pode_rotas() and old.estado in ('pronta','em_rota','entregue') and new.estado in ('pronta','em_rota','entregue')
+       and (to_jsonb(new) - array['estado','rota_id','lat','lng','morada_geo','atualizado_em','atualizado_por','entregue_em','entregue_por'])
+           = (to_jsonb(old) - array['estado','rota_id','lat','lng','morada_geo','atualizado_em','atualizado_por','entregue_em','entregue_por']) then
+      null; -- entrega
+    elsif public.pode_rotas() and new.estado is not distinct from old.estado
+       and (to_jsonb(new) - array['rota_id','lat','lng','morada_geo','atualizado_em','atualizado_por'])
+           = (to_jsonb(old) - array['rota_id','lat','lng','morada_geo','atualizado_em','atualizado_por']) then
+      null; -- juntar a uma rota ou guardar a localização
+    elsif public.pode_rotas() and new.estado in ('em_rota','entregue') and old.estado not in ('pronta','em_rota','entregue') then
+      raise exception 'A encomenda % ainda não está pronta. Só pode ser entregue depois de a Logística a preparar.', 'E-' || lpad(old.numero::text, 4, '0');
+    else
+      if old.criado_por is distinct from auth.uid() then raise exception 'Só a Logística e a direção alteram encomendas de outras pessoas.'; end if;
+      if old.estado <> 'nova' and new.estado <> 'cancelada' then raise exception 'Esta encomenda já está com a Logística. Pede as alterações à Logística ou cancela-a.'; end if;
+      if new.estado not in ('nova','cancelada') then raise exception 'Só a Logística prepara a encomenda. Podes entregá-la quando estiver pronta.'; end if;
+    end if;
   end if;
   if new.morada is distinct from old.morada and new.morada_geo is not distinct from old.morada_geo then
     new.lat := null; new.lng := null; new.morada_geo := '';
@@ -193,7 +211,7 @@ alter table public.log_rotas      enable row level security;
 drop policy if exists log_locais_ler on public.log_locais;
 create policy log_locais_ler on public.log_locais for select to authenticated using (public.pode_encomendas());
 drop policy if exists log_locais_gerir on public.log_locais;
-create policy log_locais_gerir on public.log_locais for all to authenticated using (public.e_logistica()) with check (public.e_logistica());
+create policy log_locais_gerir on public.log_locais for all to authenticated using (public.pode_rotas()) with check (public.pode_rotas());
 
 drop policy if exists log_enc_ler on public.log_encomendas;
 create policy log_enc_ler on public.log_encomendas for select to authenticated using (public.pode_encomendas() or criado_por = auth.uid());
@@ -201,15 +219,15 @@ drop policy if exists log_enc_criar on public.log_encomendas;
 create policy log_enc_criar on public.log_encomendas for insert to authenticated with check (public.pode_encomendas());
 drop policy if exists log_enc_editar on public.log_encomendas;
 create policy log_enc_editar on public.log_encomendas for update to authenticated
-  using (public.e_logistica() or criado_por = auth.uid()) with check (public.e_logistica() or criado_por = auth.uid());
+  using (public.pode_rotas() or criado_por = auth.uid()) with check (public.pode_rotas() or criado_por = auth.uid());
 drop policy if exists log_enc_apagar on public.log_encomendas;
 create policy log_enc_apagar on public.log_encomendas for delete to authenticated
   using (public.e_gestor() or (criado_por = auth.uid() and estado = 'nova'));
 
 drop policy if exists log_rotas_ler on public.log_rotas;
-create policy log_rotas_ler on public.log_rotas for select to authenticated using (public.e_logistica());
+create policy log_rotas_ler on public.log_rotas for select to authenticated using (public.pode_rotas());
 drop policy if exists log_rotas_gerir on public.log_rotas;
-create policy log_rotas_gerir on public.log_rotas for all to authenticated using (public.e_logistica()) with check (public.e_logistica());
+create policy log_rotas_gerir on public.log_rotas for all to authenticated using (public.pode_rotas()) with check (public.pode_rotas());
 
 revoke all on public.log_locais, public.log_encomendas, public.log_rotas from anon;
 grant select, insert, update, delete on public.log_locais, public.log_encomendas, public.log_rotas to authenticated;

@@ -354,7 +354,7 @@ export function criarDemo() {
       const logi = () => { const e = eu(); return eGestor(e) || e.departamento_id === "logistica"; };
       const podeVer = () => { const e = eu(); return logi() || e.departamento_id === "comercial"; };
       return {
-        async carregar() { const x = ler(); if (!podeVer()) return { locais: [], encomendas: [], rotas: [] }; return structuredClone({ locais: x.locais.filter((l) => l.ativo), encomendas: x.encomendas, rotas: logi() ? x.rotas : [] }); },
+        async carregar() { const x = ler(); if (!podeVer()) return { locais: [], encomendas: [], rotas: [] }; return structuredClone({ locais: x.locais.filter((l) => l.ativo), encomendas: x.encomendas, rotas: x.rotas }); },
         encomendas: {
           async criar(o) {
             if (!podeVer()) throw new Error("Sem permissão para criar encomendas.");
@@ -367,7 +367,18 @@ export function criarDemo() {
           },
           async atualizar(id, campos) {
             const x = ler(), r = x.encomendas.find((e) => e.id === id); if (!r) throw new Error("A encomenda já não existe.");
-            if (!logi()) { if (r.criado_por !== euId) throw new Error("Só a Logística e a direção alteram encomendas de outras pessoas."); if (r.estado !== "nova" && campos.estado !== "cancelada") throw new Error("Esta encomenda já está com a Logística. Pede as alterações à Logística ou cancela-a."); }
+            if (!logi()) {
+              const so = (k) => Object.keys(campos).every((c) => k.includes(c));
+              const ENT = ["pronta", "em_rota", "entregue"];
+              const entrega = ENT.includes(r.estado) && ENT.includes(campos.estado ?? r.estado) && so(["estado", "rota_id", "lat", "lng", "morada_geo"]);
+              const juntar = !("estado" in campos && campos.estado !== r.estado) && so(["rota_id", "lat", "lng", "morada_geo"]);
+              if (!entrega && !juntar) {
+                if (["em_rota", "entregue"].includes(campos.estado) && !ENT.includes(r.estado)) throw new Error("A encomenda E-" + String(r.numero).padStart(4, "0") + " ainda não está pronta. Só pode ser entregue depois de a Logística a preparar.");
+                if (r.criado_por !== euId) throw new Error("Só a Logística e a direção alteram encomendas de outras pessoas.");
+                if (r.estado !== "nova" && campos.estado !== "cancelada") throw new Error("Esta encomenda já está com a Logística. Pede as alterações à Logística ou cancela-a.");
+                if (campos.estado && !["nova", "cancelada"].includes(campos.estado)) throw new Error("Só a Logística prepara a encomenda. Podes entregá-la quando estiver pronta.");
+              }
+            }
             const antes = r.estado;
             if ("morada" in campos && campos.morada !== r.morada && !("morada_geo" in campos)) Object.assign(r, { lat: null, lng: null, morada_geo: "" });
             Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId });
@@ -379,7 +390,7 @@ export function criarDemo() {
           async apagar(id) { const x = ler(); x.encomendas = x.encomendas.filter((e) => e.id !== id); guardar(); },
         },
         rotas: {
-          async criar(o) { if (!logi()) throw new Error("Só a Logística e a direção gerem rotas."); const x = ler(), r = { id: uid(), estado: "planeada", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...o }; x.rotas.unshift(r); guardar(); return structuredClone(r); },
+          async criar(o) { if (!podeVer()) throw new Error("Sem permissão para gerir rotas."); const x = ler(), r = { id: uid(), estado: "planeada", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...o }; x.rotas.unshift(r); guardar(); return structuredClone(r); },
           async atualizar(id, campos) { const x = ler(), r = x.rotas.find((e) => e.id === id); Object.assign(r, campos, { atualizado_em: agora() }); guardar(); return structuredClone(r); },
           async apagar(id) { const x = ler(); x.rotas = x.rotas.filter((e) => e.id !== id); guardar(); },
         },

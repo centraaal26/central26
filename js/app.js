@@ -254,7 +254,7 @@ function lerRota(desenhar = true) {
   if (m) {
     const [, r, p] = m;
     if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes"].includes(r)) rota = r;
-    else if (r === "comercial") { rota = "comercial"; param = ["funil", "analise", "importar", "clientes"].includes(p) ? p : null; }
+    else if (r === "comercial") { rota = "comercial"; param = ["funil", "mapa", "analise", "importar", "clientes"].includes(p) ? p : null; }
     else if (r === "cliente" && p) { rota = "cliente"; param = p; }
     else if (r === "chat") { rota = "chat"; param = p || null; }
     else if (r === "agenda") { rota = "agenda"; param = p || null; }
@@ -267,12 +267,12 @@ function lerRota(desenhar = true) {
   if (rota !== S.rota || param !== S.param) { S.q = ""; S.filtroResp = ""; S.mostrarFeitas = false; S.selecao = null; }
   fecharMenu();
   S.rota = rota; S.param = param;
+  if (rota === "comercial" && param && S.crm) S.crm.tab = param;
+  if (rota === "logistica" && ["encomendas", "rotas", "locais"].includes(param) && S.log) S.log.tab = param;
   if (!desenhar) return;
   if (rota === "tarefa" && S.fase === "app") { abrirTarefa(param); return; }
-  if (rota === "comercial" && param && S.crm) S.crm.tab = param;
   if (rota === "cliente" && S.fase === "app") { if (S.crm) S.crm.tab = "clientes"; S.aberto = { tipo: "cliente", id: param }; }
   if (rota === "agenda" && param && S.fase === "app") S.aberto = { tipo: "evento", id: param };
-  if (rota === "logistica" && ["encomendas", "rotas", "locais"].includes(param) && S.log) S.log.tab = param;
   if (rota === "encomenda" && S.fase === "app") { if (S.log) S.log.tab = "encomendas"; S.aberto = { tipo: "encomenda", id: param }; }
   if (rota === "chat" && S.fase === "app") CHAT.aoEntrarNaRota(param);
   render();

@@ -218,6 +218,33 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    aud: {
+      async carregar() {
+        const [itens, plano, referencias, config] = await Promise.all([
+          todas(() => sb.from("tec_itens").select("*").order("id")),
+          ok(await sb.from("tec_plano").select("*").order("semana")),
+          ok(await sb.from("tec_referencia").select("*").order("ordem")),
+          ok(await sb.from("tec_config").select("*").eq("id", 1).maybeSingle()),
+        ]);
+        return { itens, plano, referencias, config: config || { inicio: null } };
+      },
+      async historico(id) { return ok(await sb.from("tec_historico").select("*").eq("item_id", id).order("criado_em", { ascending: false }).limit(60)); },
+      itens: {
+        async criar(i) { return ok(await sb.from("tec_itens").insert(i).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("tec_itens").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("tec_itens").delete().eq("id", id)); },
+      },
+      async plano(semana, campos) { return ok(await sb.from("tec_plano").update(campos).eq("semana", semana).select().single()); },
+      async inicio(data) { return ok(await sb.from("tec_config").update({ inicio: data || null, atualizado_em: new Date().toISOString() }).eq("id", 1).select().single()); },
+      async importar(p) { return ok(await sb.rpc("tec_importar", { p })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-aud")
+          .on("postgres_changes", { event: "*", schema: "public", table: "tec_itens" }, (p) => cb("itens", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "tec_plano" }, (p) => cb("plano", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     async empregados(acao, dados) {
       const chamada = {
         criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",

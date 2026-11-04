@@ -42,7 +42,13 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - O Comercial também faz entregas: vê e planeia rotas, junta encomendas prontas e marca-as como entregues. Preparar os artigos continua a ser da Logística.
   - Rotas: escolhes as encomendas e os locais (barbearias, armazém, outras moradas) e a app põe as paragens pela ordem mais curta, com mapa, quilómetros e tempo. Abre a navegação no Google Maps (todas as paragens) ou no Waze (uma a uma). Ao marcar uma paragem como feita, a encomenda passa a «Entregue».
   - Locais fixos: sede, 26 Tech, Avenida da República e as barbearias. Falta preencher a morada das barbearias em Logística → Locais.
-- **Modelos sugeridos:** rotinas de cada marca, rotinas da Logística e os problemas encontrados nas auditorias aos sites.
+- **Auditoria dos sites (Tecnológico):** registo dos problemas encontrados nas auditorias, com marca, prioridade (P0 a P3), responsável, estado e semana do plano.
+  - Estados: Novo, Confirmado, Em correção, A aguardar informação, Resolvido, Validado e Aceite pela administração.
+  - Quem tem um item atribuído recebe um aviso, vê o item e avança o estado até «Resolvido». O Tecnológico é avisado para validar.
+  - Nada fecha sem evidência: validar exige descrever a verificação feita. Só a administração aceita um risco, com o motivo registado.
+  - Plano semanal com o progresso de cada semana e aviso quando um P0 passa da semana prevista.
+  - Importação e exportação da folha de acompanhamento em Excel. Os achados de segurança ficam só na base de dados, nunca no GitHub.
+- **Modelos sugeridos:** rotinas de cada marca e rotinas da Logística.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
 
 ## Instalação (uma única vez)
@@ -94,6 +100,13 @@ As moradas são procuradas no mapa com o OpenStreetMap e os trajetos são calcul
 
 Os clientes vindos do Multixop só aparecem no mapa depois de terem código postal ou concelho na ficha, porque o SAF-T exportado não traz a localidade.
 
+### 3g. Auditoria dos sites
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/07-auditoria.sql` → **Run**.
+2. Na app: **Auditoria dos sites** → **Importar** → escolhe a folha de acompanhamento (`Central-Grupo26.xlsx`).
+3. Em **Plano semanal**, indica a data em que começa a semana 1.
+
+A folha da auditoria tem informação de segurança dos sites: guarda-a fora do GitHub (o `.gitignore` já exclui ficheiros `.xlsx`).
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -123,6 +136,7 @@ js/demo.js                                  modo de demonstração (?demo)
 js/crm.js · js/chat.js · js/agenda.js       Comercial, Mensagens e Agenda
 js/logistica.js · js/geo.js                 Logística, moradas no mapa e rotas
 js/mapa.js · geo/                           mapa do Comercial e limites CAOP 2025 (DGT), simplificados
+js/auditoria.js                             registo da auditoria aos sites e plano semanal
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor

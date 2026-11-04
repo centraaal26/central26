@@ -403,6 +403,116 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    aud: (() => {
+      const K = "central26-demo-aud-v1";
+      let d = null;
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const segunda = new Date(); segunda.setDate(segunda.getDate() - ((segunda.getDay() + 6) % 7) - 7);
+          const I = (id, marca, categoria, problema, prioridade, semana, estado = "novo", responsavel_id = null) => ({ id, marca, categoria, problema, evidencia: "Exemplo para demonstração.", correcao: "", dominio: "",
+            origem: "registo", prioridade, impacto: "", esforco: "", responsavel_id, estado, semana, relacionado: [], notas: "", verificacao: "", data_validacao: null, aceite_motivo: "",
+            resolvido_por: null, resolvido_em: null, validado_por: null, validado_em: null, aceite_por: null, aceite_em: null, criado_por: "p-isaac", criado_em: agora(), atualizado_por: "p-isaac", atualizado_em: agora() });
+          d = {
+            config: { inicio: ymd(segunda) },
+            itens: [I("EX-01", "academy", "Conteúdo", "Exemplo · Texto provisório na página de cursos", "P0", 1, "em_correcao", "p-isaac"),
+              I("EX-02", "twentysix", "SEO", "Exemplo · Link do rodapé devolve erro 404", "P1", 2, "resolvido", "p-isaac"),
+              I("EX-03", "grupo", "Continuidade", "Exemplo · Cópias de segurança por testar", "P1", 1, "a_aguardar", "p-samuel"),
+              I("EX-04", "barbearia", "SEO", "Exemplo · Meta description vazia na página inicial", "P2", 4, "novo", "p-goncalo"),
+              I("EX-05", "academy", "Conformidade", "Exemplo · Política de cookies desatualizada", "P1", 5),
+              I("EX-06", "tech", "Acessibilidade", "Exemplo · Imagens sem texto alternativo", "P3", 4)],
+            plano: [["Conter", "Eliminar o que está a prejudicar a marca agora"], ["Fechar percursos", "Garantir que nenhum caminho de conversão termina em erro"], ["Performance", "Reduzir peso e tempo de resposta"],
+              ["SEO estrutural", "Tornar o site legível para o Google"], ["Conformidade", "Fechar o risco legal e de confiança"], ["Redes sociais", "Transformar audiência em procura"],
+              ["Medição", "Passar a decidir com dados"], ["Consolidação", "Deixar o sistema a funcionar com rotina"]].map(([tema, objetivo], i) => ({ semana: i + 1, tema, objetivo, tarefas: "", entregavel: "", estado: "" })),
+            referencias: [], historico: [], seq: 1,
+          };
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const pode = () => { const e = eu(); return eGestor(e) || e.departamento_id === "tecnologico"; };
+      const hist = (item_id, campo, de, para, nota = "") => ler().historico.unshift({ id: d.seq++, item_id, autor_id: euId, campo, de, para, nota, criado_em: agora() });
+      const LIVRES = ["estado", "notas", "verificacao"];
+      function aplicar(r, campos) {
+        const antes = { ...r }, novo = { ...r, ...campos };
+        if (!pode()) {
+          if (Object.keys(campos).some((k) => !LIVRES.includes(k))) throw new Error("Só o Tecnológico e a direção alteram os dados do item. Podes mudar o estado e escrever notas.");
+          if (["validado", "aceite"].includes(novo.estado) || ["validado", "aceite"].includes(antes.estado)) throw new Error("Só o Tecnológico e a direção validam ou reabrem itens fechados.");
+        }
+        if (novo.estado === "validado" && antes.estado !== "validado") {
+          if (!String(novo.verificacao || "").trim()) throw new Error("Para validar, descreve a evidência da verificação (o que foi testado, quando e com que resultado).");
+          Object.assign(novo, { validado_por: euId, validado_em: agora(), data_validacao: novo.data_validacao || ymd(new Date()) });
+        } else if (novo.estado !== "validado") Object.assign(novo, { validado_por: null, validado_em: null, ...(antes.estado === "validado" ? { data_validacao: null } : {}) });
+        if (novo.estado === "aceite" && antes.estado !== "aceite") {
+          if (!eGestor(eu())) throw new Error("Só a direção (CEO ou administração) pode aceitar um risco.");
+          if (!String(novo.aceite_motivo || "").trim()) throw new Error("Indica o motivo pelo qual a direção aceita este risco.");
+          Object.assign(novo, { aceite_por: euId, aceite_em: agora() });
+        } else if (novo.estado !== "aceite") Object.assign(novo, { aceite_por: null, aceite_em: null });
+        if (novo.estado === "resolvido" && antes.estado !== "resolvido") Object.assign(novo, { resolvido_por: euId, resolvido_em: agora() });
+        Object.assign(r, novo, { atualizado_por: euId, atualizado_em: agora() });
+        if (antes.estado !== r.estado) {
+          hist(r.id, "estado", antes.estado, r.estado, r.estado === "validado" ? r.verificacao : r.estado === "aceite" ? r.aceite_motivo : "");
+          if (r.estado === "resolvido") db.perfis.filter((p) => p.ativo && p.departamento_id === "tecnologico" && p.id !== euId).forEach((p) => notificar(p.id, "auditoria", "Por validar · " + r.id, nome(euId) + " marcou como resolvido: " + r.problema, "#auditoria-" + r.id));
+          if (["validado", "aceite"].includes(r.estado) && r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "auditoria", r.id + (r.estado === "validado" ? " · Validado" : " · Aceite pela administração"), r.problema, "#auditoria-" + r.id);
+        }
+        if (antes.responsavel_id !== r.responsavel_id) {
+          hist(r.id, "responsavel", antes.responsavel_id ? nome(antes.responsavel_id) : null, r.responsavel_id ? nome(r.responsavel_id) : null);
+          if (r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "auditoria", "Item da auditoria atribuído a ti · " + r.id, r.problema, "#auditoria-" + r.id);
+        }
+        if (antes.prioridade !== r.prioridade) hist(r.id, "prioridade", antes.prioridade, r.prioridade);
+        if (antes.semana !== r.semana) hist(r.id, "semana", String(antes.semana ?? ""), String(r.semana ?? ""));
+      }
+      return {
+        async carregar() {
+          const x = ler(), p = pode();
+          const itens = x.itens.filter((i) => p || i.responsavel_id === euId);
+          return structuredClone({ itens, plano: p || itens.length ? x.plano : [], referencias: p ? x.referencias : [], config: x.config });
+        },
+        async historico(id) { return structuredClone(ler().historico.filter((h) => h.item_id === id)); },
+        itens: {
+          async criar(i) {
+            if (!pode()) throw new Error("Só o Tecnológico e a direção criam itens no registo.");
+            const x = ler(); if (x.itens.some((y) => y.id === i.id)) throw new Error("Já existe um item com o código " + i.id + ".");
+            const r = { marca: "grupo", categoria: "", evidencia: "", correcao: "", dominio: "", origem: "manual", prioridade: "P2", impacto: "", esforco: "", responsavel_id: null, estado: "novo", semana: null, relacionado: [], notas: "",
+              verificacao: "", data_validacao: null, aceite_motivo: "", ...i, criado_por: euId, criado_em: agora(), atualizado_por: euId, atualizado_em: agora() };
+            x.itens.push(r); hist(r.id, "criado", null, r.estado);
+            if (r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "auditoria", "Item da auditoria atribuído a ti · " + r.id, r.problema, "#auditoria-" + r.id);
+            guardar(); gravar(db); return structuredClone(r);
+          },
+          async atualizar(id, campos) {
+            const x = ler(), r = x.itens.find((i) => i.id === id); if (!r) throw new Error("O item já não existe.");
+            if (!pode() && r.responsavel_id !== euId) throw new Error("Este item não está atribuído a ti.");
+            aplicar(r, campos); guardar(); gravar(db); return structuredClone(r);
+          },
+          async apagar(id) { if (!pode()) throw new Error("Só o Tecnológico e a direção eliminam itens."); const x = ler(); x.itens = x.itens.filter((i) => i.id !== id); guardar(); },
+        },
+        async plano(semana, campos) { if (!pode()) throw new Error("Só o Tecnológico e a direção alteram o plano."); const r = ler().plano.find((s) => s.semana === semana); Object.assign(r, campos); guardar(); return structuredClone(r); },
+        async inicio(data) { if (!pode()) throw new Error("Só o Tecnológico e a direção alteram o plano."); ler().config.inicio = data || null; guardar(); return structuredClone(d.config); },
+        async importar(p) {
+          if (!pode()) throw new Error("Só o Tecnológico e a direção importam o registo da auditoria.");
+          const x = ler(); let novos = 0, existentes = 0;
+          for (const i of p.itens || []) {
+            const r = x.itens.find((y) => y.id === i.id);
+            if (r) {
+              for (const k of ["categoria", "evidencia", "correcao", "dominio", "impacto", "esforco"]) if (!r[k] && i[k]) r[k] = i[k];
+              r.relacionado = [...new Set([...(r.relacionado || []), ...(i.relacionado || [])])].sort(); existentes++;
+            } else {
+              const estado = ["validado", "aceite"].includes(i.estado) ? "resolvido" : i.estado || "novo";
+              x.itens.push({ marca: "grupo", categoria: "", evidencia: "", correcao: "", dominio: "", origem: "registo", prioridade: "P2", impacto: "", esforco: "", responsavel_id: null, semana: null, relacionado: [], notas: "",
+                verificacao: "", data_validacao: null, aceite_motivo: "", ...i, estado, criado_por: euId, criado_em: agora(), atualizado_por: euId, atualizado_em: agora() });
+              hist(i.id, "criado", null, estado); novos++;
+            }
+          }
+          for (const s of p.plano || []) { const r = x.plano.find((y) => y.semana === s.semana); if (r) Object.assign(r, s); else x.plano.push({ estado: "", ...s }); }
+          x.plano.sort((a, b) => a.semana - b.semana);
+          for (const ref of p.referencias || []) { x.referencias = x.referencias.filter((y) => y.tipo !== ref.tipo).concat([{ ...ref, atualizado_em: agora() }]); }
+          x.referencias.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+          guardar(); return { novos, existentes, semanas: (p.plano || []).length, referencias: (p.referencias || []).length };
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

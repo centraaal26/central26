@@ -824,3 +824,47 @@ details.aceitar p.muted{font-size:13px;margin:0 0 8px}
   .resumo-aud .kpi span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .resumo-aud .kpi b{font-size:17px}
 }
+
+/* ---------- Operacional · fornecedores ---------- */
+.resumo-op{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+.op-linha{display:grid;grid-template-columns:minmax(0,1fr) auto auto 170px;gap:6px 14px;align-items:center;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.op-linha:hover{border-color:var(--line-strong)}
+.op-linha.fechado{opacity:.6}
+.op-c{display:flex;align-items:center;gap:8px;color:var(--faint)}
+.op-c small{font-size:12px;color:var(--muted)}
+.op-linha .aud-r{flex-direction:column;align-items:flex-end;gap:2px}
+.est-op{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap;background:var(--sunken);color:var(--muted)}
+.est-op.f-ativo,.est-op.p-decidido{background:var(--ok-bg);color:var(--ok)}
+.est-op.f-potencial,.est-op.p-aberto{background:color-mix(in srgb,var(--c-tech) 14%,var(--surface));color:var(--c-tech)}
+.est-op.f-contactado,.est-op.f-proposta,.est-op.p-a_comparar{background:var(--warn-bg);color:var(--warn)}
+.est-op.f-negociacao{background:color-mix(in srgb,var(--c-twentysix) 16%,var(--surface));color:var(--c-twentysix)}
+.est-op.f-inativo,.est-op.p-cancelado{background:var(--sunken);color:var(--faint)}
+.estrelas{color:var(--c-twentysix);font-size:12.5px;letter-spacing:1px;white-space:nowrap}
+.estrelas i{font-style:normal;color:var(--line-strong)}
+.op-acoes{flex-wrap:wrap}
+.op-acoes .btn{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chips-sel{display:flex;flex-wrap:wrap;gap:6px 16px}
+.chips-sel .chk-txt{flex:0 0 auto}
+.crm-tabela.prop-tab{min-width:900px;font-size:13px}
+.prop-tab td{padding:6px 5px;vertical-align:middle}
+.prop-tab tr.escolhida td{background:var(--ok-bg)}
+.prop-tab tr.recusada td{opacity:.55}
+.prop-tab tr.melhor td:first-child{box-shadow:inset 3px 0 0 var(--ok)}
+.inp.mini,.sel.mini{height:32px;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:0 6px;background:var(--surface);outline:none;max-width:150px}
+.inp.mini.n{width:96px;text-align:right;font-family:var(--f-mono)}
+.inp.mini:focus{border-color:var(--b)}
+.chk-txt.mini{font-size:12px;margin-top:4px;flex:none}
+.btn.mini{height:30px;padding:0 10px;font-size:12.5px}
+.acts-tab{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
+.op-cand{max-height:260px;overflow:auto}
+.texto-pedido{min-height:220px;font-size:13.5px}
+.form-contacto{display:flex;flex-direction:column;gap:8px}
+.form-contacto .linha-form .inp[type=date]{flex:0 0 150px}
+@media (max-width:820px){
+  .op-linha{grid-template-columns:minmax(0,1fr) auto;padding:11px 12px}
+  .op-linha .aud-t{grid-column:1/-1}
+  .op-linha .op-c{grid-column:1;grid-row:2}
+  .op-linha .aud-m{grid-column:2;grid-row:2}
+  .op-linha .aud-r{grid-column:1/-1;align-items:flex-start}
+  .resumo-op{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

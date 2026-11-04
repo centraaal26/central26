@@ -1,5 +1,6 @@
 // Central 26 — Tecnológico: registo da auditoria aos sites, plano semanal, referência e importação da folha de acompanhamento.
 import { MARCA, MARCAS, MES, ymd, normalizar, haQuanto, eGestor } from "./dados.js";
+import { carregarXlsx } from "./xlsx.js";
 
 export const ESTADOS_AUD = { novo: "Novo", confirmado: "Confirmado", em_correcao: "Em correção", a_aguardar: "A aguardar informação", resolvido: "Resolvido", validado: "Validado", aceite: "Aceite pela administração" };
 const PASSOS = ["confirmado", "em_correcao", "a_aguardar", "resolvido"];
@@ -11,18 +12,6 @@ const n = (s) => normalizar(s).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ")
 const dataCurta = (s) => { if (!s) return ""; const [y, m, d] = String(s).slice(0, 10).split("-").map(Number); return d + " " + MES[m - 1] + (y !== new Date().getFullYear() ? " " + y : ""); };
 
 export const podeAuditoria = (eu) => !!eu && (eGestor(eu) || eu.departamento_id === "tecnologico");
-
-// SheetJS só é carregado quando alguém importa ou exporta a folha
-let sheetjs = null;
-function carregarXlsx() {
-  if (sheetjs) return sheetjs;
-  sheetjs = new Promise((ok, falha) => {
-    const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-    s.onload = () => ok(window.XLSX); s.onerror = () => { sheetjs = null; falha(new Error("Não foi possível carregar o leitor de Excel. Verifica a ligação à Internet.")); };
-    document.head.appendChild(s);
-  });
-  return sheetjs;
-}
 
 export function criarAuditoria(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ } = ctx;

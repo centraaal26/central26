@@ -48,6 +48,10 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Nada fecha sem evidência: validar exige descrever a verificação feita. Só a administração aceita um risco, com o motivo registado.
   - Plano semanal com o progresso de cada semana e aviso quando um P0 passa da semana prevista.
   - Importação e exportação da folha de acompanhamento em Excel. Os achados de segurança ficam só na base de dados, nunca no GitHub.
+- **Fornecedores (Operacional):** lista de fornecedores com categoria, estado, marcas que servem, contactos, condições e avaliação.
+  - Registo de cada contacto (chamada, email, reunião, visita) e data para voltar a contactar, que aparece no início.
+  - Pedidos de orçamento: juntas os fornecedores, registas as propostas (preço, prazo de entrega, condições, validade) e comparas lado a lado. A app assinala a mais barata e o texto do pedido já vem escrito para enviar por email.
+  - Só a direção e o Operacional veem os fornecedores.
 - **Modelos sugeridos:** rotinas de cada marca e rotinas da Logística.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
 
@@ -107,6 +111,10 @@ Os clientes vindos do Multixop só aparecem no mapa depois de terem código post
 
 A folha da auditoria tem informação de segurança dos sites: guarda-a fora do GitHub (o `.gitignore` já exclui ficheiros `.xlsx`).
 
+### 3h. Fornecedores
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/08-operacional.sql` → **Run**.
+2. Na app: **Fornecedores** → **Importar** → escolhe a lista inicial (`central26-fornecedores-iniciais.xlsx`, feita a partir do SAF-T e das folhas de despesas). Também há um modelo em branco para descarregar.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -137,6 +145,7 @@ js/crm.js · js/chat.js · js/agenda.js       Comercial, Mensagens e Agenda
 js/logistica.js · js/geo.js                 Logística, moradas no mapa e rotas
 js/mapa.js · geo/                           mapa do Comercial e limites CAOP 2025 (DGT), simplificados
 js/auditoria.js                             registo da auditoria aos sites e plano semanal
+js/fornecedores.js · js/xlsx.js             fornecedores, pedidos de orçamento e leitura de Excel
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor
@@ -145,6 +154,5 @@ supabase/functions/                         funções de servidor
 A chave em `js/config.js` é a chave **publishable**, pública por natureza. **Nunca** coloques neste repositório a chave secret / service_role nem a palavra-passe da base de dados.
 
 ## Próximas fases
-- Operacional: fornecedores e contactos com empresas.
 - Financeiro: custos fixos e despesas mensais.
 - Marketing (precisa da exportação da página do Notion).

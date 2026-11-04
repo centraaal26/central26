@@ -258,6 +258,45 @@ export function criarApi() {
       if (semFuncao(error)) return invocar("gerir-empregados", { acao, ...dados });
       throw erroPt(error);
     },
+    op: {
+      async carregar() {
+        const [fornecedores, pedidos, propostas] = await Promise.all([
+          todas(() => sb.from("op_fornecedores").select("*").order("nome")),
+          todas(() => sb.from("op_pedidos").select("*").order("criado_em", { ascending: false })),
+          todas(() => sb.from("op_propostas").select("*").order("pedida_em")),
+        ]);
+        return { fornecedores, pedidos, propostas };
+      },
+      async contactos(fornId) { return ok(await sb.from("op_contactos").select("*").eq("fornecedor_id", fornId).order("data", { ascending: false }).limit(100)); },
+      fornecedores: {
+        async criar(f) { return ok(await sb.from("op_fornecedores").insert(f).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("op_fornecedores").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("op_fornecedores").delete().eq("id", id)); },
+      },
+      contacto: {
+        async criar(c) { return ok(await sb.from("op_contactos").insert(c).select().single()); },
+        async apagar(id) { ok(await sb.from("op_contactos").delete().eq("id", id)); },
+      },
+      pedidos: {
+        async criar(p) { return ok(await sb.from("op_pedidos").insert(p).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("op_pedidos").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("op_pedidos").delete().eq("id", id)); },
+      },
+      propostas: {
+        async criar(p) { return ok(await sb.from("op_propostas").insert(p).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("op_propostas").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("op_propostas").delete().eq("id", id)); },
+      },
+      async escolher(id, decisao) { ok(await sb.rpc("op_escolher", { p_proposta: id, p_decisao: decisao || "" })); },
+      async importar(p) { return ok(await sb.rpc("op_importar", { p })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-op");
+        for (const [t, k] of [["op_fornecedores", "fornecedores"], ["op_pedidos", "pedidos"], ["op_propostas", "propostas"]])
+          canal.on("postgres_changes", { event: "*", schema: "public", table: t }, (p) => cb(k, p.eventType, p.new, p.old));
+        canal.subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     push: {
       async chave() { const r = await invocar("enviar-push", { acao: "chave" }); return r.chave; },
       async registar(endpoint, p256dh, auth, aparelho) {

@@ -513,6 +513,86 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    op: (() => {
+      const K = "central26-demo-op-v1";
+      let d = null;
+      const F = (nome, categoria, estado, extra = {}) => ({ id: uid(), nome, nif: "", categoria, estado, marcas: [], produtos: "", contacto_nome: "", telefone: "", email: "", site: "", morada: "", localidade: "", pais: "Portugal",
+        prazo_pagamento: "", prazo_entrega: "", encomenda_minima: "", avaliacao: null, responsavel_id: null, proximo_contacto: null, notas: "", origem: "manual", criado_por: "p-bruno", criado_em: agora(), atualizado_por: "p-bruno", atualizado_em: agora(), ...extra });
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const hoje = ymd(new Date());
+          const a = F("Exemplo · Transportadora expresso", "Transportes e envios", "ativo", { marcas: ["twentysix", "tech"], produtos: "Envios nacionais em 24 horas", localidade: "Maia", avaliacao: 4, prazo_entrega: "24 horas" });
+          const b = F("Exemplo · Embalagens e cartão", "Matérias-primas e embalagens", "potencial", { marcas: ["twentysix"], produtos: "Caixas de cartão e etiquetas", localidade: "Santa Maria da Feira", responsavel_id: "p-bruno", proximo_contacto: hoje });
+          const c = F("Exemplo · Gráfica digital", "Serviços", "contactado", { marcas: ["barbearia", "academy"], produtos: "Cartões, flyers e lonas", localidade: "Porto" });
+          const p = { id: uid(), numero: 1, titulo: "Exemplo · Caixas de envio para a loja online", descricao: "Caixas de cartão com a marca, dois tamanhos.", categoria: "Matérias-primas e embalagens", marca: "twentysix", quantidade: "500 unidades",
+            prazo: ymd(new Date(Date.now() + 5 * 864e5)), estado: "a_comparar", responsavel_id: "p-bruno", escolhida_id: null, decisao: "", criado_por: "p-bruno", criado_em: agora(), atualizado_em: agora() };
+          const P = (forn, estado, preco, prazo) => ({ id: uid(), pedido_id: p.id, fornecedor_id: forn.id, estado, preco, preco_base: "total", iva_incluido: false, prazo_entrega: prazo, condicoes: "", validade: null, notas: "", pedida_em: agora(), recebida_em: estado === "recebida" ? agora() : null, atualizado_em: agora() });
+          d = { fornecedores: [a, b, c], contactos: [{ id: uid(), fornecedor_id: b.id, tipo: "email", resumo: "Pedido de catálogo e preços enviado.", proximo_passo: "Ligar se não responderem", data: agora(), autor_id: "p-bruno", criado_em: agora() }],
+            pedidos: [p], propostas: [P(b, "recebida", 410, "10 dias úteis"), P(c, "pedida", null, "")], seq: 2 };
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const pode = () => { const e = eu(); return eGestor(e) || e.departamento_id === "operacional"; };
+      const exige = () => { if (!pode()) throw new Error("Só o Operacional e a direção gerem os fornecedores."); };
+      const upd = (lista, id, campos) => { const r = lista.find((x) => x.id === id); if (!r) throw new Error("O registo já não existe."); Object.assign(r, campos, { atualizado_em: agora() }); return r; };
+      return {
+        async carregar() { if (!pode()) return { fornecedores: [], pedidos: [], propostas: [] }; const x = ler(); return structuredClone({ fornecedores: x.fornecedores, pedidos: x.pedidos, propostas: x.propostas }); },
+        async contactos(fid) { exige(); return structuredClone(ler().contactos.filter((c) => c.fornecedor_id === fid).sort((a, b) => b.data.localeCompare(a.data))); },
+        fornecedores: {
+          async criar(f) { exige(); const x = ler(); if (x.fornecedores.some((y) => y.nome.toLowerCase() === f.nome.trim().toLowerCase())) throw new Error("Já existe um fornecedor com este nome."); const r = F(f.nome.trim(), "", "ativo", { ...f, criado_por: euId, atualizado_por: euId }); x.fornecedores.push(r); guardar(); return structuredClone(r); },
+          async atualizar(id, campos) { exige(); const r = upd(ler().fornecedores, id, { ...campos, atualizado_por: euId }); guardar(); return structuredClone(r); },
+          async apagar(id) { exige(); const x = ler(); x.fornecedores = x.fornecedores.filter((f) => f.id !== id); x.propostas = x.propostas.filter((p) => p.fornecedor_id !== id); x.contactos = x.contactos.filter((c) => c.fornecedor_id !== id); guardar(); },
+        },
+        contacto: {
+          async criar(c) { exige(); const r = { id: uid(), tipo: "chamada", proximo_passo: "", data: agora(), autor_id: euId, criado_em: agora(), ...c }; ler().contactos.push(r); guardar(); return structuredClone(r); },
+          async apagar(id) { exige(); d.contactos = ler().contactos.filter((c) => c.id !== id); guardar(); },
+        },
+        pedidos: {
+          async criar(p) {
+            exige(); const x = ler(); const r = { id: uid(), numero: x.seq++, descricao: "", categoria: "", marca: "grupo", quantidade: "", prazo: null, estado: "aberto", responsavel_id: null, escolhida_id: null, decisao: "", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...p };
+            x.pedidos.unshift(r);
+            if (r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "operacional", "Pedido de orçamento atribuído a ti · P-" + String(r.numero).padStart(3, "0"), r.titulo, "#pedido-" + r.id);
+            guardar(); gravar(db); return structuredClone(r);
+          },
+          async atualizar(id, campos) {
+            exige(); const antes = ler().pedidos.find((p) => p.id === id)?.responsavel_id; const r = upd(d.pedidos, id, campos);
+            if (r.responsavel_id && r.responsavel_id !== antes && r.responsavel_id !== euId) notificar(r.responsavel_id, "operacional", "Pedido de orçamento atribuído a ti · P-" + String(r.numero).padStart(3, "0"), r.titulo, "#pedido-" + r.id);
+            guardar(); gravar(db); return structuredClone(r);
+          },
+          async apagar(id) { exige(); const x = ler(); x.pedidos = x.pedidos.filter((p) => p.id !== id); x.propostas = x.propostas.filter((p) => p.pedido_id !== id); guardar(); },
+        },
+        propostas: {
+          async criar(p) {
+            exige(); const x = ler(); if (x.propostas.some((y) => y.pedido_id === p.pedido_id && y.fornecedor_id === p.fornecedor_id)) throw new Error("Este fornecedor já está no pedido.");
+            const r = { id: uid(), estado: "pedida", preco: null, preco_base: "total", iva_incluido: false, prazo_entrega: "", condicoes: "", validade: null, notas: "", pedida_em: agora(), recebida_em: null, atualizado_em: agora(), ...p };
+            x.propostas.push(r); guardar(); return structuredClone(r);
+          },
+          async atualizar(id, campos) { exige(); const r = upd(ler().propostas, id, campos); if (["recebida", "escolhida"].includes(r.estado) && !r.recebida_em) r.recebida_em = agora(); guardar(); return structuredClone(r); },
+          async apagar(id) { exige(); d.propostas = ler().propostas.filter((p) => p.id !== id); guardar(); },
+        },
+        async escolher(id, decisao) {
+          exige(); const x = ler(), pr = x.propostas.find((p) => p.id === id); if (!pr) throw new Error("A proposta já não existe.");
+          x.propostas.filter((p) => p.pedido_id === pr.pedido_id).forEach((p) => { p.estado = p.id === id ? "escolhida" : "recusada"; if (p.id === id && !p.recebida_em) p.recebida_em = agora(); });
+          Object.assign(x.pedidos.find((p) => p.id === pr.pedido_id), { estado: "decidido", escolhida_id: id, decisao: decisao || "", atualizado_em: agora() });
+          const f = x.fornecedores.find((y) => y.id === pr.fornecedor_id); if (f) f.estado = "ativo";
+          guardar();
+        },
+        async importar(p) {
+          exige(); const x = ler(); let novos = 0, existentes = 0;
+          for (const f of p.fornecedores || []) {
+            const nome = String(f.nome || "").trim(); if (!nome) continue;
+            const r = x.fornecedores.find((y) => y.nome.toLowerCase() === nome.toLowerCase());
+            if (r) { for (const k of ["nif", "categoria", "produtos", "telefone", "email", "site"]) if (!r[k] && f[k]) r[k] = f[k]; r.marcas = [...new Set([...r.marcas, ...(f.marcas || [])])]; existentes++; }
+            else { x.fornecedores.push(F(nome, f.categoria || "", f.estado || "ativo", { ...f, nome, origem: f.origem || "importacao", criado_por: euId, atualizado_por: euId })); novos++; }
+          }
+          guardar(); return { novos, existentes };
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

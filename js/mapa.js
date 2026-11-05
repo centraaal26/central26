@@ -1,7 +1,7 @@
 // Central 26 — Comercial · mapa de clientes e leads por distrito, concelho e freguesia.
 // Limites: CAOP 2025 (Continente) e CAOP das Regiões Autónomas, Direção-Geral do Território, simplificados (geo/).
 import { carregarMapa, localizar } from "./geo.js";
-import { normalizar } from "./dados.js";
+import { normalizar, paginar, paginador } from "./dados.js";
 
 const METRICAS = { clientes: "Clientes", ativos: "Clientes ativos", leads: "Leads por contactar", vendas: "Vendas" };
 const norm = (s) => normalizar(String(s || "").replace(/\(.*?\)/g, "")).replace(/[-–'’.]/g, " ").replace(/\s+/g, " ").trim();
@@ -186,18 +186,19 @@ export function criarMapaCrm(ctx) {
     const linhas = nv.areas.map((f) => ({ id: f.properties.id, nome: f.properties.nome, s: somas.get(f.properties.id) })).sort((a, b) => b.s[M.metrica] - a.s[M.metrica] || b.s.n - a.s.n || a.nome.localeCompare(b.nome, "pt"));
     const comDados = linhas.filter((x) => x.s.n);
     h += '<div class="mapa-lado"><section class="cartao-sec"><h3>' + ({ dt: "Distritos", mn: "Concelhos", fr: "Freguesias" })[nv.tipo] + ' <span class="mono muted">' + comDados.length + " com registos</span></h3>" +
-      (comDados.length ? '<div class="tabela-scroll"><table class="crm-tabela mapa-tab"><thead><tr><th>' + ({ dt: "Distrito", mn: "Concelho", fr: "Freguesia" })[nv.tipo] + '</th><th class="n">Clientes</th><th class="n">Ativos</th><th class="n">Leads</th><th class="n">Vendas</th></tr></thead><tbody>' +
+      (comDados.length ? '<div class="tabela-scroll alta"><table class="crm-tabela mapa-tab"><thead><tr><th>' + ({ dt: "Distrito", mn: "Concelho", fr: "Freguesia" })[nv.tipo] + '</th><th class="n">Clientes</th><th class="n">Ativos</th><th class="n">Leads</th><th class="n">Vendas</th></tr></thead><tbody>' +
         comDados.map((x) => '<tr data-acao="mapa-ir" data-nivel="' + (nv.tipo === "fr" ? "fr" : nv.tipo) + '" data-id="' + x.id + '" tabindex="0"' + (M.fr === x.id ? ' class="sel-linha"' : "") + '><td><span class="sw-mapa g' + g5(x.s[M.metrica], br) + '" aria-hidden="true"></span>' + esc(x.nome) + '</td><td class="n">' + num(x.s.clientes) + '</td><td class="n">' + num(x.s.ativos) + '</td><td class="n">' + num(x.s.leads) + '</td><td class="n">' + (x.s.vendas ? eur(x.s.vendas) : "—") + "</td></tr>").join("") + "</tbody></table></div>"
         : '<p class="muted">Ainda não há registos nesta zona.</p>') +
       (semArea && nv.tipo !== "dt" ? '<p class="muted">' + num(semArea) + (nv.tipo === "fr" ? " registos deste concelho ainda não têm freguesia: localiza as moradas ou preenche a freguesia na ficha." : " registos deste distrito ainda não têm concelho.") + "</p>" : "") + "</section>";
 
     // quem está na zona
+    let pgL = null;
     const ord = aqui.slice().sort((a, b) => (statsDe(b)?.total || 0) - (statsDe(a)?.total || 0) || (b.score || 0) - (a.score || 0) || a.nome.localeCompare(b.nome, "pt"));
     h += '<section class="cartao-sec"><h3>' + (M.fr ? esc(nomeFr) : M.mn ? esc(nomeMn) : M.dt ? esc(nomeDt) : "Portugal") + ' <span class="mono muted">' + num(aqui.length) + "</span></h3>" +
-      (ord.length ? '<div class="lista-crm">' + ord.slice(0, 40).map((c) => {
+      (ord.length ? '<div class="lista-crm">' + (pgL = paginar(ord, M.pag, 12), M.pag = pgL.pag, pgL.itens).map((c) => {
         const s = statsDe(c), l = loc.get(c.id);
         return '<div class="lc"><button class="c-link" data-acao="crm-abrir" data-id="' + c.id + '">' + esc(c.nome) + '</button><small>' + esc([eCliente(c) ? "Cliente" : "Lead", c.concelho, s ? eur(s.total) : ""].filter(Boolean).join(" · ")) + (l && !l.exato && M.mn ? ' · <span class="at">sem morada no mapa</span>' : "") + "</small></div>";
-      }).join("") + "</div>" + (ord.length > 40 ? '<p class="muted">E mais ' + num(ord.length - 40) + ". Usa a pesquisa em «Clientes e leads» para ver todos.</p>" : "")
+      }).join("") + "</div>" + paginador(pgL, "mapa-pag", "registos")
         : '<p class="muted">Ninguém nesta zona.</p>') + "</section></div></div>";
 
     setTimeout(() => montar(nv, somas, br), 0);
@@ -261,6 +262,7 @@ export function criarMapaCrm(ctx) {
     }
   }
   function ir(tipo, id) {
+    M.pag = 1;
     if (tipo === "pt") { M.dt = M.mn = M.fr = null; }
     else if (tipo === "dt") { M.dt = id; M.mn = M.fr = null; }
     else if (tipo === "mn") { M.mn = id; M.dt = idx.porId.get(id)?.properties.dt || M.dt; M.fr = null; }
@@ -318,6 +320,7 @@ export function criarMapaCrm(ctx) {
   }
 
   function clique(acao, el2) {
+    if (acao === "mapa-pag") { M.pag = +el2.dataset.p; render(); return true; }
     if (acao === "mapa-ir") { ir(el2.dataset.nivel, el2.dataset.id); return true; }
     if (acao === "mapa-localizar") { localizarTodos(); return true; }
     if (acao === "mapa-parar") { if (M.tarefa) M.tarefa.parar = true; return true; }

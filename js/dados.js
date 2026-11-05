@@ -157,3 +157,24 @@ export function iniciais(nome) {
   return ((p[0] || "?")[0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
 }
 export const normalizar = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// Paginação partilhada: listas longas aparecem por páginas em vez de uma lista sem fim
+export function paginar(lista, pag, por) {
+  const paginas = Math.max(1, Math.ceil(lista.length / por)), p = Math.min(Math.max(1, +pag || 1), paginas);
+  return { itens: lista.slice((p - 1) * por, p * por), pag: p, paginas, total: lista.length, de: lista.length ? (p - 1) * por + 1 : 0, ate: Math.min(p * por, lista.length) };
+}
+const SETA_PG = '<svg class="i" viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
+export function paginador(r, acao, rotulo = "registos", extra = "") {
+  const fmt = (n) => n.toLocaleString("pt-PT");
+  if (r.paginas <= 1) return r.total > 5 ? '<p class="nota-tab">' + fmt(r.total) + " " + rotulo + "</p>" : "";
+  const nums = new Set([1, r.paginas, r.pag - 1, r.pag, r.pag + 1].filter((n) => n >= 1 && n <= r.paginas));
+  let h = "", ant = 0;
+  [...nums].sort((a, b) => a - b).forEach((n) => {
+    if (n - ant > 1) h += '<span class="pg-reti" aria-hidden="true">…</span>';
+    h += '<button class="pg-n" data-acao="' + acao + '" data-p="' + n + '"' + extra + (n === r.pag ? ' aria-current="page"' : "") + ' aria-label="Página ' + n + '">' + n + "</button>";
+    ant = n;
+  });
+  return '<nav class="paginas" aria-label="Páginas"><span class="pg-info">' + fmt(r.de) + "–" + fmt(r.ate) + " de " + fmt(r.total) + " " + rotulo + '</span><span class="pg-bts">' +
+    '<button class="pg-n pg-ant" data-acao="' + acao + '" data-p="' + (r.pag - 1) + '"' + extra + (r.pag === 1 ? " disabled" : "") + ' aria-label="Página anterior">' + SETA_PG + "</button>" + h +
+    '<button class="pg-n" data-acao="' + acao + '" data-p="' + (r.pag + 1) + '"' + extra + (r.pag === r.paginas ? " disabled" : "") + ' aria-label="Página seguinte">' + SETA_PG + "</button></span></nav>";
+}

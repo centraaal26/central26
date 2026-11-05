@@ -28,11 +28,17 @@ export function criarApi() {
     const { data, error } = await sb.functions.invoke(nome, { body: corpo });
     if (error) {
       let msg = "Não foi possível contactar o servidor. Tenta outra vez.";
+      // função por instalar: o Supabase responde 404 sem autorização do navegador (CORS), o que chega aqui como falha de rede
+      const semFuncaoInstalada = !navigator.onLine ? false : error.name === "FunctionsFetchError" || error.name === "FunctionsRelayError";
+      if (semFuncaoInstalada) msg = nome === "enviar-push"
+        ? "As notificações no telemóvel ainda não estão ligadas no servidor: falta instalar a função «enviar-push» no Supabase (README, passo 3b). Dentro da app os avisos continuam a funcionar."
+        : "Falta instalar a função «" + nome + "» no Supabase.";
+      if (!navigator.onLine) msg = "Estás sem ligação à internet.";
       try {
         const r = error.context;
         if (r && r.status === 404) {
           msg = nome === "enviar-push"
-            ? "As notificações no telemóvel precisam da função «enviar-push» instalada no Supabase (ver README, passo 3)."
+            ? "As notificações no telemóvel ainda não estão ligadas no servidor: falta instalar a função «enviar-push» no Supabase (README, passo 3b). Dentro da app os avisos continuam a funcionar."
             : "Falta correr o script supabase/02-equipa.sql no Supabase (SQL Editor).";
         } else if (r && typeof r.json === "function") { const j = await r.json(); if (j && j.erro) msg = j.erro; }
       } catch { /* mantém a mensagem genérica */ }
@@ -152,6 +158,19 @@ export function criarApi() {
       async enviar(canal, texto, mencoes) { return ok(await sb.from("chat_mensagens").insert({ canal_id: canal, texto, mencoes }).select().single()); },
       async atualizar(id, campos) { return ok(await sb.from("chat_mensagens").update(campos).eq("id", id).select().single()); },
       async direto(outro) { return ok(await sb.rpc("chat_canal_direto", { p_outro: outro })); },
+      async criarGrupo(nome, membros) { return ok(await sb.rpc("chat_criar_grupo", { p_nome: nome, p_membros: membros })); },
+      async sairGrupo(canal) { ok(await sb.rpc("chat_sair_grupo", { p_canal: canal })); },
+      async membros(canal) { return (ok(await sb.rpc("chat_membros_de", { p_canal: canal })) || []).map((x) => (typeof x === "string" ? x : x.chat_membros_de)); },
+      async enviarAudio(canal, blob, tipo, duracao) {
+        const ext = /mp4|m4a|aac/.test(tipo) ? "m4a" : /ogg/.test(tipo) ? "ogg" : /mpeg/.test(tipo) ? "mp3" : "webm";
+        const caminho = canal + "/" + crypto.randomUUID() + "." + ext, base = tipo.split(";")[0];
+        const up = await sb.storage.from("chat").upload(caminho, blob, { contentType: base, upsert: false });
+        if (up.error) throw new Error(/bucket|not found/i.test(up.error.message) ? "As mensagens de voz precisam do script supabase/11-mensagens.sql no Supabase." : "Não foi possível enviar o áudio: " + up.error.message);
+        try { return ok(await sb.from("chat_mensagens").insert({ canal_id: canal, texto: "", anexo_path: caminho, anexo_tipo: base, anexo_duracao: Math.round(duracao * 10) / 10 }).select().single()); }
+        catch (e) { await sb.storage.from("chat").remove([caminho]); throw e; }
+      },
+      async urlAudio(caminho) { const { data, error } = await sb.storage.from("chat").createSignedUrl(caminho, 3600); if (error) throw new Error("Não foi possível abrir o áudio."); return data.signedUrl; },
+      async apagarAudio(caminho) { await sb.storage.from("chat").remove([caminho]).catch(() => {}); },
       async marcarLido(canal) { ok(await sb.rpc("chat_marcar_lido", { p_canal: canal })); },
       subscrever(cb) {
         const canal = sb.channel("central26-chat")

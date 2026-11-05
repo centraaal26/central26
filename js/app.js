@@ -2,7 +2,7 @@
 import {
   MARCAS, MARCA, FREQS, FREQ, ESTADOS, PRIORIDADES, PAPEIS, DIA, MES_L, cap, ymd, periodo, inicioPeriodo, rotuloPeriodo,
   rotuloPrazo, dataLonga, haQuanto, estadoAtual, concluida, itensChecklist, emAtraso, ordenar, eGestor, podeAtribuirA,
-  podeEditar, podeApagar, iniciais, normalizar, semanaIso,
+  podeEditar, podeApagar, iniciais, normalizar, semanaIso, paginar, paginador,
 } from "./dados.js";
 import { MODELOS } from "./modelos.js";
 import { criarCrm, podeCrm } from "./crm.js";
@@ -26,7 +26,7 @@ const S = {
   rota: "inicio", param: null,
   tab: {}, vista: "lista", q: "", filtroResp: "", rascunho: "", mostrarFeitas: false,
   aberto: null, confirmar: false, novaPass: null,
-  periodoAtiv: "semana", filtroDep: "",
+  periodoAtiv: "semana", filtroDep: "", filtroAcao: "", pagAtiv: 1, pagHoje: 1,
   hoje: ymd(new Date()), erroEntrada: "", aEntrar: false, offline: false,
   instalar: null, carregou: false,
   selecao: null, visiveis: [],
@@ -64,6 +64,10 @@ const I = {
   mail: '<svg class="i" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>',
   mapa: '<svg class="i" viewBox="0 0 16 16"><path d="M8 14s-4.5-4.2-4.5-7.5a4.5 4.5 0 019 0C12.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/></svg>',
   euro: '<svg class="i" viewBox="0 0 16 16"><path d="M12 4a5 5 0 100 8M2.5 7h7M2.5 9.5h7"/></svg>',
+  micro: '<svg class="i" viewBox="0 0 16 16"><rect x="5.5" y="1.8" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0010 0M8 12.5v2"/></svg>',
+  play: '<svg class="i" viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor"/></svg>',
+  pausa: '<svg class="i" viewBox="0 0 16 16"><path d="M5.2 3.2v9.6M10.8 3.2v9.6" stroke-width="2.6"/></svg>',
+  enviar: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5"/></svg>',
   megafone: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 6.5v3h2l5 3v-9l-5 3z"/><path d="M4.5 9.5l1 4h1.6l-.6-3.4M12 6a2.5 2.5 0 010 4"/></svg>',
   caixa: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M2 5l6 3 6-3M8 8v6"/></svg>',
   escudo: '<svg class="i" viewBox="0 0 16 16"><path d="M8 1.8l5 1.9v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4z"/><path d="M5.8 8l1.6 1.6 2.9-3"/></svg>',
@@ -293,7 +297,7 @@ function lerRota(desenhar = true) {
     else if (r === "pessoa" && p) { rota = "pessoa"; param = p; }
     else if (r === "tarefa" && p) { rota = "tarefa"; param = p; }
   }
-  if (rota !== S.rota || param !== S.param) { S.q = ""; S.filtroResp = ""; S.mostrarFeitas = false; S.selecao = null; }
+  if (rota !== S.rota || param !== S.param) { S.q = ""; S.filtroResp = ""; S.mostrarFeitas = false; S.selecao = null; S.pagHoje = 1; S.pagAtiv = 1; S.pagNotif = 1; }
   fecharMenu();
   // mudar de página (por exemplo, com o botão «voltar») fecha o painel que estava aberto
   if (desenhar && S.aberto && rota !== S.rota) { S.aberto = null; S.confirmar = false; renderPainel(true); }
@@ -379,7 +383,7 @@ function vistaApp() {
   const atual = (r, p) => (S.rota === r && (p == null || S.param === p) ? ' aria-current="page"' : "");
   const contagemMarca = (m) => todas().filter((t) => t.marca === m && ((t.freq === "diaria" && !concluida(t)) || emAtraso(t, S.hoje))).length;
 
-  let side = '<aside class="side"><div class="ws"><span class="ws-nome">Central <b>26</b></span><span class="ws-sub">Grupo TwentySix</span></div><nav class="nav" aria-label="Navegação">';
+  let side = '<aside class="side"><a class="ws" href="#inicio" aria-label="Central 26, ir para o Início"><span class="ws-nome">Central <b>26</b></span><span class="ws-sub">Grupo TwentySix</span></a><nav class="nav" aria-label="Navegação">';
   side += '<a href="#inicio"' + atual("inicio") + ">" + I.casa + '<span class="nm">Início</span></a>';
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
   const porLerChat = CHAT.naoLidas();
@@ -401,7 +405,7 @@ function vistaApp() {
   side += '</nav><div class="side-pe"><a class="eu-chip" href="#definicoes">' + av(S.eu.id) + "<span>" + esc(S.eu.nome) + "<small>" + esc(PAPEIS[S.eu.papel]) + "</small></span></a>" +
     '<span class="estado-ligacao' + (S.offline ? " off" : "") + '"><i></i>' + (S.offline ? "Sem ligação" : api.modo === "demo" ? "Modo de demonstração" : "Ligado") + "</span></div></aside>";
 
-  const topo = '<header class="topo"><a class="ws-m" href="#inicio">Central <b>26</b></a>' +
+  const topo = '<header class="topo"><a class="ws-m" href="#inicio" aria-label="Central 26, ir para o Início">Central <b>26</b></a>' +
     '<a class="sino" href="#notificacoes" aria-label="Notificações' + (naoLidas ? ", " + naoLidas + " por ler" : "") + '">' + I.sino + (naoLidas ? '<span class="bolinha">' + (naoLidas > 9 ? "9+" : naoLidas) + "</span>" : "") + "</a></header>";
 
   const tab = '<nav class="tabbar" aria-label="Navegação">' +
@@ -437,7 +441,12 @@ function vistaApp() {
   const demo = api.modo === "demo" ? '<div class="demo-faixa"><span>Modo de demonstração: os dados ficam só neste aparelho.</span><span><button data-acao="demo-repor">Repor dados</button> · <button data-acao="sair">Trocar de pessoa</button></span></div>' : "";
   const marcaAtual = S.rota === "marca" ? S.param : "twentysix";
   const nova = S.versaoNova ? '<div class="aviso aviso-acao versao-nova" role="status"><span><b>Há uma versão nova da Central 26.</b> Atualiza para ficares com as últimas correções.</span><button class="btn pri" data-acao="atualizar-app">Atualizar agora</button></div>' : "";
-  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + '" data-marca="' + marcaAtual + '">' + nova + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
+  // animação de entrada só quando se muda de página (não a cada atualização)
+  const NORM = { publicacao: "marketing", fornecedor: "operacional", pedido: "operacional", encomenda: "logistica", cliente: "comercial", tarefa: "inicio" };
+  const chaveAnim = (NORM[S.rota] || S.rota) + (["marca", "pessoa"].includes(S.rota) ? "-" + S.param : "");
+  const anim = S.carregou && S.rota !== "chat" && S.rotaAnim !== chaveAnim && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (S.carregou) S.rotaAnim = chaveAnim;
+  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + (anim ? " anim" : "") + '" data-marca="' + marcaAtual + '">' + nova + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
 }
 
 function esqueleto() {
@@ -527,7 +536,7 @@ const estat = (lista, freq) => { const a = lista.filter((t) => t.freq === freq);
 
 function anel(feitas, total) {
   const r = 26, c = 2 * Math.PI * r, p = total ? feitas / total : 0;
-  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="' + r + '" fill="none" stroke="var(--sunken)" stroke-width="7"/><circle cx="32" cy="32" r="' + r + '" fill="none" stroke="var(--b)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + (c * p).toFixed(1) + " " + c.toFixed(1) + '"/></svg>';
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="' + r + '" fill="none" stroke="var(--sunken)" stroke-width="7"/>' + (p > 0 ? '<circle cx="32" cy="32" r="' + r + '" fill="none" stroke="var(--b)" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + (c * p).toFixed(1) + " " + c.toFixed(1) + '"/>' : "") + "</svg>";
 }
 function logoMarca(m) {
   if (m.logo) return '<img src="' + m.logo + '" alt="Logótipo ' + esc(m.nome) + '">';
@@ -556,39 +565,103 @@ function barraFerramentas(tab, comResp) {
 }
 
 /* ============================== Vistas ============================== */
-function vistaInicioGestor() {
+// Uma frase por dia, igual para toda a equipa
+const FRASES = [
+  "O detalhe de hoje é a reputação de amanhã.",
+  "Feito é melhor do que perfeito. Depois, melhora-se.",
+  "Um cliente bem atendido traz o próximo.",
+  "Pequenos passos todos os dias fazem grandes marcas.",
+  "A disciplina faz o que a motivação não consegue.",
+  "Começa pela tarefa mais difícil. O resto do dia agradece.",
+  "Quem cuida dos pormenores não tem de explicar o resultado.",
+  "Uma equipa alinhada vale mais do que dez ideias soltas.",
+  "A consistência é o corte mais difícil de dominar.",
+  "Cada tarefa fechada abre espaço para a próxima ideia.",
+  "Fazer bem à primeira poupa o tempo de fazer duas vezes.",
+  "O cliente não vê o esforço, vê o resultado. Que seja impecável.",
+  "Rigor no processo, calma no resultado.",
+  "Comunicar cedo evita corrigir tarde.",
+  "Não esperes pela segunda-feira. Começa agora.",
+  "O que se acompanha, cresce.",
+  "Mais vale uma pergunta agora do que um erro depois.",
+  "Ambição grande, passos concretos.",
+  "O nosso nome vai em tudo o que fazemos.",
+  "Arruma, prioriza, executa.",
+  "Ninguém cresce sozinho: pede ajuda e dá ajuda.",
+  "Deixa tudo um pouco melhor do que encontraste.",
+  "Foco no essencial. As distrações ficam para depois.",
+  "A pressa é inimiga do acabamento.",
+  "Terminar também se treina. Treina hoje.",
+  "O sucesso está nas rotinas que ninguém vê.",
+  "Uma tarefa de cada vez, bem feita.",
+  "As grandes marcas constroem-se em dias normais.",
+  "Se é para fazer, faz-se como deve ser.",
+  "Ouvir o cliente é o melhor estudo de mercado.",
+  "Prazos cumpridos são confiança ganha.",
+  "Hoje conta. Faz com que se note.",
+  "Mão firme, cabeça fria, padrão alto.",
+  "Quem prepara bem, executa depressa.",
+  "Ideias há muitas. O que nos distingue é fazer.",
+];
+function fraseDoDia() {
+  const d = new Date(), n = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(2026, 0, 1)) / 864e5);
+  return FRASES[((n % FRASES.length) + FRASES.length) % FRASES.length];
+}
+function cabInicio(acoes) {
   const d = new Date();
-  const lista = todas();
-  let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(cap(DIA[d.getDay()])) + ", " + d.getDate() + " de " + MES_L[d.getMonth()] + " de " + d.getFullYear() + " · semana " + semanaIso(d)[1] + "</div><h1>Olá, " + esc(S.eu.nome.split(" ")[0]) + '</h1><p class="sub-cab">Rotinas, prazos e equipa das marcas do grupo num só sítio.</p></div>' +
-    '<div class="acts"><button class="btn sec" data-acao="modelos">Carregar modelos</button><button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div></div>";
-  h += avisoInstalar();
-  h += AGENDA.blocoHoje();
-  h += LOG.blocoInicio();
-  h += AUD.blocoInicio();
-  h += OP.blocoInicio();
-  h += MK.blocoInicio();
-  if (!lista.length) {
-    h += '<div class="vazio"><h3>Ainda não há tarefas</h3><p>Podes começar pelos modelos sugeridos: rotinas de cada marca e rotinas da Logística. Depois atribuis cada tarefa à pessoa certa. Os problemas das auditorias aos sites estão em «Auditoria dos sites».</p><div class="acts"><button class="btn pri" data-acao="modelos">Escolher modelos</button></div></div>';
-  }
-  h += '<div class="marcas-grid">';
+  return '<div class="cab cab-inicio"><div><div class="eyebrow neutro">' + esc(cap(DIA[d.getDay()])) + ", " + d.getDate() + " de " + MES_L[d.getMonth()] + " de " + d.getFullYear() + " · semana " + semanaIso(d)[1] + "</div><h1>Olá, " + esc(S.eu.nome.split(" ")[0]) +
+    '</h1><p class="frase-dia"><span aria-hidden="true">“</span>' + esc(fraseDoDia()) + '<span aria-hidden="true">”</span></p></div>' + acoes + "</div>";
+}
+// Cada pessoa vê no Início o que é do seu departamento; a direção vê um resumo de todos
+const MOD_DEP = { tecnologico: () => AUD, logistica: () => LOG, operacional: () => OP, marketing: () => MK, comercial: () => CRM };
+function blocosInicio() {
+  let h = AGENDA.blocoHoje();
+  const dep = S.eu.departamento_id, mod = MOD_DEP[dep]?.();
+  if (mod) h += mod.blocoInicio();
+  else if (eGestor(S.eu)) h += resumoDirecao();
+  if (dep !== "tecnologico" && !eGestor(S.eu)) h += AUD.blocoInicio(); // só aparece com itens atribuídos à pessoa
+  return h;
+}
+function resumoDirecao() {
+  const t = [];
+  const tile = (href, ic, nome, n, rot, alerta) => t.push('<a class="dep-tile' + (alerta && n ? " dt-alerta" : "") + '" href="' + href + '">' + ic + '<span class="dt-n">' + esc(nome) + "</span>" + (n == null ? '<span class="dt-abrir">Abrir' + I.seta + "</span>" : '<b class="mono">' + n + "</b>") + "<small>" + esc(rot) + "</small></a>");
+  if (podeCrm(S.eu)) { const pronto = CRM.estado() === "pronto"; tile("#comercial", I.loja, "Comercial", pronto ? CRM.contagem() : null, pronto ? "seguimentos para hoje" : "clientes, funil e mapa", true); }
+  if (podeMarketing(S.eu)) { if (MK.estado() === "por-carregar") MK.carregar(); tile("#marketing", I.megafone, "Marketing", MK.estado() === "pronto" ? MK.contagem() : null, "publicações atrasadas", true); }
+  if (AUD.visivel()) { AUD.blocoInicio(); tile("#auditoria", I.escudo, "Tecnológico", AUD.estado() === "pronto" ? AUD.contagem() : null, "itens da auditoria por validar", false); }
+  if (podeEncomendas(S.eu)) { LOG.blocoInicio(); tile("#logistica", I.camiao, "Logística", LOG.estado() === "pronto" ? LOG.contagem() : null, "encomendas novas", true); }
+  if (podeOperacional(S.eu)) { OP.blocoInicio(); tile("#operacional", I.caixa, "Operacional", OP.estado() === "pronto" ? OP.contagem() : null, "fornecedores a contactar hoje", true); }
+  if (podeFinanceiro(S.eu)) tile("#financeiro", I.euro, "Financeiro", null, "faturação e custos por mês", false);
+  return t.length ? '<section class="resumo-dir" aria-label="Departamentos"><h2>Departamentos</h2><div class="dep-tiles">' + t.join("") + "</div></section>" : "";
+}
+function marcasHTML(lista) {
+  let h = '<section class="marcas-sec"><h2>As marcas <span class="n">tarefas de hoje e do período</span></h2><div class="marcas-grid">';
   MARCAS.forEach((m) => {
-    const lm = lista.filter((t) => t.marca === m.id);
+    const lm = lista.filter((t) => t.marca === m.id), hoje = estat(lm, "diaria");
     const atraso = lm.filter((t) => emAtraso(t, S.hoje)).length;
-    h += '<a class="mcard" href="#marca-' + m.id + '" data-marca="' + m.id + '"><div class="plate sm">' + logoMarca(m) + '</div><div class="corpo"><span class="nm">' + esc(m.nome) + "</span>";
-    [["diaria", "Hoje"], ["semanal", "Semana"], ["mensal", "Mês"], ["unica", "Pontuais"]].forEach(([f, r]) => {
-      const s = estat(lm, f);
-      h += '<div class="medidor"><span>' + r + '</span><div class="barra-p"><i style="width:' + (s.total ? Math.round((s.feitas / s.total) * 100) : 0) + '%"></i></div><span class="v">' + s.feitas + "/" + s.total + "</span></div>";
+    h += '<a class="mcard" href="#marca-' + m.id + '" data-marca="' + m.id + '"><div class="plate sm">' + logoMarca(m) + '</div><div class="corpo"><div class="mc-topo"><span class="nm">' + esc(m.nome) + '</span><span class="mc-anel" title="Hoje: ' + hoje.feitas + " de " + hoje.total + '">' + anel(hoje.feitas, hoje.total) + "</span></div>";
+    [["semanal", "Semana"], ["mensal", "Mês"], ["unica", "Pontuais"]].forEach(([f, r]) => {
+      const st = estat(lm, f);
+      h += '<div class="medidor"><span>' + r + '</span><div class="barra-p"><i style="width:' + (st.total ? Math.round((st.feitas / st.total) * 100) : 0) + '%"></i></div><span class="v">' + st.feitas + "/" + st.total + "</span></div>";
     });
-    if (atraso) h += '<span class="alerta">' + atraso + (atraso === 1 ? " tarefa em atraso" : " tarefas em atraso") + "</span>";
-    h += "</div></a>";
+    h += '<span class="mc-pe">' + (atraso ? '<span class="alerta">' + atraso + (atraso === 1 ? " em atraso" : " em atraso") + "</span>" : '<span class="' + (hoje.feitas === hoje.total ? "ok-txt" : "muted") + '">' + (hoje.total ? hoje.feitas + "/" + hoje.total + " hoje" : "Em dia") + "</span>") + I.seta + "</span></div></a>";
   });
-  h += "</div>";
-
+  return h + "</div></section>";
+}
+function paraHojeHTML(lista, opcoes, vazio) {
+  const pg = paginar(lista, S.pagHoje, 10); S.pagHoje = pg.pag;
+  return '<div class="tabela">' + (lista.length ? pg.itens.map((t) => linhaTarefa(t, opcoes)).join("") : '<div class="vazio-linha">' + vazio + "</div>") + "</div>" + paginador(pg, "pag-hoje", "tarefas");
+}
+function vistaInicioGestor() {
+  const lista = todas();
+  let h = cabInicio('<div class="acts"><button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div>");
+  h += avisoInstalar();
+  h += blocosInicio();
+  if (!lista.length) {
+    h += '<div class="vazio"><h3>Ainda não há tarefas</h3><p>Podes começar pelos modelos sugeridos: rotinas de cada marca e rotinas da Logística. Depois atribuis cada tarefa à pessoa certa.</p><div class="acts"><button class="btn pri" data-acao="modelos">Escolher modelos</button></div></div>';
+  }
+  h += marcasHTML(lista);
   const paraHoje = ordenar(lista.filter((t) => !concluida(t) && (t.freq === "diaria" || (t.prazo && t.prazo <= S.hoje))));
-  h += '<div class="duas"><section data-marca="twentysix"><h2>Para hoje <span class="n">' + paraHoje.length + " por fazer</span></h2><div class=\"tabela\">" +
-    (paraHoje.length ? paraHoje.slice(0, 40).map((t) => linhaTarefa(t, { marca: true, compacta: true })).join("") : '<div class="vazio-linha">Está tudo feito por hoje.</div>') +
-    (paraHoje.length > 40 ? '<div class="vazio-linha">E mais ' + (paraHoje.length - 40) + ". Vê cada marca para a lista completa.</div>" : "") +
-    "</div></section>";
+  h += '<div class="duas"><section data-marca="twentysix"><h2>Para hoje <span class="n">' + paraHoje.length + " por fazer</span></h2>" + paraHojeHTML(paraHoje, { marca: true, compacta: true }, "Está tudo feito por hoje.") + "</section>";
   h += '<section><h2>Equipa hoje</h2><div class="equipa-hoje">' + ativos().map((p) => {
     const dele = lista.filter((t) => t.responsavel_id === p.id);
     const hojeTot = dele.filter((t) => t.freq === "diaria" || t.prazo === S.hoje);
@@ -600,33 +673,29 @@ function vistaInicioGestor() {
 }
 
 function vistaInicioMembro() {
-  const d = new Date();
   const minhas = todas().filter((t) => t.responsavel_id === S.eu.id);
   const hoje = ordenar(minhas.filter((t) => !concluida(t) && (t.freq === "diaria" || (t.prazo && t.prazo <= S.hoje))));
   const feitasHoje = minhas.filter((t) => t.freq === "diaria" && concluida(t)).length;
   const livres = ordenar(todas().filter((t) => !t.responsavel_id && t.departamento_id === S.eu.departamento_id && !concluida(t)));
-  let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(cap(DIA[d.getDay()])) + ", " + d.getDate() + " de " + MES_L[d.getMonth()] + '</div><h1>Olá, ' + esc(S.eu.nome.split(" ")[0]) + '</h1><p class="sub-cab">' + esc(depNome(S.eu.departamento_id)) + "</p></div>" +
-    '<button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button></div>";
+  let h = cabInicio('<button class="btn pri" data-acao="nova-tarefa">' + I.plus + "Nova tarefa</button>");
   h += avisoInstalar();
-  h += AGENDA.blocoHoje();
-  h += LOG.blocoInicio();
-  h += AUD.blocoInicio();
-  h += OP.blocoInicio();
-  h += MK.blocoInicio();
-  h += '<section data-marca="twentysix"><h2>Para hoje <span class="n">' + hoje.length + " por fazer · " + feitasHoje + " concluídas</span></h2><div class=\"tabela\">" +
-    (hoje.length ? hoje.map((t) => linhaTarefa(t, { marca: true, compacta: true, semResp: true })).join("") : '<div class="vazio-linha">Não tens nada pendente para hoje.</div>') + "</div></section>";
+  h += blocosInicio();
+  h += '<section data-marca="twentysix"><h2>Para hoje <span class="n">' + hoje.length + " por fazer · " + feitasHoje + " concluídas</span></h2>" + paraHojeHTML(hoje, { marca: true, compacta: true, semResp: true }, "Não tens nada pendente para hoje.") + "</section>";
   const resto = ordenar(minhas.filter((t) => !concluida(t) && t.freq !== "diaria" && !(t.prazo && t.prazo <= S.hoje)));
-  if (resto.length) h += '<section data-marca="twentysix"><h2>Próximas <span class="n">' + resto.length + '</span></h2><div class="tabela">' + resto.map((t) => linhaTarefa(t, { marca: true, freq: true, compacta: true, semResp: true })).join("") + "</div></section>";
-  if (livres.length) h += '<section data-marca="twentysix"><h2>Sem responsável no departamento <span class="n">' + livres.length + '</span></h2><div class="tabela">' + livres.map((t) => linhaTarefa(t, { marca: true, freq: true, compacta: true })).join("") + "</div></section>";
+  if (resto.length) h += '<section data-marca="twentysix"><h2>Próximas <span class="n">' + resto.length + '</span></h2><div class="tabela">' + resto.slice(0, 8).map((t) => linhaTarefa(t, { marca: true, freq: true, compacta: true, semResp: true })).join("") + "</div>" + (resto.length > 8 ? '<a class="mostrar-feitas" href="#minhas">' + I.seta + "Ver todas as minhas tarefas</a>" : "") + "</section>";
+  if (livres.length) h += '<section data-marca="twentysix"><h2>Sem responsável no departamento <span class="n">' + livres.length + '</span></h2><div class="tabela">' + livres.slice(0, 8).map((t) => linhaTarefa(t, { marca: true, freq: true, compacta: true })).join("") + "</div></section>";
   return h;
 }
 
+const CHAVE_INSTALAR = "central26-instalar-fechado";
 function avisoInstalar() {
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
-  if (standalone) return "";
+  if (standalone || !window.matchMedia("(max-width:820px)").matches) return "";
+  try { if (localStorage.getItem(CHAVE_INSTALAR)) return ""; } catch { /* sem armazenamento */ }
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (S.instalar) return '<div class="instalar so-browser"><span>Instala a Central 26 no telemóvel para receberes notificações.</span><button class="btn sec" data-acao="instalar">Instalar app</button></div>';
-  if (ios) return '<div class="instalar so-browser"><span>Para instalar no iPhone: no Safari, toca em Partilhar e depois em «Adicionar ao ecrã principal».</span></div>';
+  const fechar = '<button class="ib" data-acao="instalar-fechar" aria-label="Fechar aviso">' + I.x + "</button>";
+  if (S.instalar) return '<div class="instalar so-browser"><span>' + I.casa + 'Instala a app para receberes avisos.</span><span class="acts"><button class="btn sec" data-acao="instalar">Instalar</button>' + fechar + "</span></div>";
+  if (ios) return '<div class="instalar so-browser"><span>' + I.casa + "Para instalar: Partilhar → «Adicionar ao ecrã principal».</span>" + fechar + "</div>";
   return "";
 }
 
@@ -667,23 +736,34 @@ function contagensPessoa(id) {
   };
 }
 
+// Cor de cada departamento (reaproveita as cores das marcas, que já funcionam em claro e escuro)
+const COR_DEP = { direcao: "twentysix", administrativo: "grupo", comercial: "tech", marketing: "academy", operacional: "barbearia", logistica: "grooms", tecnologico: "tech" };
+const corDep = (id) => COR_DEP[id] || "grupo";
 function vistaEquipa() {
   const g = eGestor(S.eu);
-  let h = '<div class="cab"><div><div class="eyebrow neutro">' + ativos().length + " pessoas ativas</div><h1>Equipa</h1></div>" +
+  const pessoas = listaPerfis().filter((p) => p.ativo || g);
+  const abertas = todas().filter((t) => t.responsavel_id && !concluida(t)), atraso = todas().filter((t) => emAtraso(t, S.hoje)).length;
+  let h = '<div class="cab"><div><div class="eyebrow neutro">Grupo 26</div><h1>Equipa</h1></div>' +
     (g ? '<div class="acts"><button class="btn sec" data-acao="novo-dep">Novo departamento</button><button class="btn pri" data-acao="novo-empregado">' + I.plus + "Adicionar empregado</button></div>" : "") + "</div>";
+  h += '<div class="resumo-crm resumo-eq"><div class="kpi"><span>Pessoas ativas</span><b>' + ativos().length + '</b></div><div class="kpi"><span>Departamentos</span><b>' + listaDeps().length +
+    '</b></div><div class="kpi"><span>Tarefas por fazer</span><b>' + abertas.length + '</b></div><div class="kpi' + (atraso ? " alerta-kpi" : "") + '"><span>Em atraso</span><b>' + atraso + "</b></div></div>";
   const porDep = {};
-  listaPerfis().forEach((p) => { if (!p.ativo && !g) return; (porDep[p.departamento_id || ""] ||= []).push(p); });
+  pessoas.forEach((p) => (porDep[p.departamento_id || ""] ||= []).push(p));
   const ordem = [...listaDeps().map((d) => d.id), ""];
+  const papelOrd = { ceo: 0, admin: 1, chefe: 2, colaborador: 3 };
+  h += '<div class="eq-deps">';
   ordem.forEach((dep) => {
-    const pessoas = porDep[dep];
-    if (!pessoas || !pessoas.length) return;
-    h += '<section class="dep-bloco"><h2>' + esc(depNome(dep || null)) + ' <span class="n">' + pessoas.length + '</span></h2><div class="pessoas">' +
-      pessoas.map((p) => {
+    const l = (porDep[dep] || []).sort((a, b) => (papelOrd[a.papel] ?? 9) - (papelOrd[b.papel] ?? 9) || a.nome.localeCompare(b.nome, "pt"));
+    if (!l.length) return;
+    h += '<section class="dep-bloco" data-marca="' + corDep(dep) + '"><div class="dep-cab"><span class="dep-ponto"></span><h2>' + esc(depNome(dep || null)) + '</h2><span class="n">' + l.length + (l.length === 1 ? " pessoa" : " pessoas") + '</span></div><div class="pessoas">' +
+      l.map((p) => {
         const c = contagensPessoa(p.id);
-        return '<a class="pcard' + (p.ativo ? "" : " inativo") + '" href="#pessoa-' + p.id + '">' + av(p.id, "g") + '<span class="info"><span class="papel">' + esc(PAPEIS[p.papel]) + (p.ativo ? "" : " · Inativo") + '</span><span class="nm">' + esc(p.nome) + '</span><span class="cg">' + esc(p.cargo || "—") + '</span><span class="nums">' + c.abertas + " por fazer · " + c.semana + " feitas esta semana" + (c.atraso ? " · " + c.atraso + " em atraso" : "") + "</span></span></a>";
+        return '<a class="pcard' + (p.ativo ? "" : " inativo") + '" href="#pessoa-' + p.id + '">' + av(p.id, "g") +
+          '<span class="pc-nome"><b>' + esc(p.nome) + '</b><small>' + esc(p.cargo || "—") + (p.ativo ? "" : " · Conta desativada") + '</small><span class="papel-tag p-' + esc(p.papel) + '">' + esc(PAPEIS[p.papel]) + "</span></span>" +
+          '<span class="pc-nums"><span><b class="mono">' + c.abertas + '</b>por fazer</span><span><b class="mono">' + c.semana + '</b>na semana</span><span class="' + (c.atraso ? "at" : "") + '"><b class="mono">' + c.atraso + "</b>em atraso</span></span></a>";
       }).join("") + "</div></section>";
   });
-  return h;
+  return h + "</div>";
 }
 
 function vistaPessoa(p) {
@@ -738,14 +818,28 @@ function conclusoes(lista) {
 }
 
 const ACOES = { criou: "criou", atribuiu: "atribuiu", iniciou: "começou", concluiu: "concluiu", reabriu: "reabriu", eliminou: "eliminou" };
+function itemFeed(a, semAutor) {
+  const para = a.acao === "atribuiu" && a.responsavel_id ? " a " + esc(nomeDe(a.responsavel_id) || "alguém") : "";
+  const titulo = a.tarefa_id && S.tarefas[a.tarefa_id] ? '<a href="#tarefa-' + a.tarefa_id + '">«' + esc(a.titulo || "Sem título") + "»</a>" : "«" + esc(a.titulo || "Sem título") + "»";
+  return '<div class="feed-item">' + (semAutor ? '<span class="feed-ic a-' + a.acao + '" aria-hidden="true"></span>' : av(a.autor_id)) + '<span class="txt">' + (semAutor ? "" : "<b>" + esc(nomeDe(a.autor_id) || "Alguém") + "</b> ") + '<span class="acao ' + a.acao + '">' + (ACOES[a.acao] || a.acao) + "</span> " + titulo + para +
+    (a.marca && MARCA[a.marca] ? ' <span class="tag-marca" data-marca="' + a.marca + '">' + esc(MARCA[a.marca].curto) + "</span>" : "") + '</span><span class="q">' + new Date(a.criado_em).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }) + "</span></div>";
+}
+function rotuloDiaFeed(ts) {
+  const d = new Date(ts), k = ymd(d), ontem = ymd(new Date(Date.now() - 864e5));
+  if (k === S.hoje) return "Hoje";
+  if (k === ontem) return "Ontem";
+  return cap(DIA[d.getDay()]) + ", " + d.getDate() + " de " + MES_L[d.getMonth()];
+}
+// Registo agrupado por dia
 function feedHTML(lista, semAutor) {
   if (!lista.length) return '<div class="vazio-linha">Sem atividade registada.</div>';
-  return '<div class="feed">' + lista.map((a) => {
-    const para = a.acao === "atribuiu" && a.responsavel_id ? " a " + esc(nomeDe(a.responsavel_id) || "alguém") : "";
-    const titulo = a.tarefa_id && S.tarefas[a.tarefa_id] ? '<a href="#tarefa-' + a.tarefa_id + '">«' + esc(a.titulo || "Sem título") + "»</a>" : "«" + esc(a.titulo || "Sem título") + "»";
-    return '<div class="feed-item">' + (semAutor ? "" : av(a.autor_id)) + '<span class="txt"' + (semAutor ? ' style="grid-column:1/3"' : "") + ">" + (semAutor ? "" : "<b>" + esc(nomeDe(a.autor_id) || "Alguém") + "</b> ") + '<span class="acao ' + a.acao + '">' + (ACOES[a.acao] || a.acao) + "</span> " + titulo + para +
-      (a.marca && MARCA[a.marca] ? ' <span class="tag-marca" data-marca="' + a.marca + '">' + esc(MARCA[a.marca].curto) + "</span>" : "") + '</span><span class="q">' + haQuanto(a.criado_em) + "</span></div>";
-  }).join("") + "</div>";
+  let h = "", dia = "";
+  for (const a of lista) {
+    const k = ymd(new Date(a.criado_em));
+    if (k !== dia) { if (dia) h += "</div>"; h += '<div class="feed-dia"><span>' + esc(rotuloDiaFeed(a.criado_em)) + '</span></div><div class="feed">'; dia = k; }
+    h += itemFeed(a, semAutor);
+  }
+  return h + "</div>";
 }
 
 function vistaAtividade() {
@@ -768,12 +862,19 @@ function vistaAtividade() {
     '<div class="seg" role="group" aria-label="Período"><button data-acao="per-ativ" data-p="hoje" aria-pressed="' + (tipo === "hoje") + '">Hoje</button><button data-acao="per-ativ" data-p="semana" aria-pressed="' + (tipo === "semana") + '">Semana</button><button data-acao="per-ativ" data-p="mes" aria-pressed="' + (tipo === "mes") + '">Mês</button></div>' +
     (g ? '<label class="sr" for="filtro-dep">Departamento</label><select class="sel" id="filtro-dep"><option value="">Todos os departamentos</option>' + listaDeps().map((d) => '<option value="' + d.id + '"' + (S.filtroDep === d.id ? " selected" : "") + ">" + esc(d.nome) + "</option>").join("") + "</select>" : "") +
     "</div></div>";
-  h += '<section data-marca="twentysix"><div class="tabela-scroll"><table class="ranking"><thead><tr><th>Pessoa</th><th class="n">Concluídas ' + rot + '</th><th class="barrinha"></th><th class="n">Por fazer</th><th class="n">Em atraso</th></tr></thead><tbody>' +
-    linhas.map((l) => '<tr><td><a class="pessoa" href="#pessoa-' + l.p.id + '">' + av(l.p.id) + "<span>" + esc(l.p.nome) + "<small>" + esc(depNome(l.p.departamento_id)) + '</small></span></a></td><td class="n">' + l.feitas + '</td><td class="barrinha"><div class="barra-p"><i style="width:' + Math.round((l.feitas / max) * 100) + '%"></i></div></td><td class="n">' + l.abertas + '</td><td class="n"' + (l.atraso ? ' style="color:var(--danger)"' : "") + ">" + l.atraso + "</td></tr>").join("") +
-    "</tbody></table></div></section>";
+  const totFeitas = linhas.reduce((x, l) => x + l.feitas, 0), totAt = linhas.reduce((x, l) => x + l.atraso, 0);
+  const melhor = linhas[0] && linhas[0].feitas ? linhas[0] : null;
+  h += '<div class="resumo-crm resumo-eq"><div class="kpi"><span>Concluídas ' + rot + "</span><b>" + totFeitas + '</b></div><div class="kpi"><span>Ações registadas</span><b>' + noPeriodo.length + '</b></div><div class="kpi' + (totAt ? " alerta-kpi" : "") + '"><span>Em atraso</span><b>' + totAt + '</b></div><div class="kpi"><span>Mais concluídas</span><b class="kpi-txt">' + (melhor ? esc(melhor.p.nome.split(" ")[0]) : "—") + "</b></div></div>";
+  h += '<section data-marca="twentysix"><div class="ranking-cartoes">' +
+    linhas.map((l, i) => '<a class="rk" href="#pessoa-' + l.p.id + '"><span class="rk-pos mono">' + (i + 1) + "</span>" + av(l.p.id) + '<span class="rk-t"><b>' + esc(l.p.nome) + "</b><small>" + esc(depNome(l.p.departamento_id)) + '</small></span><span class="rk-barra"><span class="barra-p"><i style="width:' + Math.round((l.feitas / max) * 100) + '%"></i></span></span>' +
+      '<span class="rk-n rk-feitas"><b class="mono">' + l.feitas + '</b><small>concluídas</small></span><span class="rk-n"><b class="mono">' + l.abertas + '</b><small>por fazer</small></span><span class="rk-n' + (l.atraso ? " at" : "") + '"><b class="mono">' + l.atraso + "</b><small>em atraso</small></span></a>").join("") +
+    "</div></section>";
   const ids = new Set(pessoas.map((p) => p.id));
-  const feed = noPeriodo.filter((a) => g && !S.filtroDep ? true : ids.has(a.autor_id)).slice(0, 80);
-  h += "<section><h2>Registo <span class=\"n\">" + noPeriodo.length + " ações " + rot + "</span></h2>" + feedHTML(feed) + "</section>";
+  const doFiltro = noPeriodo.filter((a) => (g && !S.filtroDep ? true : ids.has(a.autor_id)) && (!S.filtroAcao || a.acao === S.filtroAcao));
+  const pg = paginar(doFiltro, S.pagAtiv, 25); S.pagAtiv = pg.pag;
+  const fAc = [["", "Tudo"], ["concluiu", "Concluídas"], ["criou", "Criadas"], ["atribuiu", "Atribuídas"], ["reabriu", "Reabertas"]];
+  h += '<section class="registo"><h2>Registo <span class="n">' + doFiltro.length + " ações " + rot + '</span></h2><div class="chips-marca" role="group" aria-label="Tipo de ação">' +
+    fAc.map(([k, r]) => '<button class="chip-m' + (S.filtroAcao === k ? " on" : "") + '" data-acao="ativ-acao" data-v="' + k + '">' + r + "</button>").join("") + "</div>" + feedHTML(pg.itens) + paginador(pg, "pag-ativ", "ações") + "</section>";
   return h;
 }
 
@@ -784,7 +885,8 @@ function vistaNotificacoes() {
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + (nl ? nl + " por ler" : "Tudo lido") + "</div><h1>Notificações</h1></div>" +
     '<div class="acts">' + (nl ? '<button class="btn sec" data-acao="ler-todas">Marcar todas como lidas</button>' : "") + (lidas ? '<button class="btn sec" data-acao="limpar-lidas">' + I.lixo + "Apagar as lidas (" + lidas + ")</button>" : "") + "</div></div>";
   if (!S.notifs.length) return h + '<div class="vazio"><h3>Sem notificações</h3><p>Aqui aparecem as tarefas que te atribuírem e as tarefas que criaste quando forem concluídas.</p></div>';
-  return h + "<div>" + S.notifs.map((n) => '<button class="notif' + (n.lida ? "" : " nova") + '" data-acao="abrir-notif" data-id="' + n.id + '"><span class="ponto"></span><span><span class="t">' + esc(n.titulo) + '</span><br><span class="c">' + esc(n.corpo) + '</span></span><span class="q">' + haQuanto(n.criado_em) + "</span></button>").join("") + "</div>";
+  const pg = paginar(S.notifs, S.pagNotif, 20); S.pagNotif = pg.pag;
+  return h + '<div class="notifs">' + pg.itens.map((n) => '<button class="notif' + (n.lida ? "" : " nova") + '" data-acao="abrir-notif" data-id="' + n.id + '"><span class="ponto"></span><span><span class="t">' + esc(n.titulo) + '</span><br><span class="c">' + esc(n.corpo) + '</span></span><span class="q">' + haQuanto(n.criado_em) + "</span></button>").join("") + "</div>" + paginador(pg, "pag-notif", "notificações");
 }
 
 /* ---------- definições ---------- */
@@ -812,6 +914,7 @@ function vistaDefinicoes() {
   h += '<section class="cartao-sec"><h3>Notificações neste aparelho</h3><p>' + esc(p.txt) + '</p><div class="acts">' +
     (["pedir", "ok"].includes(p.estado) ? '<button class="btn pri" data-acao="push">Ativar neste aparelho</button>' : "") +
     (p.estado === "ok" ? '<button class="btn sec" data-acao="push-teste">Enviar notificação de teste</button>' : "") + "</div></section>";
+  if (eGestor(S.eu)) h += '<section class="cartao-sec"><h3>Modelos de tarefas</h3><p>Rotinas sugeridas para cada marca e departamento. Escolhes as que queres e atribuis depois a cada pessoa.</p><div class="acts"><button class="btn sec" data-acao="modelos">Carregar modelos</button></div></section>';
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   if (!standalone) h += '<section class="cartao-sec so-browser"><h3>Instalar a app</h3><p>No Android: Chrome → menu ⋮ → «Instalar app». No iPhone: Safari → Partilhar → «Adicionar ao ecrã principal».</p>' + (S.instalar ? '<div class="acts"><button class="btn pri" data-acao="instalar">Instalar agora</button></div>' : "") + "</section>";
   h += '<section class="cartao-sec"><h3>Palavra-passe</h3><form class="form" id="form-mudar"><div class="campos-2"><div class="campo"><label for="mp-1">Nova palavra-passe</label><input id="mp-1" type="password" autocomplete="new-password" minlength="8"></div><div class="campo"><label for="mp-2">Repetir</label><input id="mp-2" type="password" autocomplete="new-password" minlength="8"></div></div><div class="acts"><button class="btn sec" type="submit">Mudar palavra-passe</button></div></form></section>';
@@ -1029,7 +1132,12 @@ document.addEventListener("click", async (e) => {
     case "item-apagar": { const t = S.tarefas[S.aberto.id]; if (t) { await gravar(t.id, { checklist: (t.checklist || []).filter((i) => i.id !== el.dataset.item) }); renderPainel(true); } break; }
     case "duplicar": if (S.aberto?.id) duplicarTarefa(S.aberto.id); break;
     case "apagar": if (S.aberto?.id) { const tid = S.aberto.id; fechar(); eliminarTarefas([tid]); } break;
-    case "per-ativ": S.periodoAtiv = el.dataset.p; render(); break;
+    case "per-ativ": S.periodoAtiv = el.dataset.p; S.pagAtiv = 1; render(); break;
+    case "ativ-acao": S.filtroAcao = el.dataset.v; S.pagAtiv = 1; render(); break;
+    case "pag-ativ": S.pagAtiv = +el.dataset.p; render(); $(".registo")?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
+    case "pag-hoje": S.pagHoje = +el.dataset.p; render(); break;
+    case "pag-notif": S.pagNotif = +el.dataset.p; render(); $(".main").scrollTop = 0; break;
+    case "instalar-fechar": try { localStorage.setItem(CHAVE_INSTALAR, "1"); } catch { /* */ } render(); toast("Podes instalar mais tarde em «Mais»."); break;
     case "ler-todas": { const ids = S.notifs.filter((n) => !n.lida).map((n) => n.id); S.notifs = S.notifs.map((n) => ({ ...n, lida: true })); render(); api.notificacoes.marcarLidas(ids).catch(falha); break; }
     case "abrir-notif": {
       const n = S.notifs.find((x) => String(x.id) === id);

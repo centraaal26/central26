@@ -1,5 +1,5 @@
 // Central 26 — Logística: encomendas (com fatura e preparação artigo a artigo), rotas otimizadas e locais.
-import { MES, MES_L, DIA, ymd, normalizar, haQuanto, eGestor, PRIORIDADES } from "./dados.js";
+import { MES, MES_L, DIA, ymd, normalizar, haQuanto, eGestor, PRIORIDADES, paginar, paginador } from "./dados.js";
 import { localizar, calcularRota, ligacoesGoogle, navegarGoogle, navegarWaze, desenharMapa } from "./geo.js";
 
 export const ESTADOS_ENC = { nova: "Nova", em_preparacao: "Em preparação", pronta: "Pronta", em_rota: "Em rota", entregue: "Entregue", cancelada: "Cancelada" };
@@ -106,7 +106,9 @@ export function criarLogistica(ctx) {
     const ordemEst = { nova: 0, em_preparacao: 1, pronta: 2, em_rota: 3, entregue: 4, cancelada: 5 }, ordemPri = { alta: 0, media: 1, baixa: 2 };
     l.sort((a, b) => G.filtro === "fechadas" ? String(b.entregue_em || b.atualizado_em).localeCompare(String(a.entregue_em || a.atualizado_em))
       : ordemPri[a.prioridade] - ordemPri[b.prioridade] || String(a.data_prevista || "9999").localeCompare(String(b.data_prevista || "9999")) || ordemEst[a.estado] - ordemEst[b.estado] || a.numero - b.numero);
-    h += l.length ? '<div class="enc-lista">' + l.map(linhaEnc).join("") + "</div>" : '<div class="vazio"><h3>' + (G.filtro === "ativas" ? "Nada por tratar" : "Sem encomendas aqui") + "</h3><p>" +
+    const assin = [G.filtro, G.q, G.minhas].join("|"); if (assin !== G.pagAssin) { G.pagAssin = assin; G.pag = 1; }
+    const pg = paginar(l, G.pag, 15); G.pag = pg.pag;
+    h += l.length ? '<div class="enc-lista">' + pg.itens.map(linhaEnc).join("") + "</div>" + paginador(pg, "log-pag", "encomendas") : '<div class="vazio"><h3>' + (G.filtro === "ativas" ? "Nada por tratar" : "Sem encomendas aqui") + "</h3><p>" +
       (G.filtro === "ativas" ? "Quando o Comercial ou a direção enviarem uma encomenda, ela aparece aqui e a Logística recebe um aviso." : "Muda o filtro para ver outras encomendas.") + "</p></div>";
     return h;
   }
@@ -402,6 +404,7 @@ export function criarLogistica(ctx) {
   function clique(acao, el) {
     const id = el.dataset.id;
     switch (acao) {
+      case "log-pag": G.pag = +el.dataset.p; render(); document.querySelector(".enc-lista")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
       case "log-tab": G.tab = el.dataset.tab; if (S.param) { location.hash = "logistica"; } else render(); return true;
       case "enc-filtro": G.filtro = G.filtro === el.dataset.v && el.dataset.v !== "ativas" ? "ativas" : el.dataset.v; render(); return true;
       case "enc-nova": {

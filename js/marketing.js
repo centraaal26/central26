@@ -349,5 +349,5 @@ export function criarMarketing(ctx) {
   }
   function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(M, { estado: "por-carregar", pubs: {}, docs: {}, importacao: null, tab: "calendario", docSel: null }); }
 
-  return { vista, painel, clique, escrever, mudar, submeter, carregar, blocoInicio, reiniciar, contagem };
+  return { vista, painel, clique, escrever, mudar, submeter, carregar, blocoInicio, reiniciar, contagem, estado: () => M.estado };
 }

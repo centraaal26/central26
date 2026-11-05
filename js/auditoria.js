@@ -1,5 +1,5 @@
 // Central 26 — Tecnológico: registo da auditoria aos sites, plano semanal, referência e importação da folha de acompanhamento.
-import { MARCA, MARCAS, MES, ymd, normalizar, haQuanto, eGestor } from "./dados.js";
+import { MARCA, MARCAS, MES, ymd, normalizar, haQuanto, eGestor, paginar, paginador } from "./dados.js";
 import { carregarXlsx } from "./xlsx.js";
 
 export const ESTADOS_AUD = { novo: "Novo", confirmado: "Confirmado", em_correcao: "Em correção", a_aguardar: "A aguardar informação", resolvido: "Resolvido", validado: "Validado", aceite: "Aceite pela administração" };
@@ -131,7 +131,9 @@ export function criarAuditoria(ctx) {
       (f.q || f.marca || f.prio || f.semana || f.resp || f.estado || f.meus ? '<button class="btn sec" data-acao="aud-limpar">Limpar filtros</button>' : "") + "</div></div>";
     const l = filtrar();
     if (!l.length) return h + '<div class="vazio"><h3>Nada com estes filtros</h3><p>Muda os filtros ou mostra também os itens fechados.</p></div>';
-    h += '<div class="aud-lista">' + l.map(linha).join("") + "</div>";
+    const assin = JSON.stringify(A.f); if (assin !== A.pagAssin) { A.pagAssin = assin; A.pag = 1; }
+    const pg = paginar(l, A.pag, 20); A.pag = pg.pag;
+    h += '<div class="aud-lista">' + pg.itens.map(linha).join("") + "</div>" + paginador(pg, "aud-pag", "itens");
     return h;
   }
   function linha(i) {
@@ -422,6 +424,7 @@ export function criarAuditoria(ctx) {
   /* ============================== Ações ============================== */
   function clique(acao, el) {
     switch (acao) {
+      case "aud-pag": A.pag = +el.dataset.p; render(); document.querySelector(".aud-lista")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
       case "aud-tab": A.tab = el.dataset.tab; if (S.rota === "auditoria" && S.param) location.hash = "auditoria"; else render(); return true;
       case "aud-fest": A.f.estado = A.f.estado === el.dataset.v ? "" : el.dataset.v; A.tab = "registo"; render(); return true;
       case "aud-limpar": A.f = { q: "", marca: "", prio: "", estado: "", semana: "", resp: "", meus: false, fechados: A.f.fechados }; render(); return true;

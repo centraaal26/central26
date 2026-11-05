@@ -19,7 +19,9 @@ function quando(ts) {
 
 export function criarChat(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $ } = ctx;
-  const C = (S.chat = { estado: "por-carregar", resumo: [], ativo: null, msgs: {}, temMais: {}, rascunho: {}, editar: null, nova: false, filtroNova: "", sugestoes: [] });
+  const C = (S.chat = { estado: "por-carregar", resumo: [], ativo: null, msgs: {}, temMais: {}, rascunho: {}, editar: null, nova: false, modoNova: "pessoa", filtroNova: "", grupoNome: "", grupoSel: new Set(), membros: {}, gravacao: null, sairConfirmar: false, sugestoes: [] });
+  const players = {}; // áudios carregados: caminho → { audio, url, pos }
+  let aTocar = null;
   let desligar = null, lerT = null;
   // apagar mensagem espera 6 s por «Anular»; se a app fechar antes, apaga logo
   const pendentes = new Set();
@@ -44,9 +46,11 @@ export function criarChat(ctx) {
   const canal = (id) => C.resumo.find((c) => c.canal_id === id);
   const naoLidas = () => C.resumo.reduce((s, c) => s + (c.por_ler || 0), 0);
   const nomeCanal = (c) => (!c ? "Conversa" : c.tipo === "direto" ? nomeDe(c.outro_id) || "Conversa" : c.tipo === "geral" ? "Geral" : c.nome);
+  const avCanal = (c) => (c.tipo === "direto" ? av(c.outro_id) : c.tipo === "grupo" ? '<span class="av canal grupo" aria-hidden="true">' + esc(iniciais(c.nome)) + "</span>" : '<span class="av canal" aria-hidden="true">#</span>');
 
   async function abrirCanal(id) {
-    C.ativo = id; C.editar = null; C.nova = false;
+    C.ativo = id; C.editar = null; C.nova = false; C.sairConfirmar = false;
+    if (canal(id)?.tipo === "grupo" && !C.membros[id] && api.chat.membros) api.chat.membros(id).then((l) => { C.membros[id] = l; agendarRender(); }).catch(() => {});
     if (!C.msgs[id]) {
       C.msgs[id] = null; render();
       try { const l = await api.chat.mensagens(id); C.msgs[id] = l; C.temMais[id] = l.length >= 60; }
@@ -72,7 +76,7 @@ export function criarChat(ctx) {
       if (lista && !lista.some((m) => m.id === novo.id)) lista.push(novo);
       const c = canal(novo.canal_id);
       if (!c) { api.chat.resumo().then((r) => { C.resumo = r; agendarRender(); }).catch(() => {}); return; }
-      c.ultima_em = novo.criado_em; c.ultima_texto = novo.texto.slice(0, 140); c.ultimo_autor = novo.autor_id;
+      c.ultima_em = novo.criado_em; c.ultima_texto = novo.anexo_path && !novo.texto ? "Mensagem de voz" : novo.texto.slice(0, 140); c.ultimo_autor = novo.autor_id;
       if (novo.autor_id !== S.eu.id) {
         if (C.ativo === novo.canal_id && visivel()) marcarLido(novo.canal_id);
         else c.por_ler = (c.por_ler || 0) + 1;
@@ -122,32 +126,42 @@ export function criarChat(ctx) {
   }
 
   function lista() {
-    const canais = C.resumo.filter((c) => c.tipo !== "direto").sort((a, b) => (a.tipo === "geral" ? -1 : b.tipo === "geral" ? 1 : a.nome.localeCompare(b.nome, "pt")));
-    const diretas = C.resumo.filter((c) => c.tipo === "direto").sort((a, b) => String(b.ultima_em || "").localeCompare(String(a.ultima_em || "")));
+    const canais = C.resumo.filter((c) => c.tipo === "geral" || c.tipo === "departamento").sort((a, b) => (a.tipo === "geral" ? -1 : b.tipo === "geral" ? 1 : a.nome.localeCompare(b.nome, "pt")));
+    const recentes = (a, b) => String(b.ultima_em || "").localeCompare(String(a.ultima_em || ""));
+    const diretas = C.resumo.filter((c) => c.tipo === "direto").sort(recentes);
+    const grupos = C.resumo.filter((c) => c.tipo === "grupo").sort(recentes);
     const item = (c) => {
       const nome = nomeCanal(c), pre = c.ultima_texto ? (c.ultimo_autor === S.eu.id ? "Tu: " : c.tipo !== "direto" && c.ultimo_autor ? nomeDe(c.ultimo_autor).split(" ")[0] + ": " : "") + c.ultima_texto : "Sem mensagens";
       return '<button class="conv' + (C.ativo === c.canal_id ? " on" : "") + (c.por_ler ? " por-ler" : "") + '" data-acao="chat-abrir" data-id="' + c.canal_id + '">' +
-        (c.tipo === "direto" ? av(c.outro_id) : '<span class="av canal" aria-hidden="true">#</span>') +
+        avCanal(c) +
         '<span class="conv-t"><span class="conv-n">' + esc(nome) + "</span><small>" + esc(pre) + '</small></span><span class="conv-m"><small>' + quando(c.ultima_em) + "</small>" + (c.por_ler ? '<b class="ct">' + (c.por_ler > 99 ? "99+" : c.por_ler) + "</b>" : "") + "</span></button>";
     };
-    let h = '<aside class="chat-lista"><div class="chat-lista-cab"><h1>Mensagens</h1><button class="btn sec" data-acao="chat-nova">' + I.plus + "Nova conversa</button></div>";
+    let h = '<aside class="chat-lista"><div class="chat-lista-cab"><h1>Mensagens</h1><button class="btn-mais' + (C.nova ? " on" : "") + '" data-acao="chat-nova" aria-label="' + (C.nova ? "Fechar" : "Nova conversa ou grupo") + '" aria-expanded="' + C.nova + '" title="Nova conversa ou grupo">' + I.plus + "</button></div>";
     if (C.nova) {
       const q = normalizar(C.filtroNova);
-      const pessoas = ativos().filter((p) => p.id !== S.eu.id && (!q || normalizar(p.nome).includes(q)));
-      h += '<div class="chat-nova"><label class="pesq">' + I.lupa + '<span class="sr">Procurar pessoa</span><input id="chat-pessoa" placeholder="Com quem queres falar?" value="' + esc(C.filtroNova) + '" autocomplete="off"></label>' +
-        pessoas.map((p) => '<button class="conv" data-acao="chat-direto" data-id="' + p.id + '">' + av(p.id) + '<span class="conv-t"><span class="conv-n">' + esc(p.nome) + "</span><small>" + esc(p.cargo || "") + "</small></span></button>").join("") +
-        '<button class="btn sec" data-acao="chat-nova-fechar">Cancelar</button></div>';
+      const pessoas = ativos().filter((p) => p.id !== S.eu.id && (!q || normalizar(p.nome + " " + (p.cargo || "")).includes(q)));
+      h += '<div class="chat-nova"><div class="seg seg-nova" role="group" aria-label="Tipo de conversa"><button data-acao="chat-modo" data-v="pessoa" aria-pressed="' + (C.modoNova === "pessoa") + '">' + I.pessoa + 'Com uma pessoa</button><button data-acao="chat-modo" data-v="grupo" aria-pressed="' + (C.modoNova === "grupo") + '">' + I.equipa + "Novo grupo</button></div>";
+      if (C.modoNova === "grupo") h += '<label class="sr" for="chat-grupo-nome">Nome do grupo</label><input id="chat-grupo-nome" class="inp-grupo" placeholder="Nome do grupo (ex.: Campanha de Natal)" maxlength="60" value="' + esc(C.grupoNome) + '" autocomplete="off">';
+      h += '<label class="pesq">' + I.lupa + '<span class="sr">Procurar pessoa</span><input id="chat-pessoa" placeholder="' + (C.modoNova === "grupo" ? "Procurar pessoas" : "Com quem queres falar?") + '" value="' + esc(C.filtroNova) + '" autocomplete="off"></label><div class="chat-nova-l">' +
+        (pessoas.length ? pessoas.map((p) => C.modoNova === "grupo"
+          ? '<button class="conv' + (C.grupoSel.has(p.id) ? " on" : "") + '" data-acao="chat-grupo-sel" data-id="' + p.id + '" aria-pressed="' + C.grupoSel.has(p.id) + '">' + av(p.id) + '<span class="conv-t"><span class="conv-n">' + esc(p.nome) + "</span><small>" + esc(p.cargo || "") + '</small></span><span class="conv-chk">' + I.check + "</span></button>"
+          : '<button class="conv" data-acao="chat-direto" data-id="' + p.id + '">' + av(p.id) + '<span class="conv-t"><span class="conv-n">' + esc(p.nome) + "</span><small>" + esc(p.cargo || "") + "</small></span></button>").join("") : '<p class="muted chat-dica">Ninguém com esse nome.</p>') + "</div>";
+      if (C.modoNova === "grupo") h += '<button class="btn pri" data-acao="chat-grupo-criar"' + (C.grupoSel.size && C.grupoNome.trim() ? "" : " disabled") + ">" + (C.grupoSel.size ? "Criar grupo com " + C.grupoSel.size + (C.grupoSel.size === 1 ? " pessoa" : " pessoas") : "Escolhe as pessoas") + "</button>";
+      h += "</div>";
     }
     h += '<div class="chat-sec">Canais</div>' + canais.map(item).join("");
+    if (grupos.length) h += '<div class="chat-sec">Grupos</div>' + grupos.map(item).join("");
     h += '<div class="chat-sec">Mensagens diretas</div>' + (diretas.length ? diretas.map(item).join("") : '<p class="muted chat-dica">Ainda sem conversas diretas.</p>');
     return h + "</aside>";
   }
 
   function conversa(c) {
     const msgs = C.msgs[c.canal_id];
-    const sub = c.tipo === "direto" ? esc(S.perfis[c.outro_id]?.cargo || "") : c.tipo === "geral" ? "Toda a equipa" : "Departamento " + esc(c.nome) + " e direção";
+    const mem = C.membros[c.canal_id];
+    const sub = c.tipo === "direto" ? esc(S.perfis[c.outro_id]?.cargo || "") : c.tipo === "geral" ? "Toda a equipa" : c.tipo === "grupo" ? (mem ? esc(mem.map((id) => (id === S.eu.id ? "Tu" : (nomeDe(id) || "").split(" ")[0])).filter(Boolean).join(", ")) : "Grupo") : "Departamento " + esc(c.nome) + " e direção";
     let h = '<section class="chat-conv"><header class="chat-cab"><button class="ib chat-voltar" data-acao="chat-voltar" aria-label="Voltar às conversas">' + I.seta + '</button>' +
-      (c.tipo === "direto" ? av(c.outro_id) : '<span class="av canal" aria-hidden="true">#</span>') + '<span><b>' + esc(nomeCanal(c)) + "</b><small>" + sub + "</small></span></header>";
+      avCanal(c) + '<span class="chat-cab-t"><b>' + esc(nomeCanal(c)) + "</b><small>" + sub + "</small></span>" +
+      (c.tipo === "grupo" ? (C.sairConfirmar ? '<span class="acts"><button class="btn sec mini" data-acao="chat-sair-nao">Ficar</button><button class="btn perigo mini" data-acao="chat-sair-sim">Sair do grupo</button></span>' : '<button class="ib" data-acao="chat-sair">Sair</button>') : "") + "</header>";
     h += '<div class="chat-msgs" id="chat-msgs" role="log" aria-live="polite">';
     if (msgs === null || msgs === undefined) h += '<p class="muted chat-dica">A carregar…</p>';
     else {
@@ -163,16 +177,95 @@ export function criarChat(ctx) {
           '<div class="msg-c">' + (junta ? "" : '<div class="msg-cab"><b>' + esc(nomeDe(m.autor_id) || "Alguém") + "</b><small>" + hora(m.criado_em) + "</small></div>");
         if (C.editar === m.id) h += '<form id="form-editar-msg" data-id="' + m.id + '"><textarea id="chat-editar" class="chat-ta" rows="2">' + esc(m.texto) + '</textarea><div class="acts"><button class="btn pri" type="submit">Guardar</button><button class="btn sec" type="button" data-acao="chat-editar-cancelar">Cancelar</button></div></form>';
         else if (m.apagado) h += '<p class="msg-t apagada">Mensagem apagada</p>';
-        else h += '<p class="msg-t">' + formatar(m.texto) + (m.editado_em ? ' <small class="muted">(editada)</small>' : "") + "</p>";
-        h += "</div>" + (meu && !m.apagado && C.editar !== m.id ? '<span class="msg-acts"><button class="ib" data-acao="chat-editar" data-id="' + m.id + '" aria-label="Editar mensagem">Editar</button><button class="ib perigo" data-acao="chat-apagar" data-id="' + m.id + '" aria-label="Apagar mensagem">' + I.lixo + "</button></span>" : "") + "</div>";
+        else {
+          if (m.anexo_path) h += audioHTML(m);
+          if (m.texto) h += '<p class="msg-t">' + formatar(m.texto) + (m.editado_em ? ' <small class="muted">(editada)</small>' : "") + "</p>";
+        }
+        h += "</div>" + (meu && !m.apagado && C.editar !== m.id ? '<span class="msg-acts">' + (m.texto ? '<button class="ib" data-acao="chat-editar" data-id="' + m.id + '" aria-label="Editar mensagem">Editar</button>' : "") + '<button class="ib perigo" data-acao="chat-apagar" data-id="' + m.id + '" aria-label="Apagar mensagem">' + I.lixo + "</button></span>" : "") + "</div>";
         ant = m;
       }
     }
     h += "</div>";
     const sug = C.sugestoes.length ? '<div class="sugestoes" role="listbox">' + C.sugestoes.map((p, i) => '<button role="option" data-acao="chat-mencao" data-id="' + p.id + '"' + (i === 0 ? ' class="on"' : "") + ">" + av(p.id) + esc(p.nome) + "</button>").join("") + "</div>" : "";
-    h += '<form class="chat-escrever" id="form-chat" data-canal="' + c.canal_id + '">' + sug + '<label class="sr" for="chat-input">Mensagem</label><textarea id="chat-input" class="chat-ta" rows="1" placeholder="Mensagem · @ para mencionar" enterkeyhint="send">' + esc(C.rascunho[c.canal_id] || "") + '</textarea><button class="btn pri" type="submit" aria-label="Enviar">Enviar</button></form>';
+    const g = C.gravacao;
+    if (g && g.canal === c.canal_id) h += '<div class="chat-escrever a-gravar" role="status"><button class="ib" data-acao="chat-gravar-cancelar" aria-label="Cancelar gravação">' + I.lixo + '</button><span class="grav-ponto" aria-hidden="true"></span><span class="grav-t mono" id="grav-t">' + dur((Date.now() - g.inicio) / 1000) + '</span><span class="grav-onda" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="grav-txt">A gravar…</span><button class="btn pri btn-redondo" data-acao="chat-gravar-enviar" aria-label="Enviar mensagem de voz">' + I.enviar + "</button></div>";
+    else h += '<form class="chat-escrever" id="form-chat" data-canal="' + c.canal_id + '">' + sug + '<label class="sr" for="chat-input">Mensagem</label><textarea id="chat-input" class="chat-ta" rows="1" placeholder="Mensagem · @ para mencionar" enterkeyhint="send">' + esc(C.rascunho[c.canal_id] || "") + "</textarea>" +
+      (podeGravar() ? '<button class="ib btn-micro" type="button" data-acao="chat-gravar" aria-label="Gravar mensagem de voz" title="Gravar mensagem de voz">' + I.micro + "</button>" : "") + '<button class="btn pri btn-redondo" type="submit" aria-label="Enviar">' + I.enviar + "</button></form>";
     return h + "</section>";
   }
+
+  /* ---------- mensagens de voz ---------- */
+  const dur = (s) => { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const podeGravar = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder && api.chat.enviarAudio);
+  function audioHTML(m) {
+    const p = players[m.anexo_path], tocar = aTocar === m.anexo_path && p && !p.audio.paused;
+    const pct = p ? Math.min(100, (p.audio.currentTime / duracaoDe(p)) * 100) : 0;
+    return '<div class="audio' + (tocar ? " a-tocar" : "") + '" data-audio="' + esc(m.anexo_path) + '"><button class="au-play" data-acao="chat-audio" data-path="' + esc(m.anexo_path) + '" data-dur="' + (m.anexo_duracao || 0) + '" aria-label="' + (tocar ? "Pausar" : "Ouvir") + ' mensagem de voz">' + (tocar ? I.pausa : I.play) + "</button>" +
+      '<span class="au-barra"><i style="width:' + pct.toFixed(1) + '%"></i></span><span class="au-t mono">' + (p && p.audio.currentTime > 0 ? dur(p.audio.currentTime) : dur(m.anexo_duracao)) + "</span></div>";
+  }
+  // o Chrome nem sempre sabe a duração de um áudio gravado no navegador: usa a que foi gravada
+  const duracaoDe = (p) => (isFinite(p.audio.duration) && p.audio.duration > 0 ? p.audio.duration : p.dur || 1);
+  function atualizarPlayer(path) {
+    const p = players[path]; if (!p) return;
+    document.querySelectorAll('.audio[data-audio="' + CSS.escape(path) + '"]').forEach((el) => {
+      const tocar = !p.audio.paused;
+      el.classList.toggle("a-tocar", tocar);
+      const b = el.querySelector(".au-play"); if (b) { b.innerHTML = tocar ? I.pausa : I.play; b.setAttribute("aria-label", (tocar ? "Pausar" : "Ouvir") + " mensagem de voz"); }
+      const i = el.querySelector(".au-barra i"); if (i) i.style.width = Math.min(100, (p.audio.currentTime / duracaoDe(p)) * 100).toFixed(1) + "%";
+      const t = el.querySelector(".au-t"); if (t && p.audio.currentTime > 0) t.textContent = dur(p.audio.currentTime);
+    });
+  }
+  async function tocar(path, durGravada) {
+    let p = players[path];
+    if (!p) {
+      try {
+        const url = await api.chat.urlAudio(path), audio = new Audio(url);
+        audio.preload = "auto";
+        p = players[path] = { audio, dur: +durGravada || 0 };
+        audio.addEventListener("timeupdate", () => atualizarPlayer(path));
+        audio.addEventListener("ended", () => { audio.currentTime = 0; aTocar = null; atualizarPlayer(path); });
+        audio.addEventListener("pause", () => atualizarPlayer(path));
+        audio.addEventListener("play", () => atualizarPlayer(path));
+      } catch (e) { falha(e); return; }
+    }
+    if (aTocar && aTocar !== path && players[aTocar]) players[aTocar].audio.pause();
+    if (p.audio.paused) { aTocar = path; p.audio.play().catch(() => toast("Não foi possível reproduzir o áudio neste aparelho.", true)); }
+    else p.audio.pause();
+  }
+  async function gravar() {
+    if (C.gravacao) return;
+    const canalId = C.ativo;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { toast(e?.name === "NotAllowedError" ? "Dá permissão ao microfone nas definições do navegador para gravar." : "Não foi possível usar o microfone.", true); return; }
+    const tipo = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"].find((t) => MediaRecorder.isTypeSupported?.(t)) || "";
+    const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, audioBitsPerSecond: 48000 } : undefined);
+    const g = (C.gravacao = { canal: canalId, rec, stream, partes: [], inicio: Date.now(), tipo: rec.mimeType || tipo || "audio/webm", enviar: false });
+    rec.ondataavailable = (ev) => { if (ev.data?.size) g.partes.push(ev.data); };
+    rec.onstop = async () => {
+      clearInterval(g.relogio); stream.getTracks().forEach((t) => t.stop());
+      const duracao = (Date.now() - g.inicio) / 1000;
+      C.gravacao = null; render();
+      if (!g.enviar) return;
+      if (duracao < 0.8) { toast("Mensagem demasiado curta. Mantém a gravação um pouco mais.", true); return; }
+      const blob = new Blob(g.partes, { type: g.tipo });
+      try {
+        const m = await api.chat.enviarAudio(g.canal, blob, g.tipo, duracao);
+        const l = C.msgs[g.canal] || (C.msgs[g.canal] = []);
+        if (!l.some((x) => x.id === m.id)) l.push(m);
+        const c = canal(g.canal); if (c) { c.ultima_em = m.criado_em; c.ultima_texto = "Mensagem de voz"; c.ultimo_autor = S.eu.id; }
+        render(); descer();
+      } catch (e) { falha(e); }
+    };
+    rec.start(250);
+    g.relogio = setInterval(() => {
+      const s = (Date.now() - g.inicio) / 1000, t = document.getElementById("grav-t");
+      if (t) t.textContent = dur(s);
+      if (s >= 180) { g.enviar = true; rec.stop(); toast("Chegaste aos 3 minutos: a mensagem foi enviada."); }
+    }, 250);
+    render();
+  }
+  function pararGravacao(enviar) { const g = C.gravacao; if (!g) return; g.enviar = enviar; try { g.rec.stop(); } catch { C.gravacao = null; render(); } }
 
   /* ---------- ações ---------- */
   async function enviar(f) {
@@ -211,7 +304,17 @@ export function criarChat(ctx) {
     switch (acao) {
       case "chat-abrir": history.replaceState(null, "", "#chat-" + id); S.param = id; abrirCanal(id); return true;
       case "chat-voltar": C.ativo = null; history.replaceState(null, "", "#chat"); S.param = null; render(); return true;
-      case "chat-nova": C.nova = !C.nova; C.filtroNova = ""; render(); setTimeout(() => $("#chat-pessoa")?.focus(), 0); return true;
+      case "chat-nova": C.nova = !C.nova; C.filtroNova = ""; C.grupoNome = ""; C.grupoSel = new Set(); render(); setTimeout(() => $(C.modoNova === "grupo" ? "#chat-grupo-nome" : "#chat-pessoa")?.focus(), 0); return true;
+      case "chat-modo": C.modoNova = el.dataset.v; render(); setTimeout(() => $(C.modoNova === "grupo" ? "#chat-grupo-nome" : "#chat-pessoa")?.focus(), 0); return true;
+      case "chat-grupo-sel": if (C.grupoSel.has(id)) C.grupoSel.delete(id); else C.grupoSel.add(id); render(); return true;
+      case "chat-grupo-criar": criarGrupo(); return true;
+      case "chat-sair": C.sairConfirmar = true; render(); return true;
+      case "chat-sair-nao": C.sairConfirmar = false; render(); return true;
+      case "chat-sair-sim": sairGrupo(); return true;
+      case "chat-gravar": gravar(); return true;
+      case "chat-gravar-cancelar": pararGravacao(false); return true;
+      case "chat-gravar-enviar": pararGravacao(true); return true;
+      case "chat-audio": tocar(el.dataset.path, el.dataset.dur); return true;
       case "chat-nova-fechar": C.nova = false; render(); return true;
       case "chat-direto": abrirDireto(id); return true;
       case "chat-antes": antes(); return true;
@@ -221,6 +324,21 @@ export function criarChat(ctx) {
       case "chat-mencao": inserirMencao(id); return true;
     }
     return false;
+  }
+  async function criarGrupo() {
+    const nome = C.grupoNome.trim();
+    if (!nome) { toast("Dá um nome ao grupo.", true); $("#chat-grupo-nome")?.focus(); return; }
+    try {
+      const id = await api.chat.criarGrupo(nome, [...C.grupoSel]);
+      C.resumo = await api.chat.resumo(); C.nova = false; C.grupoSel = new Set(); C.grupoNome = "";
+      location.hash = "chat-" + id; toast("Grupo «" + nome + "» criado");
+    } catch (e) { falha(e); }
+  }
+  async function sairGrupo() {
+    const id = C.ativo, nome = nomeCanal(canal(id));
+    clearTimeout(lerT);
+    try { await api.chat.sairGrupo(id); C.resumo = C.resumo.filter((c) => c.canal_id !== id); C.ativo = null; C.sairConfirmar = false; history.replaceState(null, "", "#chat"); S.param = null; render(); toast("Saíste do grupo «" + nome + "»"); }
+    catch (e) { falha(e); }
   }
   async function abrirDireto(pessoa) {
     try {
@@ -241,10 +359,10 @@ export function criarChat(ctx) {
   async function apagar(mid) {
     const l = C.msgs[C.ativo], m = l?.find((x) => x.id === mid); if (!m) return;
     const antesM = { ...m };
-    Object.assign(m, { apagado: true, texto: "" }); render();
+    Object.assign(m, { apagado: true, texto: "", anexo_path: null }); render();
     const executar = async () => {
       pendentes.delete(executar); clearTimeout(t);
-      try { const r = await api.chat.atualizar(mid, { apagado: true }); Object.assign(m, r); agendarRender(); }
+      try { const r = await api.chat.atualizar(mid, { apagado: true }); if (antesM.anexo_path && api.chat.apagarAudio) api.chat.apagarAudio(antesM.anexo_path); Object.assign(m, r); agendarRender(); }
       catch (e) { Object.assign(m, antesM); render(); falha(e); }
     };
     pendentes.add(executar);
@@ -268,6 +386,7 @@ export function criarChat(ctx) {
   function escrever(e) {
     const t = e.target;
     if (t.id === "chat-input") { C.rascunho[C.ativo] = t.value; autoAltura(t); atualizarSugestoes(t); return true; }
+    if (t.id === "chat-grupo-nome") { C.grupoNome = t.value; const b = $('[data-acao="chat-grupo-criar"]'); if (b) b.disabled = !(C.grupoSel.size && t.value.trim()); return true; }
     if (t.id === "chat-pessoa") { C.filtroNova = t.value; const pos = t.selectionStart; render(); const n = $("#chat-pessoa"); if (n) { n.focus(); n.setSelectionRange(pos, pos); } return true; }
     return false;
   }
@@ -289,6 +408,6 @@ export function criarChat(ctx) {
     else if (!param) { if (window.matchMedia("(max-width:820px)").matches) C.ativo = null; }
   }
 
-  function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", resumo: [], ativo: null, msgs: {}, temMais: {}, rascunho: {}, editar: null, nova: false, sugestoes: [] }); }
+  function reiniciar() { if (desligar) { desligar(); desligar = null; } pararGravacao(false); Object.values(players).forEach((p) => p.audio.pause()); Object.assign(C, { estado: "por-carregar", resumo: [], ativo: null, msgs: {}, temMais: {}, rascunho: {}, editar: null, nova: false, membros: {}, gravacao: null, sugestoes: [] }); }
   return { vista, clique, submeter, escrever, tecla, carregar, naoLidas, aoEntrarNaRota, abrirDireto, reiniciar, estado: () => C.estado };
 }

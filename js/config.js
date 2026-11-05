@@ -3,4 +3,4 @@
 // NUNCA colocar aqui a chave "secret" / "service_role".
 export const SUPABASE_URL = "https://rpnahccsdxhzraoerhvq.supabase.co";
 export const SUPABASE_CHAVE = "sb_publishable_yD67K8ThXl4-GKUqvnWpXQ_MNCYYxQn";
-export const VERSAO = "1.9.0";
+export const VERSAO = "1.10.0";

@@ -258,31 +258,34 @@ export function criarDemo() {
         return c;
       };
       const guardar = () => { try { localStorage.setItem(K, JSON.stringify(c)); } catch { /* */ } };
-      const vejo = (cn) => { const e = eu(); return cn.tipo === "geral" || (cn.tipo === "departamento" && (eGestor(e) || cn.departamento_id === e.departamento_id)) || (cn.tipo === "direto" && c.membros.some((m) => m.canal_id === cn.id && m.perfil_id === euId)); };
+      const vejo = (cn) => { const e = eu(); return cn.tipo === "geral" || (cn.tipo === "departamento" && (eGestor(e) || cn.departamento_id === e.departamento_id)) || ((cn.tipo === "direto" || cn.tipo === "grupo") && c.membros.some((m) => m.canal_id === cn.id && m.perfil_id === euId)); };
+      const audios = {}; // no modo de demonstração os áudios ficam só em memória
+      const resumoTexto = (u) => (u.apagado ? "" : u.anexo_path && !u.texto ? "Mensagem de voz" : u.texto.slice(0, 140));
       const lido = (canal) => c.membros.find((m) => m.canal_id === canal && m.perfil_id === euId)?.lido_ate || eu().criado_em;
       return {
         async resumo() {
           ler();
           return c.canais.filter(vejo).map((cn) => {
             const ms = c.mensagens.filter((m) => m.canal_id === cn.id), u = ms[ms.length - 1];
-            return { canal_id: cn.id, tipo: cn.tipo, nome: cn.nome, departamento_id: cn.departamento_id, outro_id: c.membros.find((m) => m.canal_id === cn.id && m.perfil_id !== euId)?.perfil_id || null,
-              ultima_em: u?.criado_em || null, ultima_texto: u ? (u.apagado ? "" : u.texto.slice(0, 140)) : null, ultimo_autor: u?.autor_id || null,
+            return { canal_id: cn.id, tipo: cn.tipo, nome: cn.nome, departamento_id: cn.departamento_id, outro_id: cn.tipo === "direto" ? c.membros.find((m) => m.canal_id === cn.id && m.perfil_id !== euId)?.perfil_id || null : null,
+              ultima_em: u?.criado_em || null, ultima_texto: u ? resumoTexto(u) : null, ultimo_autor: u?.autor_id || null,
               por_ler: ms.filter((m) => !m.apagado && m.autor_id !== euId && m.criado_em > lido(cn.id)).length };
           });
         },
         async mensagens(canal, antes) { ler(); const l = c.mensagens.filter((m) => m.canal_id === canal && (!antes || m.criado_em < antes)); return structuredClone(l.slice(-60)); },
-        async enviar(canal, texto, mencoes) {
-          ler(); const m = { id: c.seq++, canal_id: canal, autor_id: euId, texto: texto.trim(), mencoes, criado_em: agora(), editado_em: null, apagado: false };
+        async enviar(canal, texto, mencoes, anexo) {
+          ler(); const m = { id: c.seq++, canal_id: canal, autor_id: euId, texto: texto.trim(), mencoes, criado_em: agora(), editado_em: null, apagado: false, ...(anexo || {}) };
           c.mensagens.push(m); guardar();
           const cn = c.canais.find((x) => x.id === canal);
-          const dest = cn.tipo === "direto" ? c.membros.filter((x) => x.canal_id === canal && x.perfil_id !== euId).map((x) => x.perfil_id) : mencoes;
+          const dest = cn.tipo === "direto" || cn.tipo === "grupo" ? c.membros.filter((x) => x.canal_id === canal && x.perfil_id !== euId).map((x) => x.perfil_id) : mencoes;
           dest.forEach((d) => { const n = db.notificacoes.find((x) => x.destinatario_id === d && x.link === "#chat-" + canal && !x.lida);
-            if (n) { n.corpo = texto.slice(0, 120); n.criado_em = agora(); } else notificar(d, "mensagem", cn.tipo === "direto" ? "Mensagem de " + nome(euId) : nome(euId) + " mencionou-te em #" + cn.nome, texto.slice(0, 120), "#chat-" + canal); });
+            const corpo = texto ? texto.slice(0, 120) : "Mensagem de voz";
+            if (n) { n.corpo = corpo; n.criado_em = agora(); } else notificar(d, "mensagem", cn.tipo === "direto" ? "Mensagem de " + nome(euId) : cn.tipo === "grupo" ? nome(euId) + " em «" + cn.nome + "»" : nome(euId) + " mencionou-te em #" + cn.nome, corpo, "#chat-" + canal); });
           gravar(db); return structuredClone(m);
         },
         async atualizar(id, campos) {
           ler(); const m = c.mensagens.find((x) => x.id === id); if (!m || m.autor_id !== euId) throw new Error("Só podes alterar as tuas mensagens.");
-          if (campos.apagado) Object.assign(m, { apagado: true, texto: "", editado_em: agora() }); else if ("texto" in campos) Object.assign(m, { texto: campos.texto.trim(), editado_em: agora() });
+          if (campos.apagado) Object.assign(m, { apagado: true, texto: "", anexo_path: null, editado_em: agora() }); else if ("texto" in campos) Object.assign(m, { texto: campos.texto.trim(), editado_em: agora() });
           guardar(); return structuredClone(m);
         },
         async direto(outro) {
@@ -291,8 +294,22 @@ export function criarDemo() {
             c.membros.push({ canal_id: cn.id, perfil_id: euId, lido_ate: agora() }, { canal_id: cn.id, perfil_id: outro, lido_ate: agora() }); guardar(); }
           return cn.id;
         },
+        async criarGrupo(nomeG, membros) {
+          ler(); if (!String(nomeG || "").trim()) throw new Error("Dá um nome ao grupo."); if (!membros?.length) throw new Error("Escolhe pelo menos uma pessoa.");
+          const cn = { id: "gr-" + uid(), tipo: "grupo", nome: nomeG.trim().slice(0, 60), departamento_id: null }; c.canais.push(cn);
+          [...new Set([euId, ...membros])].forEach((p) => c.membros.push({ canal_id: cn.id, perfil_id: p, lido_ate: agora() })); guardar(); return cn.id;
+        },
+        async sairGrupo(canal) { ler(); c.membros = c.membros.filter((m) => !(m.canal_id === canal && m.perfil_id === euId)); guardar(); },
+        async membros(canal) { ler(); return c.membros.filter((m) => m.canal_id === canal).map((m) => m.perfil_id); },
+        async enviarAudio(canal, blob, tipo, duracao) {
+          const caminho = canal + "/" + uid() + ".webm"; audios[caminho] = URL.createObjectURL(blob);
+          return this.enviar(canal, "", [], { anexo_path: caminho, anexo_tipo: tipo.split(";")[0], anexo_duracao: Math.round(duracao * 10) / 10 });
+        },
+        async urlAudio(caminho) { if (!audios[caminho]) throw new Error("No modo de demonstração, os áudios só ficam disponíveis até recarregares a página."); return audios[caminho]; },
+        async apagarAudio() { /* */ },
         async marcarLido(canal) {
-          ler(); const m = c.membros.find((x) => x.canal_id === canal && x.perfil_id === euId);
+          ler(); const cnL = c.canais.find((x) => x.id === canal); if (!cnL || !vejo(cnL)) return;
+          const m = c.membros.find((x) => x.canal_id === canal && x.perfil_id === euId);
           if (m) m.lido_ate = agora(); else c.membros.push({ canal_id: canal, perfil_id: euId, lido_ate: agora() });
           db.notificacoes.forEach((n) => { if (n.destinatario_id === euId && n.link === "#chat-" + canal) n.lida = true; }); gravar(db); guardar();
         },

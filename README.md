@@ -26,7 +26,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Análise: vendas por mês e por linha de negócio, mais e menos vendidos, ofertas, devoluções, clientes a contactar, aniversários e clientes e leads por distrito.
   - Mapa: clientes, clientes ativos, leads e vendas por distrito, concelho e freguesia (limites oficiais CAOP 2025). Toca num distrito para ver os concelhos e num concelho para ver as freguesias e cada cliente no mapa. O botão «Localizar moradas» procura as moradas no mapa e preenche a freguesia.
   - Importação do SAF-T do Multixop. Só a administração, o CEO e o departamento Comercial veem o CRM.
-- **Mensagens:** canal Geral, um canal por departamento (o departamento e a direção) e conversas diretas.
+- **Mensagens:** canal Geral, um canal por departamento (o departamento e a direção), conversas diretas, grupos com nome e mensagens de voz.
   - Menções com @nome, que avisam a pessoa mencionada.
   - Editar e apagar as próprias mensagens, com «Anular».
   - Contagem das mensagens por ler. Uma conversa direta gera um só aviso até ser lida.
@@ -74,7 +74,7 @@ Supabase → **Authentication** → **Sign In / Providers**: desliga **Allow new
 SQL Editor → **New query** → cola o conteúdo de `supabase/02-equipa.sql` → **Run**. É isto que permite criar empregados, repor palavras-passe e desativar contas a partir da app.
 
 ### 3b. Notificações no telemóvel (opcional)
-Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam sem isto. Instala esta função:
+Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam sem isto. Enquanto esta função não estiver instalada, o botão «Ativar neste aparelho» avisa que falta este passo. Instala esta função:
 
 1. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**.
 2. Dá-lhe o nome exato da tabela abaixo, cola o código do ficheiro indicado e carrega em **Deploy**.
@@ -128,6 +128,9 @@ A folha da auditoria tem informação de segurança dos sites: guarda-a fora do 
 ### 3j. Marketing
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/10-marketing.sql` → **Run**.
 2. Na app: **Marketing** → **Importar** → escolhe o ficheiro `central26-marketing-notion.json` (preparado a partir da exportação do Notion). Voltar a importar não duplica nada.
+
+### 3k. Mensagens de voz, grupos e revisão de segurança
+SQL Editor → **New query** → cola o conteúdo de `supabase/11-mensagens-e-seguranca.sql` → **Run**. Corre-se depois de todos os anteriores. Liga os grupos com nome e as mensagens de voz nas Mensagens, e fecha o acesso às funções da base de dados a quem não tem sessão iniciada.
 
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.

@@ -1,5 +1,5 @@
 // Central 26 — CRM comercial: clientes e leads, ficha, funil, análise de vendas e importação do SAF-T.
-import { MES, MES_L, ymd, normalizar, dataLonga, haQuanto, eGestor } from "./dados.js";
+import { MES, MES_L, ymd, normalizar, dataLonga, haQuanto, eGestor, paginar, paginador } from "./dados.js";
 import { criarMapaCrm } from "./mapa.js";
 
 export const DISTRITOS = ["Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", "Évora", "Faro", "Guarda", "Leiria", "Lisboa",
@@ -89,7 +89,7 @@ export function criarCrm(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $ } = ctx;
   const C = (S.crm = {
     estado: "por-carregar", erro: "", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [],
-    tab: "clientes", vista: "clientes", q: "", fEtapa: "", fEstado: "", fDistrito: "", fResp: "", ordem: "", limite: 150,
+    tab: "clientes", vista: "clientes", q: "", fEtapa: "", fEstado: "", fDistrito: "", fResp: "", ordem: "", pag: 1,
     funilDistrito: "", funilResp: "", periodo: "", importacao: null, aImportar: null, versao: 0,
   });
   let cache = null, desligar = null;
@@ -194,6 +194,33 @@ export function criarCrm(ctx) {
     return h + vistaClientes();
   }
 
+  /* ---------- Bloco do Início (Comercial) ---------- */
+  function seguimentos() {
+    const ult = new Map();
+    for (const x of C.contactos) { const a = ult.get(x.cliente_id); if (!a || String(x.criado_em) > String(a.criado_em)) ult.set(x.cliente_id, x); }
+    const lim = ymd(new Date(Date.now() + 7 * 864e5));
+    return [...ult.values()].filter((x) => x.data_proximo && x.data_proximo <= lim && C.clientes[x.cliente_id] && C.clientes[x.cliente_id].etapa !== "perdido")
+      .filter((x) => eGestor(S.eu) || !C.clientes[x.cliente_id].responsavel_id || C.clientes[x.cliente_id].responsavel_id === S.eu.id)
+      .sort((a, b) => a.data_proximo.localeCompare(b.data_proximo));
+  }
+  function blocoInicio() {
+    if (!podeCrm(S.eu)) return "";
+    if (C.estado === "por-carregar") carregar();
+    if (C.estado !== "pronto" || !listaClientes().length) return "";
+    const { porCod } = calc(), vs = visiveis(), hj = ymd(new Date());
+    const aContactar = vs.filter((c) => porCod.get(c.codigo_multixop)?.aContactar).length;
+    const risco = vs.filter((c) => porCod.get(c.codigo_multixop)?.estado === "risco").length;
+    const leads = vs.filter((c) => c.etapa === "lead").length;
+    const seg = seguimentos();
+    return '<section class="cartao-sec"><h3>Comercial <a class="c-link" href="#comercial" style="font-size:13px;margin-left:8px">Abrir</a></h3><div class="resumo-crm resumo-aud">' +
+      '<button class="kpi' + (aContactar ? " alerta-kpi" : "") + '" data-acao="crm-ir" data-v="contactar"><span>Clientes a contactar</span><b>' + num(aContactar) + '</b></button>' +
+      '<button class="kpi" data-acao="crm-ir" data-v="risco"><span>Em risco</span><b>' + num(risco) + '</b></button>' +
+      '<button class="kpi" data-acao="crm-ir" data-v="leads"><span>Leads por trabalhar</span><b>' + num(leads) + "</b></button></div>" +
+      (seg.length ? '<div class="seg-lista">' + seg.slice(0, 5).map((x) => '<button class="seg-linha" data-acao="crm-abrir" data-id="' + x.cliente_id + '"><span><b>' + esc(C.clientes[x.cliente_id].nome) + "</b><small>" + esc(x.proximo_passo || "Voltar a contactar") + '</small></span><small class="' + (x.data_proximo < hj ? "at" : "") + '">' + (x.data_proximo < hj ? "Atrasado · " : x.data_proximo === hj ? "Hoje · " : "") + esc(rotData(x.data_proximo)) + "</small></button>").join("") + "</div>" : "") +
+      "</section>";
+  }
+  const contagem = () => (C.estado !== "pronto" ? 0 : seguimentos().filter((x) => x.data_proximo <= ymd(new Date())).length);
+
   /* ---------- Clientes e leads ---------- */
   function filtrados() {
     const { porCod } = calc();
@@ -238,8 +265,9 @@ export function criarCrm(ctx) {
       sel("crm-ordem", "Ordenar", C.ordem || (C.vista === "leads" ? "score" : "total"), [["total", "Ordenar: maior valor"], ["recente", "Ordenar: compra mais recente"], ["parado", "Ordenar: mais tempo sem comprar"], ["score", "Ordenar: pontuação do lead"], ["nome", "Ordenar: nome"]]) +
       "</div></div>";
     const l = filtrados();
-    h += '<div class="tabela-scroll"><table class="crm-tabela"><thead><tr><th>Cliente</th><th>Etapa</th><th>Estado</th><th class="n">Total</th><th>Última compra</th><th>Responsável</th></tr></thead><tbody>';
-    h += l.slice(0, C.limite).map((c) => {
+    h += '<div class="tabela-scroll"><table class="crm-tabela cli-tab"><thead><tr><th>Cliente</th><th>Etapa</th><th>Estado</th><th class="n">Total</th><th>Última compra</th><th>Responsável</th></tr></thead><tbody>';
+    const pg = paginar(l, C.pag, 25); C.pag = pg.pag;
+    h += pg.itens.map((c) => {
       const s = statsDe(c), e = s?.estado || "sem";
       const local = [c.concelho, c.distrito].filter(Boolean).join(", ");
       const sub = [TIPOS[c.tipo] || "", local, c.nif && c.tipo !== "lead" ? "NIF " + c.nif : "", c.origem === "base_leads" && c.score != null ? "pontuação " + c.score : ""].filter(Boolean).join(" · ");
@@ -251,8 +279,7 @@ export function criarCrm(ctx) {
     }).join("");
     if (!l.length) h += '<tr><td colspan="6" class="vazio-linha">Nenhum cliente corresponde aos filtros.</td></tr>';
     h += "</tbody></table></div>";
-    if (l.length > C.limite) h += '<button class="mostrar-feitas" data-acao="crm-mais">' + I.seta + "Mostrar mais (" + num(l.length - C.limite) + ")</button>";
-    else if (l.length) h += '<p class="nota-tab">' + num(l.length) + (l.length === 1 ? " registo" : " registos") + "</p>";
+    h += paginador(pg, "crm-pag", pg.total === 1 ? "registo" : "registos");
     return h;
   }
   function sel(id, rotulo, atual, opcoes) {
@@ -529,9 +556,12 @@ export function criarCrm(ctx) {
     switch (acao) {
       case "crm-tab": C.tab = el.dataset.tab; render(); return true;
       case "crm-recarregar": carregar(); return true;
-      case "crm-vista": C.vista = el.dataset.v; C.fEstado = ""; C.limite = 150; if (C.tab !== "clientes") C.tab = "clientes"; render(); return true;
-      case "crm-fest": C.fEstado = C.fEstado === el.dataset.v ? "" : el.dataset.v; if (C.fEstado) C.vista = "clientes"; C.limite = 150; render(); return true;
-      case "crm-mais": C.limite += 300; render(); return true;
+      case "crm-vista": C.vista = el.dataset.v; C.fEstado = ""; C.pag = 1; if (C.tab !== "clientes") C.tab = "clientes"; render(); return true;
+      case "crm-fest": C.fEstado = C.fEstado === el.dataset.v ? "" : el.dataset.v; if (C.fEstado) C.vista = "clientes"; C.pag = 1; render(); return true;
+      case "crm-pag": C.pag = +el.dataset.p; render(); document.querySelector(".crm-tabela")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
+      case "crm-ir": C.tab = "clientes"; C.fEtapa = ""; C.q = ""; C.pag = 1;
+        if (el.dataset.v === "leads") { C.vista = "leads"; C.fEstado = ""; } else { C.vista = "clientes"; C.fEstado = el.dataset.v; }
+        location.hash = "comercial-clientes"; return true;
       case "crm-abrir": abrir({ tipo: "cliente", id }); return true;
       case "crm-novo": abrir({ tipo: "crm-novo" }); return true;
       case "crm-ver-etapa": C.tab = "clientes"; C.vista = "todos"; C.fEtapa = el.dataset.v; C.fEstado = ""; render(); return true;
@@ -563,7 +593,7 @@ export function criarCrm(ctx) {
     if (MAPA.mudar(e)) return true;
     const t = e.target, id = S.aberto?.tipo === "cliente" ? S.aberto.id : null;
     const filtros = { "crm-fetapa": "fEtapa", "crm-festado": "fEstado", "crm-fdist": "fDistrito", "crm-fresp": "fResp", "crm-ordem": "ordem", "crm-fundist": "funilDistrito", "crm-funresp": "funilResp", "crm-periodo": "periodo" };
-    if (filtros[t.id]) { C[filtros[t.id]] = t.value; C.limite = 150; render(); return true; }
+    if (filtros[t.id]) { C[filtros[t.id]] = t.value; C.pag = 1; render(); return true; }
     if (t.id === "crm-ficheiro") { if (t.files?.[0]) lerFicheiro(t.files[0]); t.value = ""; return true; }
     if (!id) return false;
     if (t.id === "cf-etapa") { gravar(id, { etapa: t.value }); return true; }
@@ -577,7 +607,7 @@ export function criarCrm(ctx) {
   }
   function escrever(e) {
     const t = e.target;
-    if (t.id === "crm-q") { C.q = t.value; C.limite = 150; render(); return true; }
+    if (t.id === "crm-q") { C.q = t.value; C.pag = 1; render(); return true; }
     const id = S.aberto?.tipo === "cliente" ? S.aberto.id : null;
     if (id && CAMPOS[t.id]) {
       if (t.id === "cf-nome") { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }
@@ -620,5 +650,5 @@ export function criarCrm(ctx) {
   function mudarEtapa(id, etapa) { if (C.clientes[id] && C.clientes[id].etapa !== etapa) gravar(id, { etapa }); }
 
   function reiniciar() { MAPA.reiniciar(); if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
-  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, reiniciar, estado: () => C.estado };
+  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, reiniciar, blocoInicio, contagem, estado: () => C.estado };
 }

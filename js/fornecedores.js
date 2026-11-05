@@ -1,5 +1,5 @@
 // Central 26 — Operacional: fornecedores, contactos com empresas e pedidos de orçamento.
-import { MARCA, MARCAS, MES, ymd, normalizar, haQuanto, eGestor } from "./dados.js";
+import { MARCA, MARCAS, MES, ymd, normalizar, haQuanto, eGestor, paginar, paginador } from "./dados.js";
 import { carregarXlsx } from "./xlsx.js";
 
 export const CATEGORIAS = ["Produtos para revenda", "Matérias-primas e embalagens", "Consumíveis das barbearias", "Equipamentos e mobiliário", "Transportes e envios",
@@ -116,7 +116,9 @@ export function criarFornecedores(ctx) {
     if (q) l = l.filter((x) => n([x.nome, x.nif, x.categoria, x.produtos, x.localidade, x.contacto_nome, x.email, x.telefone, x.notas].join(" ")).includes(q));
     l.sort((a, b) => Number(a.estado === "inativo") - Number(b.estado === "inativo") || String(a.proximo_contacto || "9999").localeCompare(String(b.proximo_contacto || "9999")) || a.nome.localeCompare(b.nome, "pt"));
     if (!l.length) return h + '<div class="vazio"><h3>Nada com estes filtros</h3><p>Muda ou limpa os filtros.</p></div>';
-    return h + '<div class="aud-lista">' + l.map(linhaForn).join("") + "</div>";
+    const assin = JSON.stringify(f); if (assin !== O.pagAssin) { O.pagAssin = assin; O.pag = 1; }
+    const pg = paginar(l, O.pag, 20); O.pag = pg.pag;
+    return h + '<div class="aud-lista">' + pg.itens.map(linhaForn).join("") + "</div>" + paginador(pg, "op-pag", "fornecedores");
   }
   function linhaForn(x) {
     const hj = hoje(), atr = x.proximo_contacto && x.proximo_contacto < hj, hojeC = x.proximo_contacto === hj;
@@ -380,6 +382,7 @@ export function criarFornecedores(ctx) {
   function clique(acao, el) {
     const id = el.dataset.id;
     switch (acao) {
+      case "op-pag": O.pag = +el.dataset.p; render(); document.querySelector(".aud-lista")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
       case "op-tab": O.tab = el.dataset.tab; if (S.rota === "operacional" && S.param) location.hash = "operacional"; else render(); return true;
       case "op-fest": O.f.estado = O.f.estado === el.dataset.v ? "" : el.dataset.v; render(); return true;
       case "op-limpar": O.f = { q: "", cat: "", estado: "", marca: "" }; render(); return true;

@@ -119,6 +119,7 @@ export function criarMarketing(ctx) {
         l.slice(0, 4).map((p) => '<button class="mk-chip e-' + p.estado + (atrasada(p) ? " atr" : "") + '" data-marca="' + esc(p.marca) + '" data-acao="mk-abrir" data-id="' + p.id + '" title="' + esc(MARCA[p.marca]?.nome + " · " + p.titulo + " · " + ESTADOS_MK[p.estado]) + '"><i></i><span>' + esc(p.titulo) + "</span></button>").join("") +
         (l.length > 4 ? '<button class="mk-chip mais" data-acao="mk-dia" data-v="' + dt + '">+' + (l.length - 4) + " mais</button>" : "") + "</div>";
     }
+    for (let i = (desloc + dias) % 7; i && i < 7; i++) h += '<div class="mk-dia fora" aria-hidden="true"></div>';
     h += "</div></div>";
     if (diaSel) {
       const l = (porDia[diaSel] || []).sort((a, b) => String(a.hora).localeCompare(String(b.hora)));

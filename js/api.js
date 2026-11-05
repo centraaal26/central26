@@ -311,6 +311,33 @@ export function criarApi() {
       async rubrica(chave, categoria) { return ok(await sb.from("fin_rubricas").upsert({ chave, categoria, atualizado_em: new Date().toISOString() }).select().single()); },
       async apagarMes(mes) { ok(await sb.from("fin_meses").delete().eq("mes", mes)); },
     },
+    mk: {
+      async carregar() {
+        const [publicacoes, documentos] = await Promise.all([
+          todas(() => sb.from("mk_publicacoes").select("*").order("data", { ascending: true, nullsFirst: false })),
+          ok(await sb.from("mk_documentos").select("*").order("titulo")),
+        ]);
+        return { publicacoes, documentos };
+      },
+      pub: {
+        async criar(x) { return ok(await sb.from("mk_publicacoes").insert(x).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("mk_publicacoes").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("mk_publicacoes").delete().eq("id", id)); },
+      },
+      doc: {
+        async criar(x) { return ok(await sb.from("mk_documentos").insert(x).select().single()); },
+        async atualizar(id, campos) { return ok(await sb.from("mk_documentos").update(campos).eq("id", id).select().single()); },
+        async apagar(id) { ok(await sb.from("mk_documentos").delete().eq("id", id)); },
+      },
+      async importar(p) { return ok(await sb.rpc("mk_importar", { p })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-mk")
+          .on("postgres_changes", { event: "*", schema: "public", table: "mk_publicacoes" }, (p) => cb("pub", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "mk_documentos" }, (p) => cb("doc", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     push: {
       async chave() { const r = await invocar("enviar-push", { acao: "chave" }); return r.chave; },
       async registar(endpoint, p256dh, auth, aparelho) {

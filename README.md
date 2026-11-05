@@ -53,6 +53,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Pedidos de orçamento: juntas os fornecedores, registas as propostas (preço, prazo de entrega, condições, validade) e comparas lado a lado. A app assinala a mais barata e o texto do pedido já vem escrito para enviar por email.
   - Só a direção e o Operacional veem os fornecedores.
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
+- **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
   - Resumo do ano com o estado de cada mês (importado, em falta, custos copiados de outro mês), médias e gráfico de faturação e custos.
   - Barbearias: faturação, pagamentos aos barbeiros, custos fixos e resultado de cada espaço, e a evolução mês a mês.
   - Despesas partilhadas, impostos, Hairshopping, Tech e Formação por rubrica e por mês, agrupadas por categoria (editável), com os valores fora do normal destacados.
@@ -124,6 +125,10 @@ A folha da auditoria tem informação de segurança dos sites: guarda-a fora do 
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/09-financeiro.sql` → **Run**.
 2. Na app: **Financeiro** → **Importar** → escolhe todas as folhas mensais de uma vez. Um mês que já existe é substituído pela versão nova.
 
+### 3j. Marketing
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/10-marketing.sql` → **Run**.
+2. Na app: **Marketing** → **Importar** → escolhe o ficheiro `central26-marketing-notion.json` (preparado a partir da exportação do Notion). Voltar a importar não duplica nada.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -156,12 +161,10 @@ js/mapa.js · geo/                           mapa do Comercial e limites CAOP 20
 js/auditoria.js                             registo da auditoria aos sites e plano semanal
 js/fornecedores.js · js/xlsx.js             fornecedores, pedidos de orçamento e leitura de Excel
 js/financeiro.js                            faturação e custos por mês (folhas da Ondina & Maia)
+js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor
 ```
 
 A chave em `js/config.js` é a chave **publishable**, pública por natureza. **Nunca** coloques neste repositório a chave secret / service_role nem a palavra-passe da base de dados.
-
-## Próximas fases
-- Marketing (precisa da exportação da página do Notion).

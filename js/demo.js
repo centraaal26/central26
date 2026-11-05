@@ -634,6 +634,50 @@ export function criarDemo() {
         async apagarMes(mes) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.meses = x.meses.filter((m) => m.mes !== mes); x.linhas = x.linhas.filter((l) => l.mes !== mes); x.faturacao = x.faturacao.filter((f) => f.mes !== mes); guardar(); },
       };
     })(),
+    mk: (() => {
+      const K = "central26-demo-mk-v1";
+      let d = null;
+      const P = (marca, titulo, dias, estado, tipo, extra = {}) => { const dt = dias == null ? null : ymd(new Date(Date.now() + dias * 864e5));
+        return { id: uid(), origem_id: null, marca, titulo, data: dt, hora: "", tipo, plataformas: ["Instagram"], estado, link: "", copy: "", notas: "", inspiracao: "", responsavel_id: "p-goncalo",
+          criado_por: "p-goncalo", criado_em: agora(), atualizado_por: "p-goncalo", atualizado_em: agora(), ...extra }; };
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) d = {
+          publicacoes: [P("barbearia", "Exemplo · Detalhes do espaço", -3, "publicado", "Foto", { copy: "Cada detalhe conta. #barbearia26dejunho" }), P("academy", "Exemplo · Entrega de diplomas", 1, "pronto", "Vídeo"),
+            P("twentysix", "Exemplo · Produto em destaque", 2, "em_producao", "Reel"), P("grooms", "Exemplo · Preparação do noivo", 5, "planeado", "Carrossel"),
+            P("barbearia", "Exemplo · Ideia: antes e depois", null, "ideia", "Foto")],
+          documentos: [{ id: uid(), origem_id: null, marca: "twentysix", titulo: "Exemplo · Guião de vídeo", conteudo: "**Cena 1**\n\n- Close do produto\n- Aplicação\n\n**Cena 2**\n\nVoz-off: «O detalhe é tudo.»", criado_por: "p-goncalo", criado_em: agora(), atualizado_por: "p-goncalo", atualizado_em: agora() }],
+        };
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const pode = () => { const e = eu(); return eGestor(e) || e.departamento_id === "marketing"; };
+      const exige = () => { if (!pode()) throw new Error("Só o Marketing e a direção gerem o calendário."); };
+      const upd = (l, id, c) => { const r = l.find((x) => x.id === id); if (!r) throw new Error("Já não existe."); Object.assign(r, c, { atualizado_por: euId, atualizado_em: agora() }); return r; };
+      return {
+        async carregar() { if (!pode()) return { publicacoes: [], documentos: [] }; return structuredClone(ler()); },
+        pub: {
+          async criar(x) { exige(); const r = { ...P("grupo", "", null, "ideia", ""), responsavel_id: null, plataformas: [], ...x, criado_por: euId, atualizado_por: euId }; ler().publicacoes.push(r);
+            if (r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "marketing", "Publicação atribuída a ti", r.titulo, "#publicacao-" + r.id); guardar(); gravar(db); return structuredClone(r); },
+          async atualizar(id, c) { exige(); const antes = ler().publicacoes.find((x) => x.id === id)?.responsavel_id; const r = upd(d.publicacoes, id, c);
+            if (r.responsavel_id && r.responsavel_id !== antes && r.responsavel_id !== euId) notificar(r.responsavel_id, "marketing", "Publicação atribuída a ti", r.titulo, "#publicacao-" + r.id); guardar(); gravar(db); return structuredClone(r); },
+          async apagar(id) { exige(); d.publicacoes = ler().publicacoes.filter((x) => x.id !== id); guardar(); },
+        },
+        doc: {
+          async criar(x) { exige(); const r = { id: uid(), origem_id: null, marca: "grupo", conteudo: "", ...x, criado_por: euId, criado_em: agora(), atualizado_por: euId, atualizado_em: agora() }; ler().documentos.push(r); guardar(); return structuredClone(r); },
+          async atualizar(id, c) { exige(); const r = upd(ler().documentos, id, c); guardar(); return structuredClone(r); },
+          async apagar(id) { exige(); d.documentos = ler().documentos.filter((x) => x.id !== id); guardar(); },
+        },
+        async importar(p) {
+          exige(); const x = ler(); let a = 0, b = 0;
+          for (const i of p.publicacoes || []) { if (!i.titulo || x.publicacoes.some((y) => y.origem_id && y.origem_id === i.origem_id)) continue; x.publicacoes.push({ ...P("grupo", "", null, "ideia", ""), responsavel_id: null, plataformas: [], ...i, criado_por: euId }); a++; }
+          for (const i of p.documentos || []) { if (!i.titulo || x.documentos.some((y) => y.origem_id && y.origem_id === i.origem_id)) continue; x.documentos.push({ id: uid(), ...i, criado_por: euId, criado_em: agora(), atualizado_por: euId, atualizado_em: agora() }); b++; }
+          guardar(); return { publicacoes: a, documentos: b };
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

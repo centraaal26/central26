@@ -593,6 +593,47 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    fin: (() => {
+      const K = "central26-demo-fin-v1";
+      let d = null;
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          // valores inventados, só para mostrar o funcionamento
+          const espacos = [["Madalena", 9000, 450], ["Avenida", 10000, 1500], ["Porto", 3500, 1200], ["Santo Ovídio", 4000, 400], ["Arcozelo", 10500, 550]];
+          d = { meses: [], linhas: [], faturacao: [], rubricas: [] };
+          ["2026-01", "2026-02", "2026-03"].forEach((mes, k) => {
+            d.meses.push({ mes, ficheiro: "Exemplo - " + mes + ".xlsx", assinatura: mes, assinatura_custos: mes, avisos: [], importado_por: "p-samuel", importado_em: agora() });
+            espacos.forEach(([e, fat, renda], i) => {
+              d.faturacao.push({ mes, espaco: e, total: fat + k * 400 + i * 50, numerario: Math.round(fat * 0.2), mb: Math.round(fat * 0.8), ft: Math.round(fat * 0.15), vencimentos: Math.round(fat * 0.48) });
+              d.linhas.push({ mes, area: "barbearias", grupo: e, rubrica: "RENDA", base: renda, iva: 0, sem: 0 }, { mes, area: "barbearias", grupo: e, rubrica: "ÁGUA", base: 30 + i * 4, iva: 0, sem: 0 },
+                { mes, area: "barbearias", grupo: e, rubrica: "ELETRICIDADE", base: 80 + i * 12 + k * 5, iva: 0, sem: 0 });
+            });
+            [["MEO", 310], ["ARMAZÉM", 1800], ["ELETRICIDADE ARMAZÉM", 250 + k * 20], ["ZURICH", 600], ["VIA VERDE", 120 + k * 10], ["NACEX", 180], ["SEGURANÇA SOCIAL", 515]].forEach(([r, v]) =>
+              d.linhas.push({ mes, area: r === "SEGURANÇA SOCIAL" ? "impostos" : "partilhadas", grupo: "", rubrica: r, base: v, iva: 0, sem: 0 }));
+          });
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const pode = () => eGestor(eu());
+      return {
+        async carregar() { if (!pode()) throw new Error("Só a direção tem acesso ao Financeiro."); return structuredClone(ler()); },
+        async importar(p) {
+          if (!pode()) throw new Error("Só a direção importa os dados financeiros.");
+          const x = ler();
+          for (const m of p.meses || []) {
+            x.meses = x.meses.filter((y) => y.mes !== m.mes).concat([{ mes: m.mes, ficheiro: m.ficheiro, assinatura: m.assinatura, assinatura_custos: m.assinatura_custos, avisos: m.avisos || [], importado_por: euId, importado_em: agora() }]);
+            x.linhas = x.linhas.filter((l) => l.mes !== m.mes).concat((m.linhas || []).map((l) => ({ mes: m.mes, ...l })));
+            x.faturacao = x.faturacao.filter((f) => f.mes !== m.mes).concat((m.faturacao || []).map((f) => ({ mes: m.mes, ...f })));
+          }
+          x.meses.sort((a, b) => a.mes.localeCompare(b.mes)); guardar(); return { meses: (p.meses || []).length };
+        },
+        async rubrica(chave, categoria) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.rubricas = x.rubricas.filter((r) => r.chave !== chave).concat([{ chave, categoria }]); guardar(); return { chave, categoria }; },
+        async apagarMes(mes) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.meses = x.meses.filter((m) => m.mes !== mes); x.linhas = x.linhas.filter((l) => l.mes !== mes); x.faturacao = x.faturacao.filter((f) => f.mes !== mes); guardar(); },
+      };
+    })(),
     push: {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },

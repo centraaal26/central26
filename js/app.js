@@ -11,6 +11,7 @@ import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { criarLogistica, podeEncomendas } from "./logistica.js";
 import { criarAuditoria } from "./auditoria.js";
 import { criarFornecedores, podeOperacional } from "./fornecedores.js";
+import { criarFinanceiro, podeFinanceiro } from "./financeiro.js";
 import { VERSAO } from "./config.js";
 
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -61,6 +62,7 @@ const I = {
   tel: '<svg class="i" viewBox="0 0 16 16"><path d="M4 2.5h2l1 3-1.5 1a7 7 0 003.5 3.5l1-1.5 3 1v2a1 1 0 01-1 1A10.5 10.5 0 013 3.5a1 1 0 011-1z"/></svg>',
   mail: '<svg class="i" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5L8 9l5.5-4.5"/></svg>',
   mapa: '<svg class="i" viewBox="0 0 16 16"><path d="M8 14s-4.5-4.2-4.5-7.5a4.5 4.5 0 019 0C12.5 9.8 8 14 8 14z"/><circle cx="8" cy="6.5" r="1.6"/></svg>',
+  euro: '<svg class="i" viewBox="0 0 16 16"><path d="M12 4a5 5 0 100 8M2.5 7h7M2.5 9.5h7"/></svg>',
   caixa: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M2 5l6 3 6-3M8 8v6"/></svg>',
   escudo: '<svg class="i" viewBox="0 0 16 16"><path d="M8 1.8l5 1.9v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4z"/><path d="M5.8 8l1.6 1.6 2.9-3"/></svg>',
   camiao: '<svg class="i" viewBox="0 0 16 16"><path d="M1.5 4h8v7h-8zM9.5 6.5h2.8l2.2 2.4V11h-5"/><circle cx="4.5" cy="11.8" r="1.3"/><circle cx="11.8" cy="11.8" r="1.3"/></svg>',
@@ -199,7 +201,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar();
+  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar();
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -280,6 +282,7 @@ function lerRota(desenhar = true) {
     else if (r === "encomenda" && p) { rota = "encomenda"; param = p; }
     else if (r === "auditoria") { rota = "auditoria"; param = p || null; }
     else if (r === "operacional") { rota = "operacional"; param = p || null; }
+    else if (r === "financeiro") { rota = "financeiro"; param = p || null; }
     else if ((r === "fornecedor" || r === "pedido") && p) { rota = r; param = p; }
     else if (r === "marca" && MARCA[p]) { rota = "marca"; param = p; }
     else if (r === "pessoa" && p) { rota = "pessoa"; param = p; }
@@ -379,6 +382,7 @@ function vistaApp() {
   side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
   side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
   if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
+  if (podeFinanceiro(S.eu)) side += '<a href="#financeiro"' + atual("financeiro") + ">" + I.euro + '<span class="nm">Financeiro</span></a>';
   if (podeOperacional(S.eu)) { const n = OP.contagem(); side += '<a href="#operacional"' + (["operacional", "fornecedor", "pedido"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.caixa + '<span class="nm">Fornecedores</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
   if (AUD.visivel()) { const n = AUD.contagem(); side += '<a href="#auditoria"' + atual("auditoria") + ">" + I.escudo + '<span class="nm">Auditoria dos sites</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
   if (podeEncomendas(S.eu)) { const n = LOG.contagem(); side += '<a href="#logistica"' + (S.rota === "logistica" || S.rota === "encomenda" ? ' aria-current="page"' : "") + ">" + I.camiao + '<span class="nm">Logística</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
@@ -415,6 +419,7 @@ function vistaApp() {
   else if ((S.rota === "comercial" || S.rota === "cliente") && podeCrm(S.eu)) corpo = CRM.vista();
   else if (S.rota === "chat") corpo = CHAT.vista();
   else if (S.rota === "agenda") corpo = AGENDA.vista();
+  else if (S.rota === "financeiro" && podeFinanceiro(S.eu)) corpo = FIN.vista(S.param);
   else if (["operacional", "fornecedor", "pedido"].includes(S.rota) && podeOperacional(S.eu)) corpo = OP.vista(S.rota === "operacional" ? S.param : null);
   else if (S.rota === "auditoria") corpo = AUD.vista(/^[A-Z]{2,4}-/.test(S.param || "") ? null : S.param);
   else if ((S.rota === "logistica" || S.rota === "encomenda") && podeEncomendas(S.eu)) corpo = LOG.vista(S.rota === "logistica" ? S.param : null);
@@ -787,7 +792,9 @@ function estadoPush() {
 function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
-  h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : [])]
+  h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : []),
+    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []),
+    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : [])]
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   h += '<section class="cartao-sec"><h3>O meu perfil</h3><form class="form" id="form-perfil"><div class="campos-2"><div class="campo"><label for="pf-nome">Nome</label><input id="pf-nome" value="' + esc(S.eu.nome) + '" autocomplete="name"></div><div class="campo"><label for="pf-tel">Telefone</label><input id="pf-tel" type="tel" value="' + esc(S.eu.telefone) + '" autocomplete="tel"></div></div>' +
     '<p class="campo ajuda" style="margin:0">Cargo: ' + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + " · " + esc(PAPEIS[S.eu.papel]) + '. Estes dados são alterados pela administração.</p><div class="acts"><button class="btn pri" type="submit">Guardar</button></div></form></section>';
@@ -1037,7 +1044,7 @@ document.addEventListener("click", async (e) => {
     case "instalar": if (S.instalar) { S.instalar.prompt(); const r = await S.instalar.userChoice.catch(() => null); if (r?.outcome === "accepted") S.instalar = null; render(); } break;
     case "push": ativarPush(); break;
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
-    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el);
+    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el);
   }
 });
 
@@ -1149,7 +1156,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e)) return;
+  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1164,7 +1171,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e)) return;
+  if (CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e)) return;
   if (t.id === "filtro-resp") { S.filtroResp = t.value; render(); return; }
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
   if (t.id === "sel-resp" && t.value && S.selecao?.size) {
@@ -1222,5 +1229,6 @@ const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, no
 const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, abrirTarefa, $ });
 const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, $ });
 const AUD = criarAuditoria({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
+const FIN = criarFinanceiro({ S, api, esc, I, toast, falha, render, agendarRender, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 arrancar();

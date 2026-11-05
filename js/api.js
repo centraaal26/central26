@@ -297,6 +297,20 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    fin: {
+      async carregar() {
+        const [meses, linhas, faturacao, rubricas] = await Promise.all([
+          ok(await sb.from("fin_meses").select("*").order("mes")),
+          todas(() => sb.from("fin_linhas").select("mes,area,grupo,rubrica,base,iva,sem").order("mes").order("id")),
+          todas(() => sb.from("fin_faturacao").select("*").order("mes")),
+          ok(await sb.from("fin_rubricas").select("*")),
+        ]);
+        return { meses, linhas, faturacao, rubricas };
+      },
+      async importar(p) { return ok(await sb.rpc("fin_importar", { p })); },
+      async rubrica(chave, categoria) { return ok(await sb.from("fin_rubricas").upsert({ chave, categoria, atualizado_em: new Date().toISOString() }).select().single()); },
+      async apagarMes(mes) { ok(await sb.from("fin_meses").delete().eq("mes", mes)); },
+    },
     push: {
       async chave() { const r = await invocar("enviar-push", { acao: "chave" }); return r.chave; },
       async registar(endpoint, p256dh, auth, aparelho) {

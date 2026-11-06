@@ -1503,3 +1503,7 @@ html.pq-aberta,html.pq-aberta body{overflow:hidden}
 }
 .ia-dica{flex:1}
 @media (max-width:820px){.ia-msg .ia-av{display:none}.ia-msg.ia .ia-b{max-width:100%}.ia-cab small{display:none}}
+.md blockquote{margin:.5em 0;padding:4px 12px;border-left:3px solid var(--line-strong);color:var(--muted)}
+.md blockquote p{margin:.2em 0}
+.md ol{margin:.3em 0 .6em;padding-left:1.5em}
+.md code{font:12.5px var(--f-mono);background:var(--sunken);padding:1px 5px;border-radius:4px}

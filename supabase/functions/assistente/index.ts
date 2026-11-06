@@ -54,6 +54,7 @@ ${FOCO[eu.departamento_id || ""] || "Ajudas com o trabalho do dia a dia."}
 Regras:
 - Escreve SEMPRE em português de Portugal (norma europeia), nunca em português do Brasil. Usa «tu» (ex.: «podes», «tens»), «equipa», «telemóvel», «ecrã», «utilizador», «registo», «facto», «contacto», «receção», «ficheiro», «aceder», «está a fazer» (nunca «está fazendo»), «autocarro», «pequeno-almoço». Nunca «você», «time», «celular», «tela», «usuário», «arquivo», «cadastro».
 - Para dados da Central (tarefas, clientes, encomendas, stocks, publicações, fornecedores, auditoria, agenda, financeiro) usa as ferramentas. Nunca inventes números, nomes ou datas: se não encontrares, diz que não encontraste.
+- Se uma consulta com filtros vier vazia, volta a consultar sem filtros antes de dizeres que não há dados. Nunca digas que algo não existe só porque um filtro não encontrou nada.
 - Só vês o que ${eu.nome.split(" ")[0]} pode ver na app. Se uma ferramenta não devolver nada por falta de acesso, explica isso sem rodeios.
 - Quando pedirem um texto (descrição, legenda, email, mensagem, guião), entrega-o pronto a usar, bem escrito e no tom da marca, sem explicações a mais. Podes dar 2 ou 3 versões curtas quando fizer sentido.
 - Sê direto e prático. Respostas curtas por defeito; usa listas só quando ajudam. Formatação simples: **negrito**, listas com «- » e títulos com «## ».
@@ -66,7 +67,7 @@ const FERRAMENTAS: Ferramenta[] = [
   { name: "tarefas", description: "Lista tarefas da Central. Usa para saber o que está por fazer, atrasado ou concluído.",
     input_schema: { type: "object", properties: {
       quem: { type: "string", enum: ["minhas", "departamento", "todas"], description: "minhas = atribuídas a quem pergunta" },
-      estado: { type: "string", enum: ["por_fazer", "em_curso", "concluido", "abertas"] }, texto: { type: "string", description: "procura no título e notas" } } } },
+      estado: { type: "string", enum: ["abertas", "por_fazer", "em_curso", "concluido"], description: "abertas = por fazer ou em curso" }, texto: { type: "string", description: "procura no título e notas" } } } },
   { name: "equipa", description: "Lista as pessoas da equipa (nome, cargo, departamento, papel).", input_schema: { type: "object", properties: {} } },
   { name: "agenda", description: "Eventos da agenda num intervalo de datas (AAAA-MM-DD). Sem datas: próximos 14 dias.",
     input_schema: { type: "object", properties: { desde: { type: "string" }, ate: { type: "string" } } } },
@@ -82,8 +83,10 @@ const FERRAMENTAS: Ferramenta[] = [
     input_schema: { type: "object", properties: { texto: { type: "string" }, categoria: { type: "string" }, pedidos: { type: "boolean", description: "true para ver pedidos de orçamento e propostas" } } } },
   { name: "marketing", description: "Calendário de publicações do Marketing (por marca, datas, estado, texto) e documentos (guiões, datas importantes).",
     input_schema: { type: "object", properties: { desde: { type: "string" }, ate: { type: "string" }, marca: { type: "string", enum: ["twentysix", "barbearia", "academy", "tech", "grooms", "grupo"] }, documento: { type: "string", description: "título de um documento para ler o conteúdo" }, texto: { type: "string" } } } },
-  { name: "auditoria", description: "Itens da auditoria dos sites (problema, prioridade P0–P3, estado, correção).",
-    input_schema: { type: "object", properties: { estado: { type: "string" }, prioridade: { type: "string" }, texto: { type: "string" } } } },
+  { name: "auditoria", description: "Auditoria dos sites: devolve sempre o resumo (totais por estado e prioridade) e os itens que cumprem os filtros. Para o estado geral, chama sem filtros.",
+    input_schema: { type: "object", properties: {
+      estado: { type: "string", enum: ["abertos", "novo", "confirmado", "em_correcao", "a_aguardar", "resolvido", "validado", "aceite"], description: "abertos = ainda não validados nem aceites" },
+      prioridade: { type: "string", enum: ["P0", "P1", "P2", "P3"] }, texto: { type: "string" } } } },
   { name: "financeiro", description: "Faturação das barbearias e custos por mês (só a direção tem acesso).",
     input_schema: { type: "object", properties: { ano: { type: "string" }, mes: { type: "string", description: "AAAA-MM" } } } },
 ];
@@ -101,7 +104,8 @@ async function executar(sb: SupabaseClient, eu: Perfil, nome: string, a: Record<
       let q = sb.from("tarefas").select("titulo, marca, departamento_id, freq, estado, prioridade, responsavel_id, prazo, notas, concluido_em").limit(400);
       if (a.quem === "minhas" || !a.quem) q = q.eq("responsavel_id", eu.id);
       else if (a.quem === "departamento" && eu.departamento_id) q = q.eq("departamento_id", eu.departamento_id);
-      if (a.estado === "abertas") q = q.neq("estado", "concluido"); else if (a.estado) q = q.eq("estado", a.estado);
+      const estT = String(a.estado || "").toLowerCase();
+      if (/^(abert|pendent|por_fechar|ativ)/.test(estT)) q = q.neq("estado", "concluido"); else if (["por_fazer", "em_curso", "concluido"].includes(estT)) q = q.eq("estado", estT);
       const { data, error } = await q; if (error) return semAcesso(error);
       const n = await nomes(); const hoje = hojeLisboa();
       return (data || []).filter((t) => !a.texto || contem(a.texto)(t.titulo + " " + t.notas)).slice(0, 80)
@@ -192,11 +196,25 @@ async function executar(sb: SupabaseClient, eu: Perfil, nome: string, a: Record<
         documentos: (docs || []).map((d) => d.titulo) };
     }
     case "auditoria": {
-      let q = sb.from("tec_itens").select("id, marca, categoria, problema, correcao, dominio, prioridade, impacto, esforco, estado, semana, responsavel_id").limit(300);
-      if (a.estado) q = q.eq("estado", a.estado); if (a.prioridade) q = q.eq("prioridade", a.prioridade);
-      const { data, error } = await q; if (error) return semAcesso(error);
+      const { data, error } = await sb.from("tec_itens").select("id, marca, categoria, problema, correcao, dominio, prioridade, estado, semana, responsavel_id").limit(1000);
+      if (error) return semAcesso(error);
+      const todos = data || [];
+      if (!todos.length) return { total: 0, aviso: "A auditoria não tem itens visíveis para esta pessoa (ainda não foi importada em Auditoria → Importar, ou não tem itens atribuídos)." };
+      const FECHADOS = ["validado", "aceite"];
+      const conta = (l: any[], k: string) => l.reduce((o: Record<string, number>, x) => ((o[x[k] || "—"] = (o[x[k] || "—"] || 0) + 1), o), {});
+      const abertos = todos.filter((x) => !FECHADOS.includes(x.estado));
+      const resumo = { total: todos.length, abertos: abertos.length, por_estado: conta(todos, "estado"), abertos_por_prioridade: conta(abertos, "prioridade"), por_marca: conta(abertos, "marca") };
+      const est = String(a.estado || "").toLowerCase().replace(/\s+/g, "_");
+      const pri = String(a.prioridade || "").toUpperCase().replace(/^([0-3])$/, "P$1");
+      let l = todos;
+      if (est && /^(abert|pendent|por_fechar|ativ|open)/.test(est)) l = abertos; else if (est) l = l.filter((x) => x.estado === est);
+      if (pri) l = l.filter((x) => x.prioridade === pri);
+      if (a.texto) l = l.filter((x) => contem(a.texto)(x.id + " " + x.problema + " " + x.correcao + " " + x.dominio));
+      const ordem = (x: any) => ["P0", "P1", "P2", "P3"].indexOf(x.prioridade) + (FECHADOS.includes(x.estado) ? 10 : 0);
       const n = await nomes();
-      return (data || []).filter((x) => !a.texto || contem(a.texto)(x.problema + " " + x.correcao)).slice(0, 60).map((x) => ({ ...x, responsavel: n[x.responsavel_id] || null, responsavel_id: undefined }));
+      return { resumo, filtros: { estado: est || null, prioridade: pri || null, texto: a.texto || null }, encontrados: l.length,
+        itens: l.sort((x, y) => ordem(x) - ordem(y)).slice(0, GRATIS ? 25 : 60).map((x) => ({ id: x.id, marca: x.marca, prioridade: x.prioridade, estado: x.estado, problema: String(x.problema || "").slice(0, 160),
+          correcao: GRATIS ? undefined : String(x.correcao || "").slice(0, 200), dominio: x.dominio, semana: x.semana, responsavel: n[x.responsavel_id] || undefined })) };
     }
     case "financeiro": {
       const ano = a.ano || (a.mes ? String(a.mes).slice(0, 4) : String(new Date().getFullYear()));

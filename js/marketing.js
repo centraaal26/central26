@@ -12,23 +12,35 @@ export const podeMarketing = (eu) => !!eu && (eGestor(eu) || eu.departamento_id 
 
 // Markdown simples (títulos, listas, negrito, itálico, ligações), sempre a partir de texto já escapado
 export function markdown(txt, esc) {
-  const linha = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>")
+  const linha = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-  let h = "", lista = 0;
-  const fechar = (ate = 0) => { while (lista > ate) { h += "</ul>"; lista--; } };
+  let h = "", pilha = []; // listas abertas: "ul" ou "ol"
+  const fechar = (ate = 0) => { while (pilha.length > ate) h += "</" + pilha.pop() + ">"; };
+  let citacao = false;
+  const fecharCit = () => { if (citacao) { h += "</blockquote>"; citacao = false; } };
   for (const bruta of String(txt || "").split("\n")) {
     const l = bruta.replace(/\t/g, "    ");
-    const m = l.match(/^(\s*)[-*] (.*)$/);
-    if (m) { const nivel = Math.floor(m[1].length / 4) + 1; while (lista < nivel) { h += "<ul>"; lista++; } fechar(nivel); h += "<li>" + linha(m[2]) + "</li>"; continue; }
-    if (!l.trim()) { fechar(); continue; }
-    if (/^\s{4,}\S/.test(l) && lista) { h += '<p class="md-sub">' + linha(l.trim()) + "</p>"; continue; }
+    const m = l.match(/^(\s*)(?:([-*•])|(\d+)[.)]) (.*)$/);
+    if (m) {
+      fecharCit();
+      const nivel = Math.min(pilha.length + 1, Math.floor(m[1].length / 2) + 1), tipo = m[3] ? "ol" : "ul";
+      if (pilha.length >= nivel && pilha[nivel - 1] !== tipo) fechar(nivel - 1);
+      while (pilha.length < nivel) { h += "<" + tipo + ">"; pilha.push(tipo); }
+      fechar(nivel);
+      h += "<li>" + linha(m[4]) + "</li>"; continue;
+    }
+    if (!l.trim()) { fechar(); fecharCit(); continue; }
+    if (/^\s{2,}\S/.test(l) && pilha.length) { h += '<p class="md-sub">' + linha(l.trim()) + "</p>"; continue; }
     fechar();
-    const t = l.match(/^(#{1,3}) (.*)$/);
-    if (t) h += "<h" + (t[1].length + 2) + ">" + linha(t[2]) + "</h" + (t[1].length + 2) + ">";
-    else if (/^-{3,}$/.test(l.trim())) h += "<hr>";
+    const q = l.match(/^\s*>\s?(.*)$/);
+    if (q) { if (!citacao) { h += "<blockquote>"; citacao = true; } h += "<p>" + linha(q[1]) + "</p>"; continue; }
+    fecharCit();
+    const t = l.match(/^(#{1,4}) (.*)$/);
+    if (t) { const n = Math.min(5, t[1].length + 2); h += "<h" + n + ">" + linha(t[2]) + "</h" + n + ">"; }
+    else if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) h += "<hr>";
     else h += "<p>" + linha(l) + "</p>";
   }
-  fechar();
+  fechar(); fecharCit();
   return h;
 }
 

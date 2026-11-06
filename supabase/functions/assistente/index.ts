@@ -1,7 +1,10 @@
 // Central 26 · assistente
 // Assistente de IA (Claude) dentro da Central. Cada pessoa fala com ele na app; para responder,
 // o assistente consulta os dados da Central com as permissões DESSA pessoa (nunca vê mais do que ela).
-// Precisa do segredo ANTHROPIC_API_KEY (Edge Functions → Secrets). Opcional: ASSISTENTE_MODELO.
+// Serviço de IA (Edge Functions → Secrets), basta um:
+//   GROQ_API_KEY       → gratuito (modelos abertos, limites diários baixos) — console.groq.com
+//   ANTHROPIC_API_KEY  → Claude, pago pelo uso — console.anthropic.com
+// Com as duas, usa o Claude (ou o indicado em IA_FORNECEDOR = "groq" | "anthropic"). Opcional: ASSISTENTE_MODELO.
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -14,9 +17,13 @@ const json = (corpo: unknown, estado = 200) =>
 
 const URL_SB = Deno.env.get("SUPABASE_URL")!;
 const admin = createClient(URL_SB, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } });
-const MODELO = Deno.env.get("ASSISTENTE_MODELO") || "claude-sonnet-5-5";
-const MAX_VOLTAS = 6;
-const LIMITE_TEXTO = 14000;
+const FORNECEDOR = (Deno.env.get("IA_FORNECEDOR") || (Deno.env.get("ANTHROPIC_API_KEY") ? "anthropic" : Deno.env.get("GROQ_API_KEY") ? "groq" : "")).toLowerCase();
+const GRATIS = FORNECEDOR === "groq";
+const MODELO = Deno.env.get("ASSISTENTE_MODELO") || (GRATIS ? "openai/gpt-oss-120b" : "claude-sonnet-5-5");
+// o plano gratuito do Groq tem poucos tokens por minuto: respostas e consultas mais curtas
+const MAX_VOLTAS = GRATIS ? 4 : 6;
+const LIMITE_TEXTO = GRATIS ? 4000 : 14000;
+const HISTORICO = GRATIS ? 6 : 16;
 
 type Perfil = { id: string; nome: string; cargo: string; departamento_id: string | null; papel: string; ativo: boolean };
 type Ferramenta = { name: string; description: string; input_schema: Record<string, unknown> };
@@ -81,7 +88,7 @@ const FERRAMENTAS: Ferramenta[] = [
     input_schema: { type: "object", properties: { ano: { type: "string" }, mes: { type: "string", description: "AAAA-MM" } } } },
 ];
 
-const curto = (v: unknown) => { const t = JSON.stringify(v); return t.length > LIMITE_TEXTO ? t.slice(0, LIMITE_TEXTO) + "… (cortado)" : t; };
+const curto = (v: unknown) => { const t = JSON.stringify(v, (_k, x) => (x === null || x === "" ? undefined : x)); return t.length > LIMITE_TEXTO ? t.slice(0, LIMITE_TEXTO) + "… (cortado: pede um filtro mais específico)" : t; };
 const contem = (t: string) => (x: unknown) => String(x ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
   .includes(t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
 const hojeLisboa = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
@@ -208,7 +215,12 @@ async function executar(sb: SupabaseClient, eu: Perfil, nome: string, a: Record<
   return { erro: "Ferramenta desconhecida." };
 }
 
-async function claude(sistemaTxt: string, mensagens: unknown[]) {
+type Resultado = { resposta: string; usadas: Set<string>; tin: number; tout: number };
+type Executor = (nome: string, args: Record<string, any>) => Promise<string>;
+const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ---------- Claude (Anthropic) ----------
+async function pedirClaude(sistemaTxt: string, mensagens: unknown[]) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -224,6 +236,65 @@ async function claude(sistemaTxt: string, mensagens: unknown[]) {
   }
   return corpo;
 }
+async function conversarClaude(sis: string, mensagens: any[], exec: Executor): Promise<Resultado> {
+  const usadas = new Set<string>(); let tin = 0, tout = 0;
+  for (let volta = 0; volta < MAX_VOLTAS; volta++) {
+    const r = await pedirClaude(sis, mensagens);
+    tin += r.usage?.input_tokens || 0; tout += r.usage?.output_tokens || 0;
+    const blocos = r.content || [];
+    const pedidos = blocos.filter((b: any) => b.type === "tool_use");
+    if (!pedidos.length || r.stop_reason !== "tool_use") return { resposta: blocos.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim(), usadas, tin, tout };
+    mensagens.push({ role: "assistant", content: blocos });
+    const resultados = [];
+    for (const p of pedidos) { usadas.add(p.name); resultados.push({ type: "tool_result", tool_use_id: p.id, content: await exec(p.name, p.input || {}) }); }
+    mensagens.push({ role: "user", content: resultados });
+  }
+  return { resposta: "", usadas, tin, tout };
+}
+
+// ---------- Groq (gratuito, formato OpenAI) ----------
+async function pedirGroq(mensagens: unknown[], comFerramentas: boolean) {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + Deno.env.get("GROQ_API_KEY"), "content-type": "application/json" },
+      body: JSON.stringify({ model: MODELO, max_tokens: 1500, temperature: 0.5, messages: mensagens,
+        ...(comFerramentas ? { tools: FERRAMENTAS.map((f) => ({ type: "function", function: { name: f.name, description: f.description, parameters: f.input_schema } })), tool_choice: "auto" } : {}) }),
+    });
+    const corpo = await r.json().catch(() => ({}));
+    if (r.ok) return corpo;
+    const msg = corpo?.error?.message || r.statusText;
+    if (r.status === 401) throw new Error("A chave GROQ_API_KEY não é válida.");
+    if (r.status === 429) {
+      const aguardar = Math.ceil(+(r.headers.get("retry-after") || 0));
+      if (/per day|TPD|RPD/i.test(msg)) throw new Error("O assistente gratuito chegou ao limite de hoje. Volta a funcionar amanhã (ou a direção pode passar para a versão paga).");
+      if (aguardar && aguardar <= 25 && tentativa < 2) { await espera(aguardar * 1000 + 300); continue; }
+      throw new Error("O assistente gratuito está com muitos pedidos neste minuto. Tenta daqui a um minuto.");
+    }
+    if (r.status === 413 || /too large|context/i.test(msg)) throw new Error("O pedido ficou demasiado grande para o assistente gratuito. Faz uma pergunta mais específica ou começa uma conversa nova.");
+    throw new Error("O serviço de IA respondeu com um erro (" + r.status + "): " + msg);
+  }
+  throw new Error("O assistente gratuito está com muitos pedidos neste minuto. Tenta daqui a um minuto.");
+}
+async function conversarGroq(sis: string, historico: any[], exec: Executor): Promise<Resultado> {
+  const usadas = new Set<string>(); let tin = 0, tout = 0;
+  const mensagens: any[] = [{ role: "system", content: sis }, ...historico];
+  for (let volta = 0; volta < MAX_VOLTAS; volta++) {
+    const ultima = volta === MAX_VOLTAS - 1;
+    const r = await pedirGroq(mensagens, !ultima);
+    tin += r.usage?.prompt_tokens || 0; tout += r.usage?.completion_tokens || 0;
+    const m = r.choices?.[0]?.message || {};
+    const chamadas = m.tool_calls || [];
+    if (!chamadas.length) return { resposta: String(m.content || "").trim(), usadas, tin, tout };
+    mensagens.push({ role: "assistant", content: m.content || "", tool_calls: chamadas });
+    for (const c of chamadas) {
+      let args = {}; try { args = JSON.parse(c.function?.arguments || "{}"); } catch { /* argumentos inválidos: segue sem filtros */ }
+      usadas.add(c.function?.name);
+      mensagens.push({ role: "tool", tool_call_id: c.id, content: await exec(c.function?.name, args) });
+    }
+  }
+  return { resposta: "", usadas, tin, tout };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -234,7 +305,8 @@ Deno.serve(async (req) => {
     if (!sessao?.user) return json({ erro: "A sessão expirou. Volta a entrar." }, 401);
     const { data: eu } = await admin.from("perfis").select("id, nome, cargo, departamento_id, papel, ativo").eq("id", sessao.user.id).maybeSingle();
     if (!eu?.ativo) return json({ erro: "Conta sem acesso." }, 403);
-    if (!Deno.env.get("ANTHROPIC_API_KEY")) return json({ erro: "O assistente ainda não está ligado: falta a chave ANTHROPIC_API_KEY na função «assistente» (README, passo 3n)." }, 400);
+    if (!FORNECEDOR || (FORNECEDOR === "groq" && !Deno.env.get("GROQ_API_KEY")) || (FORNECEDOR === "anthropic" && !Deno.env.get("ANTHROPIC_API_KEY")))
+      return json({ erro: "O assistente ainda não está ligado: falta a chave GROQ_API_KEY (gratuita) ou ANTHROPIC_API_KEY na função «assistente» (README, passo 3n)." }, 400);
 
     const corpo = await req.json().catch(() => ({}));
     const texto = String(corpo.mensagem || "").trim().slice(0, 8000);
@@ -257,7 +329,7 @@ Deno.serve(async (req) => {
       if (error) return json({ erro: /ia_conversas/.test(error.message) ? "Falta correr o script supabase/14-assistente.sql no Supabase." : error.message }, 500);
       conversaId = c.id;
     }
-    const { data: hist } = await admin.from("ia_mensagens").select("papel, texto").eq("conversa_id", conversaId).order("id", { ascending: false }).limit(16);
+    const { data: hist } = await admin.from("ia_mensagens").select("papel, texto").eq("conversa_id", conversaId).order("id", { ascending: false }).limit(HISTORICO);
     const mensagens: any[] = (hist || []).reverse().map((m) => ({ role: m.papel, content: m.texto || "…" }));
     while (mensagens.length && mensagens[0].role !== "user") mensagens.shift(); // a conversa tem de começar por uma mensagem da pessoa
     mensagens.push({ role: "user", content: texto });
@@ -266,24 +338,15 @@ Deno.serve(async (req) => {
 
     // consultas com as permissões da pessoa
     const sb = createClient(URL_SB, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: "Bearer " + token } }, auth: { persistSession: false, autoRefreshToken: false } });
-    const sis = sistema(eu as Perfil), usadas = new Set<string>();
-    let tin = 0, tout = 0, resposta = "";
-    for (let volta = 0; volta < MAX_VOLTAS; volta++) {
-      const r = await claude(sis, mensagens);
-      tin += r.usage?.input_tokens || 0; tout += r.usage?.output_tokens || 0;
-      const blocos = r.content || [];
-      const pedidos = blocos.filter((b: any) => b.type === "tool_use");
-      if (!pedidos.length || r.stop_reason !== "tool_use") { resposta = blocos.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim(); break; }
-      mensagens.push({ role: "assistant", content: blocos });
-      const resultados = [];
-      for (const p of pedidos) {
-        usadas.add(p.name);
-        let out: unknown;
-        try { out = await executar(sb, eu as Perfil, p.name, p.input || {}); } catch (e) { out = { erro: String((e as Error)?.message || e) }; }
-        resultados.push({ type: "tool_result", tool_use_id: p.id, content: curto(out) });
-      }
-      mensagens.push({ role: "user", content: resultados });
-    }
+    const sis = sistema(eu as Perfil);
+    const exec: Executor = async (nome, args) => {
+      let out: unknown;
+      try { out = await executar(sb, eu as Perfil, nome, args || {}); } catch (e) { out = { erro: String((e as Error)?.message || e) }; }
+      return curto(out);
+    };
+    const res = GRATIS ? await conversarGroq(sis, mensagens, exec) : await conversarClaude(sis, mensagens, exec);
+    let resposta = res.resposta;
+    const usadas = res.usadas, tin = res.tin, tout = res.tout;
     if (!resposta) resposta = "Não consegui chegar a uma resposta. Experimenta reformular a pergunta.";
 
     const ferramentas = [...usadas];

@@ -157,12 +157,14 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/13-encomendas-sto
 
 ### 3n. Assistente (IA)
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/14-assistente.sql` → **Run**.
-2. Cria uma conta em **console.anthropic.com** (é diferente da subscrição do Claude ou do ChatGPT: paga-se pelo uso). Em **Billing** carrega créditos e, em **Limits**, põe um teto de gasto mensal. Em **API Keys** cria uma chave.
-3. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor** → nome `assistente` → apaga o exemplo e cola o código de `supabase/functions/assistente/index.ts` → **Deploy**.
-4. Supabase → **Edge Functions** → **Secrets** → adiciona `ANTHROPIC_API_KEY` com a chave do passo 2.
+2. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor** → nome `assistente` → apaga o exemplo e cola o código de `supabase/functions/assistente/index.ts` → **Deploy**.
+3. Escolhe o serviço de IA e cria a chave:
+   - **Gratuito — Groq:** cria uma conta em **console.groq.com** → **API Keys** → **Create API Key**. Usa modelos abertos (por defeito `openai/gpt-oss-120b`). Tem limites diários para toda a equipa (cerca de 1000 pedidos e 200 mil tokens por dia, o que dá algumas dezenas de conversas) e escreve pior do que o Claude.
+   - **Pago — Claude:** cria uma conta em **console.anthropic.com** (é diferente da subscrição do Claude ou do ChatGPT: paga-se pelo uso). Em **Billing** carrega créditos e em **Limits** põe um teto de gasto mensal. Em **API Keys** cria uma chave.
+4. Supabase → **Edge Functions** → **Secrets** → adiciona `GROQ_API_KEY` (gratuito) ou `ANTHROPIC_API_KEY` (pago) com a chave. Se tiveres as duas, usa o Claude. Para mudar de serviço mais tarde basta trocar a chave: a app não muda.
 5. Na app: **Assistente**. A direção define em **Assistente → Utilização da equipa** se está ligado e quantos pedidos por mês cada pessoa pode fazer (400 por defeito).
 
-O assistente só consulta o que a pessoa que pergunta já pode ver na app (as mesmas regras de acesso) e não altera nada. As conversas são privadas: nem a direção as lê, só vê quantos pedidos cada pessoa fez.
+O assistente só consulta o que a pessoa que pergunta já pode ver na app (as mesmas regras de acesso) e não altera nada. As conversas são privadas: nem a direção as lê, só vê quantos pedidos cada pessoa fez. Os dados consultados para responder são enviados ao serviço de IA escolhido.
 
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.

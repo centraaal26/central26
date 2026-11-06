@@ -384,6 +384,16 @@ export function criarApi() {
       async emailTeste() { return invocar("enviar-push", { acao: "email-teste" }); },
     },
 
+    ia: {
+      async conversas() { const { data, error } = await sb.from("ia_conversas").select("*").order("atualizado_em", { ascending: false }).limit(100); if (error) throw new Error(/ia_conversas|PGRST20/.test(error.message + error.code) ? "FALTA_SCRIPT" : error.message); return data; },
+      async mensagens(id) { return ok(await sb.from("ia_mensagens").select("*").eq("conversa_id", id).order("id")); },
+      async enviar(conversa, mensagem) { return invocar("assistente", { conversa_id: conversa || undefined, mensagem }); },
+      async renomear(id, titulo) { ok(await sb.from("ia_conversas").update({ titulo }).eq("id", id)); },
+      async apagar(id) { ok(await sb.from("ia_conversas").delete().eq("id", id)); },
+      async uso() { return ok(await sb.from("ia_uso").select("*").order("mes", { ascending: false }).limit(500)); },
+      async config() { return ok(await sb.from("ia_config").select("*").eq("id", 1).maybeSingle()); },
+      async guardarConfig(c) { return ok(await sb.from("ia_config").update({ ...c, atualizado_em: new Date().toISOString() }).eq("id", 1).select().single()); },
+    },
     // Cópia de segurança: lê todas as tabelas a que a pessoa tem acesso (a direção vê quase tudo)
     async copia(progresso) {
       const TABELAS = { perfis: "id", departamentos: "id", tarefas: "id", atividade: "id", notificacoes: "id", configuracao: "chave", preferencias: "perfil_id",

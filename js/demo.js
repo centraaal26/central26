@@ -709,6 +709,33 @@ export function criarDemo() {
       async teste() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async emailTeste() { throw new Error("Os emails não são enviados no modo de demonstração."); },
     },
+    ia: (() => {
+      const K = "central26-demo-ia-v1";
+      const ler = () => { try { return JSON.parse(localStorage.getItem(K) || "null") || { conversas: [], mensagens: [], seq: 1, config: { ativo: true, limite_mensal: 400 } }; } catch { return { conversas: [], mensagens: [], seq: 1, config: { ativo: true, limite_mensal: 400 } }; } };
+      const guardar = (d) => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      return {
+        async conversas() { return ler().conversas.filter((c) => c.perfil_id === euId).sort((a, b) => b.atualizado_em.localeCompare(a.atualizado_em)); },
+        async mensagens(id) { return ler().mensagens.filter((m) => m.conversa_id === id); },
+        async enviar(conversa, mensagem) {
+          const d = ler(); let c = d.conversas.find((x) => x.id === conversa);
+          if (!c) { c = { id: "ia-" + uid(), perfil_id: euId, titulo: mensagem.slice(0, 60), criado_em: agora(), atualizado_em: agora() }; d.conversas.push(c); }
+          d.mensagens.push({ id: d.seq++, conversa_id: c.id, papel: "user", texto: mensagem, ferramentas: [], criado_em: agora() });
+          await new Promise((r) => setTimeout(r, 700));
+          const minhas = db.tarefas.filter((t) => t.responsavel_id === euId && t.estado !== "concluido");
+          const resposta = "**Modo de demonstração.** Aqui o assistente responderia com a IA, consultando os dados a que tens acesso.\n\nPor exemplo, tens neste momento " + minhas.length + (minhas.length === 1 ? " tarefa por fazer" : " tarefas por fazer") +
+            (minhas.length ? ":\n" + minhas.slice(0, 5).map((t) => "- " + t.titulo).join("\n") : ".") + "\n\nNa versão real, também escreve descrições, legendas, emails e resumos a partir do que pedires.";
+          const m = { id: d.seq++, conversa_id: c.id, papel: "assistant", texto: resposta, ferramentas: ["tarefas"], criado_em: agora() };
+          d.mensagens.push(m); c.atualizado_em = agora(); guardar(d);
+          return { conversa_id: c.id, resposta, ferramentas: m.ferramentas, id: m.id, criado_em: m.criado_em, pedidos_mes: d.mensagens.filter((x) => x.papel === "assistant").length, limite: d.config.limite_mensal };
+        },
+        async renomear(id, titulo) { const d = ler(); const c = d.conversas.find((x) => x.id === id); if (c) c.titulo = titulo; guardar(d); },
+        async apagar(id) { const d = ler(); d.conversas = d.conversas.filter((x) => x.id !== id); d.mensagens = d.mensagens.filter((x) => x.conversa_id !== id); guardar(d); },
+        async uso() { const d = ler(); const mes = agora().slice(0, 7); const por = {}; d.mensagens.filter((m) => m.papel === "assistant").forEach((m) => { const c = d.conversas.find((x) => x.id === m.conversa_id); if (c) por[c.perfil_id] = (por[c.perfil_id] || 0) + 1; });
+          return Object.entries(por).map(([perfil_id, pedidos]) => ({ perfil_id, mes, pedidos, tokens_in: 0, tokens_out: 0 })); },
+        async config() { return ler().config; },
+        async guardarConfig(c) { if (!eGestor(eu())) throw new Error("Só a direção muda o assistente."); const d = ler(); Object.assign(d.config, c); guardar(d); return d.config; },
+      };
+    })(),
     async copia() {
       const tabelas = {};
       for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("central26-demo")) { try { tabelas[k] = JSON.parse(localStorage.getItem(k)); } catch { tabelas[k] = localStorage.getItem(k); } } }

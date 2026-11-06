@@ -56,6 +56,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
 - **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
 - **Pesquisa global:** Ctrl/⌘ + K (ou o botão «Procurar…») procura em tarefas, pessoas, clientes, encomendas, produtos, fornecedores, publicações, auditoria, agenda e conversas.
+- **Assistente (IA):** cada pessoa pede ajuda para escrever (descrições, legendas, emails, resumos) ou pergunta sobre o seu trabalho; o assistente consulta os dados da Central com as permissões dessa pessoa.
 - **Cópia de segurança (direção):** todos os dados num ficheiro .json (para recuperar) ou em Excel (para consultar).
   - Resumo do ano com o estado de cada mês (importado, em falta, custos copiados de outro mês), médias e gráfico de faturação e custos.
   - Barbearias: faturação, pagamentos aos barbeiros, custos fixos e resultado de cada espaço, e a evolução mês a mês.
@@ -86,6 +87,7 @@ Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam se
 | Nome (tem de ser exatamente este) | Ficheiro |
 |---|---|
 | `enviar-push` | `supabase/functions/enviar-push/index.ts` |
+| `assistente` (passo 3n, opcional) | `supabase/functions/assistente/index.ts` |
 
 O editor do Supabase sugere um nome automático (por exemplo «hyper-function»). Apaga-o e escreve `enviar-push` antes de carregar em **Deploy**.
 
@@ -153,6 +155,15 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/13-encomendas-sto
 - Os artigos das encomendas ligam-se aos produtos dos Stocks (a app reconhece «6 SPARK», «Shampoo Hack 1000ML»…; a Logística pode corrigir a ligação em cada artigo). Quando a encomenda fica **Pronta**, o stock desce; se for cancelada ou voltar atrás, volta a entrar.
 - **Mais → Cópia de segurança** (direção): descarrega todos os dados num ficheiro. Se passar uma semana sem cópia, a direção recebe um lembrete à segunda-feira às 9h.
 
+### 3n. Assistente (IA)
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/14-assistente.sql` → **Run**.
+2. Cria uma conta em **console.anthropic.com** (é diferente da subscrição do Claude ou do ChatGPT: paga-se pelo uso). Em **Billing** carrega créditos e, em **Limits**, põe um teto de gasto mensal. Em **API Keys** cria uma chave.
+3. Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor** → nome `assistente` → apaga o exemplo e cola o código de `supabase/functions/assistente/index.ts` → **Deploy**.
+4. Supabase → **Edge Functions** → **Secrets** → adiciona `ANTHROPIC_API_KEY` com a chave do passo 2.
+5. Na app: **Assistente**. A direção define em **Assistente → Utilização da equipa** se está ligado e quantos pedidos por mês cada pessoa pode fazer (400 por defeito).
+
+O assistente só consulta o que a pessoa que pergunta já pode ver na app (as mesmas regras de acesso) e não altera nada. As conversas são privadas: nem a direção as lê, só vê quantos pedidos cada pessoa fez.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -188,6 +199,7 @@ js/financeiro.js                            faturação e custos por mês (folha
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
 js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K)
+js/assistente.js                            assistente de IA (conversas, sugestões por departamento, utilização)
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor

@@ -15,6 +15,7 @@ import { criarFinanceiro, podeFinanceiro } from "./financeiro.js";
 import { criarMarketing, podeMarketing } from "./marketing.js";
 import { criarStocks, podeStocks } from "./stocks.js";
 import { criarPesquisa } from "./pesquisa.js";
+import { criarAssistente, pedidoPublicacao, pedidoTarefa } from "./assistente.js";
 import { carregarXlsx } from "./xlsx.js";
 import { VERSAO } from "./config.js";
 
@@ -71,6 +72,7 @@ const I = {
   play: '<svg class="i" viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor"/></svg>',
   pausa: '<svg class="i" viewBox="0 0 16 16"><path d="M5.2 3.2v9.6M10.8 3.2v9.6" stroke-width="2.6"/></svg>',
   enviar: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5"/></svg>',
+  ia: '<svg class="i" viewBox="0 0 16 16"><path d="M8 1.8l1.3 3.6 3.6 1.3-3.6 1.3L8 11.6 6.7 8 3.1 6.7l3.6-1.3z"/><path d="M12.6 10.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg>',
   stock: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5.5L8 2.5l6 3v5L8 13.5l-6-3z"/><path d="M2 5.5l6 3 6-3M8 8.5v5"/></svg>',
   camara: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5.5h2.5l1.2-1.8h4.6l1.2 1.8H14v7H2z"/><circle cx="8" cy="8.8" r="2.3"/></svg>',
   megafone: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 6.5v3h2l5 3v-9l-5 3z"/><path d="M4.5 9.5l1 4h1.6l-.6-3.4M12 6a2.5 2.5 0 010 4"/></svg>',
@@ -224,7 +226,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); S.fotos = {}; S.prefs = null;
+  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); IA.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -303,6 +305,7 @@ function lerRota(desenhar = true) {
     else if (r === "comercial") { rota = "comercial"; param = ["funil", "mapa", "analise", "importar", "clientes"].includes(p) ? p : null; }
     else if (r === "cliente" && p) { rota = "cliente"; param = p; }
     else if (r === "chat") { rota = "chat"; param = p || null; }
+    else if (r === "assistente") { rota = "assistente"; param = p || null; }
     else if (r === "agenda") { rota = "agenda"; param = p || null; }
     else if (r === "logistica") { rota = "logistica"; param = p || null; }
     else if (r === "encomenda" && p) { rota = "encomenda"; param = p; }
@@ -413,6 +416,7 @@ function vistaApp() {
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
   const porLerChat = CHAT.naoLidas();
   side += '<a href="#chat"' + atual("chat") + ">" + I.balao + '<span class="nm">Mensagens</span>' + (porLerChat ? '<span class="ct">' + porLerChat + "</span>" : "") + "</a>";
+  side += '<a href="#assistente"' + atual("assistente") + ">" + I.ia + '<span class="nm">Assistente</span></a>';
   side += '<a href="#agenda"' + atual("agenda") + ">" + I.cal + '<span class="nm">Agenda</span></a>';
   side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
   side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
@@ -457,6 +461,7 @@ function vistaApp() {
   else if (S.rota === "definicoes") corpo = vistaDefinicoes();
   else if ((S.rota === "comercial" || S.rota === "cliente") && podeCrm(S.eu)) corpo = CRM.vista();
   else if (S.rota === "chat") corpo = CHAT.vista();
+  else if (S.rota === "assistente") corpo = IA.vista(S.param);
   else if (S.rota === "agenda") corpo = AGENDA.vista();
   else if (S.rota === "financeiro" && podeFinanceiro(S.eu)) corpo = FIN.vista(S.param);
   else if ((S.rota === "marketing" || S.rota === "publicacao") && podeMarketing(S.eu)) corpo = MK.vista(S.rota === "marketing" ? S.param : null);
@@ -474,7 +479,8 @@ function vistaApp() {
   const chaveAnim = (NORM[S.rota] || S.rota) + (["marca", "pessoa"].includes(S.rota) ? "-" + S.param : "");
   const anim = S.carregou && S.rota !== "chat" && S.rotaAnim !== chaveAnim && !matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (S.carregou) S.rotaAnim = chaveAnim;
-  return '<div class="app">' + side + '<main class="main' + (S.rota === "chat" ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (S.rota === "chat" ? " chat-wrap" : "") + (anim ? " anim" : "") + '" data-marca="' + marcaAtual + '">' + nova + (S.rota === "chat" ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
+  const ecraCheio = S.rota === "chat" || (S.rota === "assistente" && S.param !== "uso" && S.ia?.estado === "pronto");
+  return '<div class="app">' + side + '<main class="main' + (ecraCheio ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (ecraCheio ? " chat-wrap" : "") + (anim ? " anim" : "") + '" data-marca="' + marcaAtual + '">' + nova + (ecraCheio ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
 }
 
 function esqueleto() {
@@ -935,7 +941,7 @@ function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
   h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : []),
-    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []),
+    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []), ["#assistente", I.ia, "Assistente"],
     ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : [])]
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   if (!S.prefs && api.preferencias) { S.prefs = { aCarregar: true }; api.preferencias.ler(S.eu.id).then((x) => { S.prefs = x; render(); }).catch(() => { S.prefs = { falta: true }; render(); }); }
@@ -1103,6 +1109,7 @@ function painelTarefa(t) {
   });
   if (pode) c += '<label class="cl-add">' + I.plus + '<span class="sr">Adicionar item</span><input id="t-novoitem" placeholder="Adicionar item e carregar em Enter" autocomplete="off" enterkeyhint="done"></label>';
   c += '</section><section class="p-sec"><h3>Notas</h3><textarea id="t-notas" class="notas" placeholder="Contexto, moradas, contactos…"' + dis + ">" + esc(t.notas) + "</textarea></section>";
+  c += '<div class="acts"><button class="btn sec btn-ia" data-acao="ia-tarefa">' + I.ia + "Pedir ajuda ao assistente</button></div>";
   const hist = S.atividade.filter((a) => a.tarefa_id === t.id).slice(0, 8);
   if (hist.length) c += '<section class="p-sec"><h3>Histórico</h3><div class="hist">' + hist.map((a) => "<div><span>" + esc(nomeDe(a.autor_id) || "Alguém") + " " + (ACOES[a.acao] || a.acao) + (a.acao === "atribuiu" && a.responsavel_id ? " a " + esc(nomeDe(a.responsavel_id)) : "") + '</span><span class="q">' + haQuanto(a.criado_em) + "</span></div>").join("") + "</div></section>";
   const pe = "<span>Criada por " + esc(nomeDe(t.criado_por) || "—") + (t.criado_em ? " a " + dataLonga(t.criado_em) : "") + "</span>" +
@@ -1260,6 +1267,8 @@ document.addEventListener("click", async (e) => {
     case "pag-ativ": S.pagAtiv = +el.dataset.p; render(); $(".registo")?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
     case "pag-hoje": S.pagHoje = +el.dataset.p; render(); break;
     case "pesquisar": PQ.abrir(); break;
+    case "ia-pub": { const p = S.mk?.pubs?.[S.aberto?.id]; if (p) { S.iaPre = pedidoPublicacao(p, MARCA[p.marca]?.nome || "Grupo 26"); fechar(); location.hash = "assistente-nova"; } break; }
+    case "ia-tarefa": { const t = S.tarefas[S.aberto?.id]; if (t) { S.iaPre = pedidoTarefa(t, (MARCA[t.marca] || MARCA.grupo).nome); fechar(); location.hash = "assistente-nova"; } break; }
     case "copia": fazerCopia(el.dataset.v); break;
     case "pag-notif": S.pagNotif = +el.dataset.p; render(); $(".main").scrollTop = 0; break;
     case "instalar-fechar": try { localStorage.setItem(CHAVE_INSTALAR, "1"); } catch { /* */ } render(); toast("Podes instalar mais tarde em «Mais»."); break;
@@ -1293,14 +1302,14 @@ document.addEventListener("click", async (e) => {
     case "cor-perfil": guardarAparencia(S.eu.foto_path || "", el.dataset.v); break;
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
-    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el);
+    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
 document.addEventListener("submit", async (e) => {
   const f = e.target;
   e.preventDefault();
-  if ((await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f)) || (await STK.submeter(f))) return;
+  if ((await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f)) || (await STK.submeter(f)) || (await IA.submeter(f))) return;
   if (f.id === "form-entrar") {
     const email = $("#e-email").value, pass = $("#e-pass").value;
     if (!email || !pass) { S.erroEntrada = "Indica o email e a palavra-passe."; render(); return; }
@@ -1378,7 +1387,7 @@ function validarPass(a, b) {
 
 document.addEventListener("keydown", async (e) => {
   const t = e.target;
-  if (CHAT.tecla(e) || LOG.tecla(e)) return;
+  if (CHAT.tecla(e) || LOG.tecla(e) || IA.tecla(e)) return;
   if (e.key === "Escape" && $("#menu-root")?.innerHTML) { fecharMenu(); return; }
   if (e.key === "Escape" && S.aberto) { fechar(); return; }
   if (e.key === "Escape" && S.selecao) { S.selecao = null; render(); return; }
@@ -1405,7 +1414,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e)) return;
+  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e) || IA.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1485,12 +1494,13 @@ const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender
 const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, stk: () => (podeStocks(S.eu) ? STK : null), $ });
 const AUD = criarAuditoria({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const FIN = criarFinanceiro({ S, api, esc, I, toast, falha, render, agendarRender, $ });
+const IA = criarAssistente({ S, api, esc, I, toast, falha, render, nomeDe, ativos, av, $ });
 const PQ = criarPesquisa({
   S, esc, I, todas: () => todas(), ativos, nomeDe, av,
   modulos: () => ({ crm: podeCrm(S.eu) ? CRM : null, log: podeEncomendas(S.eu) ? LOG : null, stk: podeStocks(S.eu) ? STK : null, op: podeOperacional(S.eu) ? OP : null,
     mk: podeMarketing(S.eu) ? MK : null, aud: AUD, agenda: AGENDA, chat: CHAT }),
   paginas: () => [
-    ["#inicio", I.casa, "Início"], ["#minhas", I.tarefas, "As minhas tarefas"], ["#chat", I.balao, "Mensagens", "chat conversas"], ["#agenda", I.cal, "Agenda", "calendário eventos"],
+    ["#inicio", I.casa, "Início"], ["#minhas", I.tarefas, "As minhas tarefas"], ["#chat", I.balao, "Mensagens", "chat conversas"], ["#assistente", I.ia, "Assistente", "ia inteligência artificial ajuda escrever"], ["#agenda", I.cal, "Agenda", "calendário eventos"],
     ["#equipa", I.equipa, "Equipa", "pessoas empregados"], ["#atividade", I.grafico, "Quem fez o quê", "atividade registo"], ["#notificacoes", I.sino, "Notificações"], ["#definicoes", I.mais, "Mais", "perfil definições foto email palavra-passe cópia de segurança"],
     ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial", "crm clientes leads funil"], ["#comercial-mapa", I.mapa, "Mapa de clientes", "mapa"]] : []),
     ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística", "encomendas rotas entregas"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix", "stock produtos inventário"]] : []),

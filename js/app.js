@@ -13,6 +13,7 @@ import { criarAuditoria } from "./auditoria.js";
 import { criarFornecedores, podeOperacional } from "./fornecedores.js";
 import { criarFinanceiro, podeFinanceiro } from "./financeiro.js";
 import { criarMarketing, podeMarketing } from "./marketing.js";
+import { criarStocks, podeStocks } from "./stocks.js";
 import { VERSAO } from "./config.js";
 
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -22,7 +23,7 @@ const api = DEMO ? (await import("./demo.js")).criarDemo() : (await import("./ap
 const S = {
   fase: "a-carregar", // a-carregar | entrar | mudar-password | sem-perfil | app
   user: null, eu: null,
-  perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {},
+  perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, fotos: {}, prefs: null,
   rota: "inicio", param: null,
   tab: {}, vista: "lista", q: "", filtroResp: "", rascunho: "", mostrarFeitas: false,
   aberto: null, confirmar: false, novaPass: null,
@@ -68,6 +69,8 @@ const I = {
   play: '<svg class="i" viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z" fill="currentColor"/></svg>',
   pausa: '<svg class="i" viewBox="0 0 16 16"><path d="M5.2 3.2v9.6M10.8 3.2v9.6" stroke-width="2.6"/></svg>',
   enviar: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 8h10M8.5 3.5L13 8l-4.5 4.5"/></svg>',
+  stock: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5.5L8 2.5l6 3v5L8 13.5l-6-3z"/><path d="M2 5.5l6 3 6-3M8 8.5v5"/></svg>',
+  camara: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5.5h2.5l1.2-1.8h4.6l1.2 1.8H14v7H2z"/><circle cx="8" cy="8.8" r="2.3"/></svg>',
   megafone: '<svg class="i" viewBox="0 0 16 16"><path d="M2.5 6.5v3h2l5 3v-9l-5 3z"/><path d="M4.5 9.5l1 4h1.6l-.6-3.4M12 6a2.5 2.5 0 010 4"/></svg>',
   caixa: '<svg class="i" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M2 5l6 3 6-3M8 8v6"/></svg>',
   escudo: '<svg class="i" viewBox="0 0 16 16"><path d="M8 1.8l5 1.9v4c0 3.2-2.1 5.6-5 6.6-2.9-1-5-3.4-5-6.6v-4z"/><path d="M5.8 8l1.6 1.6 2.9-3"/></svg>',
@@ -169,7 +172,18 @@ const nomeDe = (id) => (id && S.perfis[id] ? S.perfis[id].nome : "");
 const depNome = (id) => (id && S.deps[id] ? S.deps[id].nome : "Sem departamento");
 const listaDeps = () => Object.values(S.deps).sort((a, b) => (a.ordem - b.ordem) || a.nome.localeCompare(b.nome, "pt"));
 const todas = () => Object.values(S.tarefas);
-const av = (id, cls = "") => '<span class="av ' + cls + '" aria-hidden="true">' + esc(iniciais(nomeDe(id) || "?")) + "</span>";
+// Avatar: foto (se a pessoa tiver) ou iniciais na cor escolhida
+const av = (id, cls = "") => {
+  const p = S.perfis[id], url = p?.foto_path && S.fotos[p.foto_path];
+  const cor = p?.cor ? ' data-cor="' + esc(p.cor) + '"' : "";
+  return url ? '<span class="av com-foto ' + cls + '"' + cor + ' aria-hidden="true"><img src="' + esc(url) + '" alt="" loading="lazy" decoding="async"></span>'
+    : '<span class="av ' + cls + '"' + cor + ' aria-hidden="true">' + esc(iniciais(nomeDe(id) || "?")) + "</span>";
+};
+async function carregarFotos() {
+  const falta = [...new Set(Object.values(S.perfis).map((p) => p.foto_path).filter((c) => c && !S.fotos[c]))];
+  if (!falta.length || !api.perfis.urlsFotos) return;
+  try { Object.assign(S.fotos, await api.perfis.urlsFotos(falta)); agendarRender(); } catch { /* fica com as iniciais */ }
+}
 
 /* ============================== Arranque e sessão ============================== */
 async function arrancar() {
@@ -207,7 +221,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar();
+  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -229,6 +243,7 @@ async function entrarNaApp(u) {
   if (S.rota === "auditoria" && /^[A-Z]{2,4}-\d{2,3}$/.test(S.param || "")) { S.aberto = { tipo: "aud-item", id: S.param }; render(); }
   if ((S.rota === "fornecedor" || S.rota === "pedido") && S.param) { S.aberto = { tipo: S.rota, id: S.param }; render(); }
   if (S.rota === "publicacao" && S.param) { S.aberto = { tipo: "publicacao", id: S.param }; render(); }
+  if (S.rota === "stock" && S.param) { S.aberto = { tipo: "stock", id: S.param }; render(); }
   CHAT.carregar();
 }
 
@@ -236,6 +251,7 @@ async function recarregar() {
   try {
     const d = await api.carregar();
     S.perfis = Object.fromEntries(d.perfis.map((p) => [p.id, p]));
+    carregarFotos();
     S.deps = Object.fromEntries(d.departamentos.map((x) => [x.id, x]));
     S.tarefas = Object.fromEntries(d.tarefas.map((t) => [t.id, t]));
     S.notifs = d.notificacoes;
@@ -252,7 +268,7 @@ function aoMudar(tabela, ev, novo, antigo) {
     if (ev === "DELETE") delete S.tarefas[antigo.id];
     else if (!emEspera(novo.id)) S.tarefas[novo.id] = novo;
   } else if (tabela === "perfis") {
-    if (ev === "DELETE") delete S.perfis[antigo.id]; else S.perfis[novo.id] = novo;
+    if (ev === "DELETE") delete S.perfis[antigo.id]; else { S.perfis[novo.id] = novo; if (novo.id === S.eu?.id) S.eu = { ...S.eu, ...novo }; carregarFotos(); }
     if (novo && S.eu && novo.id === S.eu.id) {
       S.eu = novo;
       if (!novo.ativo) { api.sair(); return; }
@@ -291,6 +307,8 @@ function lerRota(desenhar = true) {
     else if (r === "operacional") { rota = "operacional"; param = p || null; }
     else if (r === "financeiro") { rota = "financeiro"; param = p || null; }
     else if (r === "marketing") { rota = "marketing"; param = p || null; }
+    else if (r === "stocks") { rota = "stocks"; param = p || null; }
+    else if (r === "stock" && p) { rota = "stock"; param = p; }
     else if (r === "publicacao" && p) { rota = "publicacao"; param = p; }
     else if ((r === "fornecedor" || r === "pedido") && p) { rota = r; param = p; }
     else if (r === "marca" && MARCA[p]) { rota = "marca"; param = p; }
@@ -311,6 +329,7 @@ function lerRota(desenhar = true) {
   if (rota === "auditoria" && S.fase === "app" && /^[A-Z]{2,4}-\d{2,3}$/.test(param || "")) { if (S.aud) S.aud.tab = "registo"; S.aberto = { tipo: "aud-item", id: param }; }
   if ((rota === "fornecedor" || rota === "pedido") && S.fase === "app") { if (S.op) S.op.tab = rota === "pedido" ? "pedidos" : "fornecedores"; S.aberto = { tipo: rota, id: param }; }
   if (rota === "publicacao" && S.fase === "app") S.aberto = { tipo: "publicacao", id: param };
+  if (rota === "stock" && S.fase === "app") S.aberto = { tipo: "stock", id: param };
   if (rota === "encomenda" && S.fase === "app") { if (S.log) S.log.tab = "encomendas"; S.aberto = { tipo: "encomenda", id: param }; }
   if (rota === "chat" && S.fase === "app") CHAT.aoEntrarNaRota(param);
   render();
@@ -393,6 +412,7 @@ function vistaApp() {
   side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
   if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
   if (podeMarketing(S.eu)) { const n = MK.contagem(); side += '<a href="#marketing"' + (S.rota === "marketing" || S.rota === "publicacao" ? ' aria-current="page"' : "") + ">" + I.megafone + '<span class="nm">Marketing</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+  if (podeStocks(S.eu)) { const n = STK.contagem(); side += '<a href="#stocks"' + (S.rota === "stocks" || S.rota === "stock" ? ' aria-current="page"' : "") + ">" + I.stock + '<span class="nm">Stocks</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
   if (podeFinanceiro(S.eu)) side += '<a href="#financeiro"' + atual("financeiro") + ">" + I.euro + '<span class="nm">Financeiro</span></a>';
   if (podeOperacional(S.eu)) { const n = OP.contagem(); side += '<a href="#operacional"' + (["operacional", "fornecedor", "pedido"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.caixa + '<span class="nm">Fornecedores</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
   if (AUD.visivel()) { const n = AUD.contagem(); side += '<a href="#auditoria"' + atual("auditoria") + ">" + I.escudo + '<span class="nm">Auditoria dos sites</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
@@ -433,6 +453,7 @@ function vistaApp() {
   else if (S.rota === "agenda") corpo = AGENDA.vista();
   else if (S.rota === "financeiro" && podeFinanceiro(S.eu)) corpo = FIN.vista(S.param);
   else if ((S.rota === "marketing" || S.rota === "publicacao") && podeMarketing(S.eu)) corpo = MK.vista(S.rota === "marketing" ? S.param : null);
+  else if ((S.rota === "stocks" || S.rota === "stock") && podeStocks(S.eu)) corpo = STK.vista(S.rota === "stocks" ? S.param : null);
   else if (["operacional", "fornecedor", "pedido"].includes(S.rota) && podeOperacional(S.eu)) corpo = OP.vista(S.rota === "operacional" ? S.param : null);
   else if (S.rota === "auditoria") corpo = AUD.vista(/^[A-Z]{2,4}-/.test(S.param || "") ? null : S.param);
   else if ((S.rota === "logistica" || S.rota === "encomenda") && podeEncomendas(S.eu)) corpo = LOG.vista(S.rota === "logistica" ? S.param : null);
@@ -442,7 +463,7 @@ function vistaApp() {
   const marcaAtual = S.rota === "marca" ? S.param : "twentysix";
   const nova = S.versaoNova ? '<div class="aviso aviso-acao versao-nova" role="status"><span><b>Há uma versão nova da Central 26.</b> Atualiza para ficares com as últimas correções.</span><button class="btn pri" data-acao="atualizar-app">Atualizar agora</button></div>' : "";
   // animação de entrada só quando se muda de página (não a cada atualização)
-  const NORM = { publicacao: "marketing", fornecedor: "operacional", pedido: "operacional", encomenda: "logistica", cliente: "comercial", tarefa: "inicio" };
+  const NORM = { stock: "stocks", publicacao: "marketing", fornecedor: "operacional", pedido: "operacional", encomenda: "logistica", cliente: "comercial", tarefa: "inicio" };
   const chaveAnim = (NORM[S.rota] || S.rota) + (["marca", "pessoa"].includes(S.rota) ? "-" + S.param : "");
   const anim = S.carregou && S.rota !== "chat" && S.rotaAnim !== chaveAnim && !matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (S.carregou) S.rotaAnim = chaveAnim;
@@ -620,6 +641,7 @@ function blocosInicio() {
   if (mod) h += mod.blocoInicio();
   else if (eGestor(S.eu)) h += resumoDirecao();
   if (dep !== "tecnologico" && !eGestor(S.eu)) h += AUD.blocoInicio(); // só aparece com itens atribuídos à pessoa
+  h += STK.blocoInicio(); // só aparece quando há produtos a repor
   return h;
 }
 function resumoDirecao() {
@@ -906,11 +928,23 @@ function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
   h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"]] : []),
-    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []),
+    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []),
     ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : [])]
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
-  h += '<section class="cartao-sec"><h3>O meu perfil</h3><form class="form" id="form-perfil"><div class="campos-2"><div class="campo"><label for="pf-nome">Nome</label><input id="pf-nome" value="' + esc(S.eu.nome) + '" autocomplete="name"></div><div class="campo"><label for="pf-tel">Telefone</label><input id="pf-tel" type="tel" value="' + esc(S.eu.telefone) + '" autocomplete="tel"></div></div>' +
+  if (!S.prefs && api.preferencias) { S.prefs = { aCarregar: true }; api.preferencias.ler(S.eu.id).then((x) => { S.prefs = x; render(); }).catch(() => { S.prefs = { falta: true }; render(); }); }
+  const corAtual = S.eu.cor || "";
+  h += '<section class="cartao-sec perfil-sec"><h3>O meu perfil</h3><div class="perfil-topo">' + av(S.eu.id, "xl") + '<div class="perfil-acoes"><b>' + esc(S.eu.nome) + "</b><small>" + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + "</small>" +
+    '<div class="acts"><label class="btn sec" for="pf-foto">' + I.camara + (S.eu.foto_path ? "Mudar a foto" : "Pôr uma foto") + '</label><input id="pf-foto" type="file" accept="image/*" hidden>' +
+    (S.eu.foto_path ? '<button class="btn sec" data-acao="foto-remover">Remover a foto</button>' : "") + "</div></div></div>" +
+    '<div class="cores-perfil" role="radiogroup" aria-label="Cor do perfil"><span class="muted">Cor</span>' + ["", "twentysix", "barbearia", "academy", "tech", "grooms", "vinho", "verde", "roxo", "laranja"].map((c) =>
+      '<button class="cor-b" role="radio" aria-checked="' + (c === corAtual) + '" data-acao="cor-perfil" data-v="' + c + '" data-cor="' + c + '" aria-label="' + (c ? "Cor " + c : "Cor automática") + '"></button>').join("") + "</div>" +
+    '<form class="form" id="form-perfil"><div class="campos-2"><div class="campo"><label for="pf-nome">Nome</label><input id="pf-nome" value="' + esc(S.eu.nome) + '" autocomplete="name"></div><div class="campo"><label for="pf-tel">Telefone</label><input id="pf-tel" type="tel" value="' + esc(S.eu.telefone) + '" autocomplete="tel"></div></div>' +
     '<p class="campo ajuda" style="margin:0">Cargo: ' + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + " · " + esc(PAPEIS[S.eu.papel]) + '. Estes dados são alterados pela administração.</p><div class="acts"><button class="btn pri" type="submit">Guardar</button></div></form></section>';
+  const pr = S.prefs || {};
+  h += '<section class="cartao-sec"><h3>Avisos por email</h3>' + (pr.falta ? '<p class="muted">Os avisos por email precisam do script supabase/12-perfil-email-stocks.sql no Supabase.</p>' :
+    "<p>Recebe um email em <b>" + esc(S.eu.email) + "</b> quando:</p>" + '<div class="prefs">' + [["email_tarefas", "Te atribuem uma tarefa"], ["email_agenda", "Te convidam ou alteram um evento da agenda"], ["email_mensagens", "Recebes uma mensagem (um email por conversa até a leres)"]].map(([k, rot]) =>
+      '<label class="interruptor"><input type="checkbox" data-pref="' + k + '"' + (pr[k] !== false ? " checked" : "") + (pr.aCarregar ? " disabled" : "") + "><span class=\"int-t\"></span>" + rot + "</label>").join("") + "</div>" +
+    '<div class="acts"><button class="btn sec" data-acao="email-teste">Enviar email de teste</button></div>') + "</section>";
   h += '<section class="cartao-sec"><h3>Notificações neste aparelho</h3><p>' + esc(p.txt) + '</p><div class="acts">' +
     (["pedir", "ok"].includes(p.estado) ? '<button class="btn pri" data-acao="push">Ativar neste aparelho</button>' : "") +
     (p.estado === "ok" ? '<button class="btn sec" data-acao="push-teste">Enviar notificação de teste</button>' : "") + "</div></section>";
@@ -920,6 +954,39 @@ function vistaDefinicoes() {
   h += '<section class="cartao-sec"><h3>Palavra-passe</h3><form class="form" id="form-mudar"><div class="campos-2"><div class="campo"><label for="mp-1">Nova palavra-passe</label><input id="mp-1" type="password" autocomplete="new-password" minlength="8"></div><div class="campo"><label for="mp-2">Repetir</label><input id="mp-2" type="password" autocomplete="new-password" minlength="8"></div></div><div class="acts"><button class="btn sec" type="submit">Mudar palavra-passe</button></div></form></section>';
   h += '<section class="cartao-sec"><h3>Sessão</h3><p>Central 26 · versão ' + VERSAO + (api.modo === "demo" ? " · modo de demonstração" : "") + '</p><div class="acts"><button class="btn perigo-sec" data-acao="sair">Sair</button></div></section>';
   return h;
+}
+
+// Foto de perfil: recorta ao centro, reduz para 320 px e grava em JPEG
+async function fotoQuadrada(ficheiro) {
+  if (!/^image\//.test(ficheiro.type)) throw new Error("Escolhe uma imagem.");
+  if (ficheiro.size > 15 * 1024 * 1024) throw new Error("A imagem é demasiado grande (máximo 15 MB).");
+  const url = URL.createObjectURL(ficheiro);
+  try {
+    const img = await new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => falha(new Error("Não foi possível abrir esta imagem. Experimenta outra (JPG ou PNG).")); i.src = url; });
+    const lado = Math.min(img.naturalWidth, img.naturalHeight), T = 320;
+    const c = document.createElement("canvas"); c.width = T; c.height = T;
+    const g = c.getContext("2d"); g.imageSmoothingQuality = "high";
+    g.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, T, T);
+    return await new Promise((ok, falha) => c.toBlob((b) => (b ? ok(b) : falha(new Error("Não foi possível preparar a foto."))), "image/jpeg", 0.86));
+  } finally { URL.revokeObjectURL(url); }
+}
+async function mudarFoto(ficheiro) {
+  try {
+    toast("A preparar a foto…");
+    const blob = await fotoQuadrada(ficheiro), antiga = S.eu.foto_path;
+    const caminho = await api.perfis.enviarFoto(S.eu.id, blob, "jpg");
+    S.fotos[caminho] = URL.createObjectURL(blob);
+    await guardarAparencia(caminho, S.eu.cor || "");
+    if (antiga && antiga !== caminho) api.perfis.apagarFoto(antiga);
+    toast("Foto atualizada");
+  } catch (e) { falha(e); }
+}
+async function guardarAparencia(foto, cor) {
+  const antes = { foto_path: S.eu.foto_path, cor: S.eu.cor };
+  const novo = { foto_path: foto || null, cor: cor || "" };
+  Object.assign(S.eu, novo); if (S.perfis[S.eu.id]) Object.assign(S.perfis[S.eu.id], novo); render();
+  try { await api.perfis.aparencia(foto, cor); }
+  catch (e) { Object.assign(S.eu, antes); if (S.perfis[S.eu.id]) Object.assign(S.perfis[S.eu.id], antes); render(); falha(/definir_aparencia|Could not find/i.test(String(e?.message)) ? new Error("A foto e a cor de perfil precisam do script supabase/12-perfil-email-stocks.sql no Supabase.") : e); }
 }
 
 /* ============================== Painel lateral ============================== */
@@ -946,6 +1013,7 @@ function painelHTML() {
   if (a.tipo === "aud-item" || a.tipo === "aud-novo") return AUD.painel(a);
   if (["fornecedor", "pedido", "op-forn-novo", "op-pedido-novo"].includes(a.tipo)) return OP.painel(a);
   if (a.tipo === "publicacao" || a.tipo === "mk-nova") return MK.painel(a);
+  if (a.tipo === "stock" || a.tipo === "stk-novo") return STK.painel(a);
   return "";
 }
 const moldura = (marca, label, conteudo, pe) =>
@@ -1037,7 +1105,7 @@ function abrirTarefa(id) { S.aberto = { tipo: "tarefa", id }; S.confirmar = fals
 function abrir(o) { S.aberto = o; S.confirmar = false; renderPainel(true); focarPainel(); }
 function focarPainel() {
   const r = $("#painel-root");
-  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome, #cn-nome, #ev-titulo, #ne-cliente, #nl-nome, #an-prob, #nf-nome, #np-titulo, #mn-titulo") || r.querySelector('.ib[data-acao="fechar"]');
+  const alvo = r.querySelector("#nv-titulo, #em-nome, #dp-nome, #cn-nome, #ev-titulo, #ne-cliente, #nl-nome, #an-prob, #nf-nome, #np-titulo, #mn-titulo, #sn-nome") || r.querySelector('.ib[data-acao="fechar"]');
   if (alvo) alvo.focus();
 }
 function fechar() {
@@ -1049,6 +1117,7 @@ function fechar() {
   if (S.rota === "auditoria" && /^[A-Z]{2,4}-/.test(S.param || "")) history.replaceState(null, "", "#auditoria"), lerRota();
   if (S.rota === "fornecedor" || S.rota === "pedido") history.replaceState(null, "", "#operacional"), lerRota();
   if (S.rota === "publicacao") history.replaceState(null, "", "#marketing"), lerRota();
+  if (S.rota === "stock") history.replaceState(null, "", "#stocks"), lerRota();
 }
 
 /* ============================== Ações sobre tarefas ============================== */
@@ -1164,15 +1233,18 @@ document.addEventListener("click", async (e) => {
     case "atualizar-app": location.reload(); break;
     case "instalar": if (S.instalar) { S.instalar.prompt(); const r = await S.instalar.userChoice.catch(() => null); if (r?.outcome === "accepted") S.instalar = null; render(); } break;
     case "push": ativarPush(); break;
+    case "email-teste": try { await api.push.emailTeste(); toast("Email de teste enviado para " + S.eu.email); } catch (err) { falha(err); } break;
+    case "cor-perfil": guardarAparencia(S.eu.foto_path || "", el.dataset.v); break;
+    case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
-    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el);
+    default: CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el);
   }
 });
 
 document.addEventListener("submit", async (e) => {
   const f = e.target;
   e.preventDefault();
-  if ((await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f))) return;
+  if ((await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f)) || (await STK.submeter(f))) return;
   if (f.id === "form-entrar") {
     const email = $("#e-email").value, pass = $("#e-pass").value;
     if (!email || !pass) { S.erroEntrada = "Indica o email e a palavra-passe."; render(); return; }
@@ -1277,7 +1349,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e)) return;
+  if (CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1292,7 +1364,13 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e)) return;
+  if (CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e)) return;
+  if (t.id === "pf-foto" && t.files?.[0]) { mudarFoto(t.files[0]); t.value = ""; return; }
+  if (t.dataset.pref && S.prefs && !S.prefs.falta) {
+    const campo = t.dataset.pref, v = t.checked; S.prefs = { ...S.prefs, [campo]: v };
+    api.preferencias.guardar(S.eu.id, { [campo]: v }).then((x) => { S.prefs = x; toast(v ? "Vais receber estes avisos por email" : "Deixas de receber estes avisos por email"); }).catch((e) => { S.prefs = { ...S.prefs, [campo]: !v }; render(); falha(e); });
+    return;
+  }
   if (t.id === "filtro-resp") { S.filtroResp = t.value; render(); return; }
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
   if (t.id === "sel-resp" && t.value && S.selecao?.size) {
@@ -1351,6 +1429,7 @@ const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender
 const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, $ });
 const AUD = criarAuditoria({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const FIN = criarFinanceiro({ S, api, esc, I, toast, falha, render, agendarRender, $ });
+const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const MK = criarMarketing({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 arrancar();

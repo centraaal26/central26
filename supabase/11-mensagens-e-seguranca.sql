@@ -202,3 +202,5 @@ begin
 end $$;
 -- funções internas continuam fora do alcance da app
 revoke execute on function public.chat_notificar(uuid, uuid, text, text) from authenticated;
+revoke execute on function public.agenda_lembretes() from authenticated;
+revoke execute on function public.gerar_password_temporaria() from authenticated;

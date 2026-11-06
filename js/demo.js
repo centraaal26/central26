@@ -2,6 +2,7 @@
 // Serve para mostrar a app e testá-la sem mexer nos dados reais. Nada sai deste aparelho.
 import { MODELOS } from "./modelos.js";
 import { periodo, ymd, podeVer, podeAtribuirA, eGestor } from "./dados.js";
+import { CATALOGO_STK } from "./stocks-catalogo.js";
 
 const CHAVE = "central26-demo-v1";
 const CHAVE_EU = "central26-demo-eu";
@@ -184,6 +185,11 @@ export function criarDemo() {
         Object.assign(p, campos); gravar(db); emitir("perfis", "UPDATE", p); return structuredClone(p);
       },
       async atualizarMeu(nome, telefone) { const p = eu(); if (nome.trim()) p.nome = nome.trim(); p.telefone = telefone.trim(); gravar(db); },
+      // no modo de demonstração a foto fica guardada no próprio aparelho, em tamanho pequeno
+      async aparencia(foto, cor) { const p = eu(); p.foto_path = foto || null; p.cor = cor || ""; gravar(db); emitir("perfis", "UPDATE", p); },
+      async enviarFoto(id, blob) { return await new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => falha(new Error("Não foi possível ler a foto.")); r.readAsDataURL(blob); }); },
+      async apagarFoto() { /* */ },
+      async urlsFotos(caminhos) { return Object.fromEntries(caminhos.map((c) => [c, c])); },
     },
     departamentos: {
       async criar(d) {
@@ -699,6 +705,81 @@ export function criarDemo() {
       async chave() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async registar() { /* */ },
       async teste() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
+      async emailTeste() { throw new Error("Os emails não são enviados no modo de demonstração."); },
     },
+    preferencias: (() => {
+      const K = "central26-demo-pref-v1";
+      const todas = () => { try { return JSON.parse(localStorage.getItem(K) || "{}"); } catch { return {}; } };
+      return {
+        async ler(id) { return { perfil_id: id, email_tarefas: true, email_agenda: true, email_mensagens: true, ...(todas()[id] || {}) }; },
+        async guardar(id, campos) { const t = todas(); t[id] = { ...(t[id] || {}), ...campos }; try { localStorage.setItem(K, JSON.stringify(t)); } catch { /* */ } return this.ler(id); },
+      };
+    })(),
+    stk: (() => {
+      const K = "central26-demo-stk-v1";
+      let d = null, seq = 1;
+      const pode = () => { const e = eu(); return !!e && (eGestor(e) || ["logistica", "comercial"].includes(e.departamento_id)); };
+      const exemplo = { "spark-100": [34, 30], "mist-100": [58, 25], "clay-100": [12, 20], "fog-100": [40, 15], "blaze-100": [22, 15], "river-salt": [18, 10], "hack-300": [26, 10], "caixa-m": [8, 20], "saco": [140, 50] };
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          d = { produtos: CATALOGO_STK.map(([codigo, nome, categoria, ordem]) => ({ id: "s-" + codigo, codigo, nome, categoria, ordem, quantidade: exemplo[codigo]?.[0] ?? null, minimo: exemplo[codigo]?.[1] ?? null, unidade: "un.", ativo: true,
+            alerta: "ok", alerta_desde: null, ultimo_aviso: null, ignorado_por: null, atualizado_por: null, atualizado_em: agora() })), movimentos: [], config: { id: 1, avisar: [], hora_inicio: 8, hora_fim: 21 } };
+          d.produtos.forEach(estado);
+        }
+        seq = Math.max(1, ...d.movimentos.map((m) => m.id + 1));
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      function estado(p) {
+        if (p.ativo && p.minimo != null && p.quantidade != null && p.quantidade <= p.minimo) { if (p.alerta === "ok") Object.assign(p, { alerta: "alerta", alerta_desde: agora(), ultimo_aviso: null }); }
+        else Object.assign(p, { alerta: "ok", alerta_desde: null, ultimo_aviso: null, ignorado_por: null });
+      }
+      const destinos = () => (d.config.avisar.length ? d.config.avisar : db.perfis.filter((x) => x.ativo && x.departamento_id === "logistica").map((x) => x.id));
+      function avisar(p) {
+        destinos().forEach((dest) => {
+          db.notificacoes = db.notificacoes.filter((n) => !(n.destinatario_id === dest && n.link === "#stock-" + p.id && !n.lida));
+          notificar(dest, "stock", "Repor stock: " + p.nome, "Restam " + p.quantidade + " " + p.unidade + " (mínimo " + p.minimo + "). Abre a Central para marcar como reposto ou ignorar.", "#stock-" + p.id);
+        });
+        p.ultimo_aviso = agora(); gravar(db);
+      }
+      const limparAvisos = (id) => { db.notificacoes = db.notificacoes.filter((n) => !(n.link === "#stock-" + id && !n.lida)); gravar(db); };
+      return {
+        async carregar() { ler(); if (!pode()) return { produtos: [], movimentos: [], config: null }; return structuredClone({ produtos: d.produtos, movimentos: d.movimentos.slice(0, 300), config: d.config }); },
+        async movimento(id, tipo, qtd, nota) {
+          ler(); if (!pode()) throw new Error("Sem acesso aos stocks.");
+          const p = d.produtos.find((x) => x.id === id); if (!p) throw new Error("Produto não encontrado.");
+          qtd = Number(qtd); if (!Number.isInteger(qtd) || qtd < 0 || (["saida", "entrada"].includes(tipo) && qtd === 0)) throw new Error("Indica uma quantidade válida.");
+          let novo;
+          if (tipo === "saida") { if (p.quantidade == null) throw new Error("Este produto ainda não foi contado. Acerta primeiro a contagem."); if (qtd > p.quantidade) throw new Error("Só há " + p.quantidade + " " + p.unidade + " de " + p.nome + "."); novo = p.quantidade - qtd; }
+          else if (tipo === "entrada") novo = (p.quantidade || 0) + qtd; else novo = qtd;
+          d.movimentos.unshift({ id: seq++, produto_id: id, tipo, quantidade: qtd, antes: p.quantidade, depois: novo, nota: nota || "", autor_id: euId, criado_em: agora() });
+          p.quantidade = novo; p.atualizado_por = euId; p.atualizado_em = agora(); estado(p);
+          if (p.alerta === "alerta" && !p.ultimo_aviso) avisar(p);
+          if (p.alerta === "ok") limparAvisos(id);
+          guardar(); return structuredClone(p);
+        },
+        async ignorar(id) { ler(); const p = d.produtos.find((x) => x.id === id); if (p.alerta !== "ok") Object.assign(p, { alerta: "ignorado", ignorado_por: euId, ultimo_aviso: agora() }); limparAvisos(id); guardar(); return structuredClone(p); },
+        async criar(c) { ler(); const p = { id: "s-" + uid(), codigo: null, ordem: 99, quantidade: null, minimo: null, unidade: "un.", ativo: true, alerta: "ok", ...c, quantidade: null, atualizado_em: agora() }; estado(p); d.produtos.push(p); guardar(); return structuredClone(p); },
+        async atualizar(id, campos) { ler(); const p = d.produtos.find((x) => x.id === id); const { quantidade, alerta, ...resto } = campos; Object.assign(p, resto, { atualizado_por: euId, atualizado_em: agora() }); estado(p); guardar(); return structuredClone(p); },
+        async apagar(id) { ler(); if (!eGestor(eu())) throw new Error("Só a direção elimina produtos."); d.produtos = d.produtos.filter((x) => x.id !== id); guardar(); },
+        async importar(lista) {
+          ler(); let novos = 0, atualizados = 0;
+          for (const x of lista) {
+            if (!String(x.nome || "").trim()) continue;
+            let p = d.produtos.find((y) => (x.codigo && y.codigo === x.codigo) || y.nome.trim().toLowerCase() === String(x.nome).trim().toLowerCase());
+            const q = x.quantidade === "" || x.quantidade == null ? null : Math.round(Number(x.quantidade)), m = x.minimo === "" || x.minimo == null ? null : Math.round(Number(x.minimo));
+            if (!p) { p = { id: "s-" + uid(), codigo: x.codigo || null, nome: String(x.nome).trim(), categoria: x.categoria || "Outros", ordem: 99, quantidade: q, minimo: m, unidade: "un.", ativo: true, alerta: "ok" }; d.produtos.push(p); novos++; }
+            else { if (q != null && q !== p.quantidade) d.movimentos.unshift({ id: seq++, produto_id: p.id, tipo: "acerto", quantidade: q, antes: p.quantidade, depois: q, nota: "Importação", autor_id: euId, criado_em: agora() });
+              if (q != null) p.quantidade = q; if ("minimo" in x) p.minimo = m; if (x.categoria) p.categoria = x.categoria; atualizados++; }
+            estado(p); if (p.alerta === "alerta" && !p.ultimo_aviso) avisar(p);
+          }
+          guardar(); return { novos, atualizados };
+        },
+        async guardarConfig(campos) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda os avisos."); Object.assign(d.config, campos); guardar(); return structuredClone(d.config); },
+        subscrever() { return () => {}; },
+      };
+    })(),
   };
 }

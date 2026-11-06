@@ -54,6 +54,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Só a direção e o Operacional veem os fornecedores.
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
+- **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
   - Resumo do ano com o estado de cada mês (importado, em falta, custos copiados de outro mês), médias e gráfico de faturação e custos.
   - Barbearias: faturação, pagamentos aos barbeiros, custos fixos e resultado de cada espaço, e a evolução mês a mês.
   - Despesas partilhadas, impostos, Hairshopping, Tech e Formação por rubrica e por mês, agrupadas por categoria (editável), com os valores fora do normal destacados.
@@ -85,6 +86,8 @@ Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam se
 | `enviar-push` | `supabase/functions/enviar-push/index.ts` |
 
 O editor do Supabase sugere um nome automático (por exemplo «hyper-function»). Apaga-o e escreve `enviar-push` antes de carregar em **Deploy**.
+
+O editor abre já com um código de exemplo («Hello …»): apaga-o todo antes de colar o nosso. Se a função já existir com esse exemplo, abre-a, separador **Code**, substitui todo o conteúdo pelo do ficheiro e carrega em **Deploy** outra vez. Sempre que este ficheiro mudar no GitHub, repete este passo.
 
 ### 3c. CRM comercial
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/03-crm.sql` → **Run**.
@@ -132,6 +135,17 @@ A folha da auditoria tem informação de segurança dos sites: guarda-a fora do 
 ### 3k. Mensagens de voz, grupos e revisão de segurança
 SQL Editor → **New query** → cola o conteúdo de `supabase/11-mensagens-e-seguranca.sql` → **Run**. Corre-se depois de todos os anteriores. Liga os grupos com nome e as mensagens de voz nas Mensagens, e fecha o acesso às funções da base de dados a quem não tem sessão iniciada.
 
+### 3l. Foto de perfil, avisos por email e Stocks da TwentySix
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/12-perfil-email-stocks.sql` → **Run**. Liga a foto e a cor de perfil, as preferências de email e os Stocks (já com a lista de produtos da TwentySix, sem quantidades).
+2. Se aparecer o aviso «pg_cron indisponível», ativa **pg_cron** em **Database → Extensions** e corre o script outra vez: é o que envia os lembretes de stock de 15 em 15 minutos.
+3. **Emails (opcional).** Os avisos por email usam o serviço Resend (gratuito até 3000 emails por mês):
+   1. Cria uma conta em resend.com, vai a **Domains → Add domain** e adiciona `avisos.twentysix.pt` (um subdomínio, para não mexer no email normal da empresa).
+   2. Copia os registos DNS que o Resend mostra para o painel de DNS do domínio `twentysix.pt` e espera que fiquem verificados.
+   3. Em **API Keys**, cria uma chave com permissão de envio.
+   4. No Supabase: **Edge Functions → Secrets** → adiciona `RESEND_API_KEY` com a chave e `EMAIL_REMETENTE` com `Central 26 <central@avisos.twentysix.pt>`.
+   5. Volta a instalar a função `enviar-push` com o código atual (passo 3b). Na app, **Mais → Avisos por email → Enviar email de teste**.
+4. Stocks: preenche as quantidades produto a produto («Acertar contagem») ou em **Stocks → Importar → Descarregar modelo**, preenche o Excel e importa-o. Em **Stocks → Avisos** (direção) escolhes quem recebe os lembretes e o horário.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -165,6 +179,7 @@ js/auditoria.js                             registo da auditoria aos sites e pla
 js/fornecedores.js · js/xlsx.js             fornecedores, pedidos de orçamento e leitura de Excel
 js/financeiro.js                            faturação e custos por mês (folhas da Ondina & Maia)
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
+js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor

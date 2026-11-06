@@ -118,6 +118,24 @@ export function criarApi() {
     perfis: {
       async atualizar(id, campos) { return ok(await sb.from("perfis").update(campos).eq("id", id).select().single()); },
       async atualizarMeu(nome, telefone) { ok(await sb.rpc("atualizar_meu_perfil", { p_nome: nome, p_telefone: telefone })); },
+      async aparencia(foto, cor) { ok(await sb.rpc("definir_aparencia", { p_foto: foto || "", p_cor: cor || "" })); },
+      async enviarFoto(eu, blob, ext) {
+        const caminho = eu + "/" + crypto.randomUUID() + "." + ext;
+        const up = await sb.storage.from("avatares").upload(caminho, blob, { contentType: blob.type, upsert: false });
+        if (up.error) throw new Error(/bucket|not found/i.test(up.error.message) ? "As fotos de perfil precisam do script supabase/12-perfil-email-stocks.sql no Supabase." : "Não foi possível enviar a foto: " + up.error.message);
+        return caminho;
+      },
+      async apagarFoto(caminho) { if (caminho) await sb.storage.from("avatares").remove([caminho]).catch(() => {}); },
+      async urlsFotos(caminhos) {
+        if (!caminhos.length) return {};
+        const { data, error } = await sb.storage.from("avatares").createSignedUrls(caminhos, 60 * 60 * 24);
+        if (error) return {};
+        return Object.fromEntries((data || []).filter((x) => x.signedUrl).map((x) => [x.path, x.signedUrl]));
+      },
+    },
+    preferencias: {
+      async ler(eu) { const { data, error } = await sb.from("preferencias").select("*").eq("perfil_id", eu).maybeSingle(); if (error) throw new Error("FALTA_SCRIPT"); return data || { perfil_id: eu, email_tarefas: true, email_agenda: true, email_mensagens: true }; },
+      async guardar(eu, campos) { return ok(await sb.from("preferencias").upsert({ perfil_id: eu, ...campos, atualizado_em: new Date().toISOString() }).select().single()); },
     },
     departamentos: {
       async criar(d) { return ok(await sb.from("departamentos").insert(d).select().single()); },
@@ -363,6 +381,32 @@ export function criarApi() {
         ok(await sb.rpc("registar_push", { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_aparelho: aparelho }));
       },
       async teste() { return invocar("enviar-push", { acao: "teste" }); },
+      async emailTeste() { return invocar("enviar-push", { acao: "email-teste" }); },
+    },
+
+    stk: {
+      async carregar() {
+        const [produtos, movimentos, config] = await Promise.all([
+          todas(() => sb.from("stk_produtos").select("*").order("categoria").order("ordem").order("nome")),
+          sb.from("stk_movimentos").select("*").order("criado_em", { ascending: false }).limit(300),
+          sb.from("stk_config").select("*").eq("id", 1).maybeSingle(),
+        ]);
+        return { produtos, movimentos: ok(movimentos), config: ok(config) };
+      },
+      async movimento(id, tipo, qtd, nota) { return ok(await sb.rpc("stk_movimento", { p_produto: id, p_tipo: tipo, p_qtd: qtd, p_nota: nota || "" })); },
+      async ignorar(id) { return ok(await sb.rpc("stk_ignorar", { p_produto: id })); },
+      async criar(p) { return ok(await sb.from("stk_produtos").insert(p).select().single()); },
+      async atualizar(id, campos) { return ok(await sb.from("stk_produtos").update(campos).eq("id", id).select().single()); },
+      async apagar(id) { ok(await sb.from("stk_produtos").delete().eq("id", id)); },
+      async importar(produtos) { return ok(await sb.rpc("stk_importar", { p: { produtos } })); },
+      async guardarConfig(campos) { return ok(await sb.from("stk_config").update({ ...campos, atualizado_em: new Date().toISOString() }).eq("id", 1).select().single()); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-stk")
+          .on("postgres_changes", { event: "*", schema: "public", table: "stk_produtos" }, (p) => cb("produto", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "stk_movimentos" }, (p) => cb("movimento", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
     },
   };
 }

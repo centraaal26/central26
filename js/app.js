@@ -14,6 +14,8 @@ import { criarFornecedores, podeOperacional } from "./fornecedores.js";
 import { criarFinanceiro, podeFinanceiro } from "./financeiro.js";
 import { criarMarketing, podeMarketing } from "./marketing.js";
 import { criarStocks, podeStocks } from "./stocks.js";
+import { criarPesquisa } from "./pesquisa.js";
+import { carregarXlsx } from "./xlsx.js";
 import { VERSAO } from "./config.js";
 
 const DEMO = new URLSearchParams(location.search).has("demo");
@@ -172,6 +174,7 @@ const nomeDe = (id) => (id && S.perfis[id] ? S.perfis[id].nome : "");
 const depNome = (id) => (id && S.deps[id] ? S.deps[id].nome : "Sem departamento");
 const listaDeps = () => Object.values(S.deps).sort((a, b) => (a.ordem - b.ordem) || a.nome.localeCompare(b.nome, "pt"));
 const todas = () => Object.values(S.tarefas);
+let pesquisaAtiva = null; // a pesquisa global é criada mais abaixo
 // Avatar: foto (se a pessoa tiver) ou iniciais na cor escolhida
 const av = (id, cls = "") => {
   const p = S.perfis[id], url = p?.foto_path && S.fotos[p.foto_path];
@@ -308,6 +311,7 @@ function lerRota(desenhar = true) {
     else if (r === "financeiro") { rota = "financeiro"; param = p || null; }
     else if (r === "marketing") { rota = "marketing"; param = p || null; }
     else if (r === "stocks") { rota = "stocks"; param = p || null; }
+    else if (r === "copia") { rota = "definicoes"; setTimeout(() => $("#sec-copia")?.scrollIntoView({ block: "start", behavior: "smooth" }), 120); }
     else if (r === "stock" && p) { rota = "stock"; param = p; }
     else if (r === "publicacao" && p) { rota = "publicacao"; param = p; }
     else if ((r === "fornecedor" || r === "pedido") && p) { rota = r; param = p; }
@@ -346,6 +350,7 @@ function render() {
   else if (S.fase === "sem-perfil") app.innerHTML = vistaSemPerfil();
   else app.innerHTML = vistaApp();
   renderPainel();
+  if (pesquisaAtiva?.aberta()) pesquisaAtiva.atualizar();
   if (aid && !$("#painel-root").contains(document.getElementById(aid))) {
     const el = document.getElementById(aid);
     if (el && el !== document.activeElement) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch { /* */ } }
@@ -402,7 +407,8 @@ function vistaApp() {
   const atual = (r, p) => (S.rota === r && (p == null || S.param === p) ? ' aria-current="page"' : "");
   const contagemMarca = (m) => todas().filter((t) => t.marca === m && ((t.freq === "diaria" && !concluida(t)) || emAtraso(t, S.hoje))).length;
 
-  let side = '<aside class="side"><a class="ws" href="#inicio" aria-label="Central 26, ir para o Início"><span class="ws-nome">Central <b>26</b></span><span class="ws-sub">Grupo TwentySix</span></a><nav class="nav" aria-label="Navegação">';
+  let side = '<aside class="side"><a class="ws" href="#inicio" aria-label="Central 26, ir para o Início"><span class="ws-nome">Central <b>26</b></span><span class="ws-sub">Grupo TwentySix</span></a>' +
+    '<button class="pq-botao" data-acao="pesquisar" aria-label="Pesquisar na Central">' + I.lupa + "<span>Procurar…</span><kbd>" + (/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl K") + "</kbd></button>" + '<nav class="nav" aria-label="Navegação">';
   side += '<a href="#inicio"' + atual("inicio") + ">" + I.casa + '<span class="nm">Início</span></a>';
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
   const porLerChat = CHAT.naoLidas();
@@ -426,6 +432,7 @@ function vistaApp() {
     '<span class="estado-ligacao' + (S.offline ? " off" : "") + '"><i></i>' + (S.offline ? "Sem ligação" : api.modo === "demo" ? "Modo de demonstração" : "Ligado") + "</span></div></aside>";
 
   const topo = '<header class="topo"><a class="ws-m" href="#inicio" aria-label="Central 26, ir para o Início">Central <b>26</b></a>' +
+    '<button class="ib pq-topo" data-acao="pesquisar" aria-label="Pesquisar na Central">' + I.lupa + "</button>" +
     '<a class="sino" href="#notificacoes" aria-label="Notificações' + (naoLidas ? ", " + naoLidas + " por ler" : "") + '">' + I.sino + (naoLidas ? '<span class="bolinha">' + (naoLidas > 9 ? "9+" : naoLidas) + "</span>" : "") + "</a></header>";
 
   const tab = '<nav class="tabbar" aria-label="Navegação">' +
@@ -948,12 +955,59 @@ function vistaDefinicoes() {
   h += '<section class="cartao-sec"><h3>Notificações neste aparelho</h3><p>' + esc(p.txt) + '</p><div class="acts">' +
     (["pedir", "ok"].includes(p.estado) ? '<button class="btn pri" data-acao="push">Ativar neste aparelho</button>' : "") +
     (p.estado === "ok" ? '<button class="btn sec" data-acao="push-teste">Enviar notificação de teste</button>' : "") + "</div></section>";
+  if (eGestor(S.eu)) {
+    let ult = S.config.ultima_copia; if (api.modo === "demo") try { ult = localStorage.getItem("central26-demo-ultima-copia"); } catch { /* */ }
+    const dias = ult ? Math.floor((Date.now() - new Date(ult).getTime()) / 864e5) : null;
+    h += '<section class="cartao-sec" id="sec-copia"><h3>Cópia de segurança</h3><p>Descarrega uma cópia de todos os dados da Central (tarefas, clientes, encomendas, stocks, mensagens, agenda, financeiro…). Guarda-a num sítio seguro, como o Google Drive da empresa. Recomenda-se uma vez por semana; se passar uma semana sem cópia, a direção recebe um lembrete à segunda-feira.</p>' +
+      '<p class="' + (dias == null || dias > 7 ? "aviso-txt" : "muted") + '">' + (ult ? "Última cópia: " + new Date(ult).toLocaleString("pt-PT", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) + (dias > 7 ? " (há " + dias + " dias)" : "") : "Ainda não foi feita nenhuma cópia.") + "</p>" +
+      (S.copia ? '<div class="copia-prog"><span class="barra-p"><i style="width:' + Math.round((S.copia.i / S.copia.n) * 100) + '%"></i></span><small>A copiar ' + esc(S.copia.t) + "…</small></div>" :
+        '<div class="acts"><button class="btn pri" data-acao="copia" data-v="json">Descarregar cópia</button><button class="btn sec" data-acao="copia" data-v="xlsx">Descarregar em Excel</button></div>') +
+      '<p class="nota-tab">A cópia em ficheiro (.json) tem tudo e serve para recuperar os dados. A versão em Excel é para consultar. Os ficheiros anexos (faturas, fotos, áudios) ficam no Supabase e não entram na cópia.</p></section>';
+  }
   if (eGestor(S.eu)) h += '<section class="cartao-sec"><h3>Modelos de tarefas</h3><p>Rotinas sugeridas para cada marca e departamento. Escolhes as que queres e atribuis depois a cada pessoa.</p><div class="acts"><button class="btn sec" data-acao="modelos">Carregar modelos</button></div></section>';
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   if (!standalone) h += '<section class="cartao-sec so-browser"><h3>Instalar a app</h3><p>No Android: Chrome → menu ⋮ → «Instalar app». No iPhone: Safari → Partilhar → «Adicionar ao ecrã principal».</p>' + (S.instalar ? '<div class="acts"><button class="btn pri" data-acao="instalar">Instalar agora</button></div>' : "") + "</section>";
   h += '<section class="cartao-sec"><h3>Palavra-passe</h3><form class="form" id="form-mudar"><div class="campos-2"><div class="campo"><label for="mp-1">Nova palavra-passe</label><input id="mp-1" type="password" autocomplete="new-password" minlength="8"></div><div class="campo"><label for="mp-2">Repetir</label><input id="mp-2" type="password" autocomplete="new-password" minlength="8"></div></div><div class="acts"><button class="btn sec" type="submit">Mudar palavra-passe</button></div></form></section>';
   h += '<section class="cartao-sec"><h3>Sessão</h3><p>Central 26 · versão ' + VERSAO + (api.modo === "demo" ? " · modo de demonstração" : "") + '</p><div class="acts"><button class="btn perigo-sec" data-acao="sair">Sair</button></div></section>';
   return h;
+}
+
+// Cópia de segurança: junta tudo num ficheiro e regista a data
+async function fazerCopia(formato) {
+  if (S.copia) return;
+  S.copia = { i: 0, n: 1, t: "" }; render();
+  try {
+    const { tabelas, avisos } = await api.copia((i, n, t) => { S.copia = { i, n, t: t.replace(/_/g, " ") }; render(); });
+    const data = new Date(), carimbo = ymd(data) + "-" + String(data.getHours()).padStart(2, "0") + String(data.getMinutes()).padStart(2, "0");
+    const total = Object.values(tabelas).reduce((x, l) => x + (Array.isArray(l) ? l.length : 1), 0);
+    let blob, nome;
+    if (formato === "xlsx") {
+      const XLSX = await carregarXlsx(), wb = XLSX.utils.book_new();
+      const folhas = [];
+      for (const [t, v] of Object.entries(tabelas)) {
+        if (Array.isArray(v)) folhas.push([t, v]);
+        else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => Array.isArray(x) && folhas.push([t.replace(/^central26-demo-?/, "") + "." + k, x]));
+      }
+      const usados = new Set();
+      for (const [t, linhas] of folhas) {
+        if (!linhas.length || typeof linhas[0] !== "object") continue;
+        let nomeF = t.replace(/[\\/?*[\]:]/g, " ").slice(0, 31); for (let i = 2; usados.has(nomeF); i++) nomeF = t.slice(0, 28) + " " + i; usados.add(nomeF);
+        const plano = linhas.map((l) => Object.fromEntries(Object.entries(l).map(([k, x]) => [k, x !== null && typeof x === "object" ? JSON.stringify(x) : x])));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plano), nomeF);
+      }
+      if (!wb.SheetNames.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Sem dados para copiar."]]), "Resumo");
+      const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }); nome = "central26-copia-" + carimbo + ".xlsx";
+    } else {
+      blob = new Blob([JSON.stringify({ formato: "central26-copia", versao: VERSAO, criado_em: data.toISOString(), por: S.eu.nome, avisos, tabelas })], { type: "application/json" });
+      nome = "central26-copia-" + carimbo + ".json";
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    try { const q = await api.registarCopia(); S.config.ultima_copia = typeof q === "string" ? q : data.toISOString(); } catch { /* o ficheiro já foi descarregado */ }
+    S.copia = null; render();
+    toast("Cópia descarregada: " + total.toLocaleString("pt-PT") + " registos" + (avisos.length && api.modo !== "demo" ? " (" + avisos.length + " tabelas sem acesso ou por instalar)" : ""));
+  } catch (e) { S.copia = null; render(); falha(e); }
 }
 
 // Foto de perfil: recorta ao centro, reduz para 320 px e grava em JPEG
@@ -1205,6 +1259,8 @@ document.addEventListener("click", async (e) => {
     case "ativ-acao": S.filtroAcao = el.dataset.v; S.pagAtiv = 1; render(); break;
     case "pag-ativ": S.pagAtiv = +el.dataset.p; render(); $(".registo")?.scrollIntoView({ block: "start", behavior: "smooth" }); break;
     case "pag-hoje": S.pagHoje = +el.dataset.p; render(); break;
+    case "pesquisar": PQ.abrir(); break;
+    case "copia": fazerCopia(el.dataset.v); break;
     case "pag-notif": S.pagNotif = +el.dataset.p; render(); $(".main").scrollTop = 0; break;
     case "instalar-fechar": try { localStorage.setItem(CHAVE_INSTALAR, "1"); } catch { /* */ } render(); toast("Podes instalar mais tarde em «Mais»."); break;
     case "ler-todas": { const ids = S.notifs.filter((n) => !n.lida).map((n) => n.id); S.notifs = S.notifs.map((n) => ({ ...n, lida: true })); render(); api.notificacoes.marcarLidas(ids).catch(falha); break; }
@@ -1426,9 +1482,24 @@ async function ativarPush() {
 const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $ });
 const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $ });
 const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, abrirTarefa, $ });
-const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, $ });
+const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, stk: () => (podeStocks(S.eu) ? STK : null), $ });
 const AUD = criarAuditoria({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const FIN = criarFinanceiro({ S, api, esc, I, toast, falha, render, agendarRender, $ });
+const PQ = criarPesquisa({
+  S, esc, I, todas: () => todas(), ativos, nomeDe, av,
+  modulos: () => ({ crm: podeCrm(S.eu) ? CRM : null, log: podeEncomendas(S.eu) ? LOG : null, stk: podeStocks(S.eu) ? STK : null, op: podeOperacional(S.eu) ? OP : null,
+    mk: podeMarketing(S.eu) ? MK : null, aud: AUD, agenda: AGENDA, chat: CHAT }),
+  paginas: () => [
+    ["#inicio", I.casa, "Início"], ["#minhas", I.tarefas, "As minhas tarefas"], ["#chat", I.balao, "Mensagens", "chat conversas"], ["#agenda", I.cal, "Agenda", "calendário eventos"],
+    ["#equipa", I.equipa, "Equipa", "pessoas empregados"], ["#atividade", I.grafico, "Quem fez o quê", "atividade registo"], ["#notificacoes", I.sino, "Notificações"], ["#definicoes", I.mais, "Mais", "perfil definições foto email palavra-passe cópia de segurança"],
+    ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial", "crm clientes leads funil"], ["#comercial-mapa", I.mapa, "Mapa de clientes", "mapa"]] : []),
+    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística", "encomendas rotas entregas"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix", "stock produtos inventário"]] : []),
+    ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores", "operacional orçamentos compras"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing", "calendário publicações redes"]] : []),
+    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites", "segurança sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro", "faturação custos"]] : []),
+    ...MARCAS.map((m) => ["#marca-" + m.id, I.lista, m.nome, "marca"]),
+  ].map(([href, ic, titulo, chaves]) => ({ href, ic, titulo, chaves })),
+});
+pesquisaAtiva = PQ;
 const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const MK = criarMarketing({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });

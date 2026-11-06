@@ -363,5 +363,11 @@ export function criarStocks(ctx) {
   }
   function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(T, { estado: "por-carregar", produtos: {}, movs: [], config: null, importacao: null, tab: "produtos", cat: "", q: "" }); }
 
-  return { vista, painel, clique, escrever, mudar, submeter, carregar, blocoInicio, reiniciar, contagem, estado: () => T.estado };
+  // Atualiza em silêncio (por exemplo, depois de uma encomenda mexer no stock)
+  function recarregar() { if (T.estado !== "pronto") return; T.estado = "por-carregar"; carregar(); }
+  function pesquisar(q) {
+    if (!pode() || T.estado !== "pronto") return [];
+    return lista().filter((p) => q(p.nome + " " + p.categoria)).slice(0, 6).map((p) => ({ titulo: p.nome, sub: p.categoria + " · " + (p.quantidade == null ? "por contar" : p.quantidade + " " + p.unidade) + (p.alerta !== "ok" ? " · a repor" : ""), href: "#stock-" + p.id }));
+  }
+  return { vista, painel, clique, escrever, mudar, submeter, carregar, recarregar, pesquisar, blocoInicio, reiniciar, contagem, estado: () => T.estado };
 }

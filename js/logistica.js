@@ -21,6 +21,7 @@ export const podeRotas = (eu) => podeEncomendas(eu);
 
 export function criarLogistica(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, crm, podeCrm, $ } = ctx;
+  const stk = ctx.stk || (() => null);
   const G = (S.log = { estado: "por-carregar", locais: {}, encomendas: {}, rotas: {}, tab: "encomendas", filtro: "ativas", q: "", minhas: false,
     nova: null, aCalcular: null, verFeitas: false });
   let desligar = null;
@@ -56,7 +57,11 @@ export function criarLogistica(ctx) {
   async function gravarEnc(id, campos) {
     const antes = G.encomendas[id]; if (!antes) return;
     G.encomendas[id] = { ...antes, ...campos }; agendarRender();
-    try { const r = await api.log.encomendas.atualizar(id, campos); G.encomendas[id] = r; agendarRender(); renderPainel(); return r; }
+    try {
+      const r = await api.log.encomendas.atualizar(id, campos); G.encomendas[id] = r; agendarRender(); renderPainel();
+      if (JSON.stringify(r.stock_movido || null) !== JSON.stringify(antes.stock_movido || null)) avisoStock(antes.stock_movido, r.stock_movido);
+      return r;
+    }
     catch (e) { G.encomendas[id] = antes; agendarRender(); renderPainel(true); falha(e); return null; }
   }
 
@@ -200,11 +205,14 @@ export function criarLogistica(ctx) {
     }
     // artigos
     const prep = e.itens.filter((i) => i.preparado).length;
+    const ligados = e.itens.filter((i) => i.produto_id && nomeStock(i.produto_id) && S.stk.produtos[i.produto_id].quantidade != null);
+    if (e.stock_movido && Object.keys(e.stock_movido).length) h += '<p class="enc-stock-nota ok">' + I.stock + "Saiu do stock: " + esc(Object.entries(e.stock_movido).map(([k, q]) => q + "× " + (nomeStock(k) || "produto")).join(", ")) + ". Se a encomenda for cancelada, volta a entrar.</p>";
+    else if (ligados.length && ["nova", "em_preparacao"].includes(e.estado)) h += '<p class="enc-stock-nota">' + I.stock + "Quando ficar pronta, sai do stock: " + esc(ligados.map((i) => (i.qtd || 1) + "× " + nomeStock(i.produto_id)).join(", ")) + ".</p>";
     h += '<section class="p-sec"><h3>Artigos <span class="mono">' + prep + "/" + e.itens.length + " preparados</span></h3>";
     e.itens.forEach((it) => {
       h += '<div class="cl-item' + (it.preparado ? " feito" : "") + '"><button class="chk' + (it.preparado ? " on" : "") + '" data-acao="enc-item" data-item="' + it.id + '" aria-label="' + (it.preparado ? "Desmarcar artigo" : "Marcar artigo como preparado") + '"' + (trata ? "" : " disabled") + ">" + I.check + "</button>" +
         '<input type="number" class="inp qtd" id="ei-q-' + it.id + '" data-item="' + it.id + '" data-campo="qtd" min="0" step="1" value="' + esc(it.qtd) + '" aria-label="Quantidade"' + dis + '><input type="text" id="ei-d-' + it.id + '" data-item="' + it.id + '" data-campo="descricao" value="' + esc(it.descricao) + '" aria-label="Artigo"' + dis + ">" +
-        (ed ? '<button class="ib x" data-acao="enc-item-apagar" data-item="' + it.id + '" aria-label="Remover artigo">' + I.x + "</button>" : "") + "</div>";
+        (ed ? '<button class="ib x" data-acao="enc-item-apagar" data-item="' + it.id + '" aria-label="Remover artigo">' + I.x + "</button>" : "") + "</div>" + linhaStock(e, it, trata);
     });
     if (ed) h += '<label class="cl-add">' + I.plus + '<span class="sr">Adicionar artigo</span><input id="enc-novoitem" placeholder="Adicionar artigo (ex.: 6 CLAY) e carregar em Enter" autocomplete="off" list="lista-produtos"></label>' + listaProdutos();
     h += "</section>";
@@ -228,10 +236,56 @@ export function criarLogistica(ctx) {
     const pe = "<span>" + (e.entregue_em ? "Entregue por " + esc(nomeDe(e.entregue_por) || "—") + " " + haQuanto(e.entregue_em) : e.atualizado_por ? "Alterada por " + esc(nomeDe(e.atualizado_por) || "—") + " " + haQuanto(e.atualizado_em) : "") + "</span>";
     return mold(h, pe);
   }
+  /* ---------- ligação aos Stocks da TwentySix ---------- */
+  function produtosStock() {
+    const T = S.stk;
+    if (!T) return [];
+    if (T.estado === "por-carregar") stk()?.carregar();
+    return T.estado === "pronto" ? Object.values(T.produtos).filter((p) => p.ativo) : [];
+  }
+  const tamanho = (t) => (String(t).match(/(\d+)\s*ml\b/i) || [])[1] || null;
+  // Reconhece o produto do stock a partir do texto do artigo (ex.: «6 SPARK», «Shampoo Hack 1000ML», «Golas pretas»)
+  function ligarProduto(descricao) {
+    const prods = produtosStock(); if (!prods.length || !descricao) return null;
+    const alvo = normalizar(descricao).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    const exato = prods.find((p) => normalizar(p.nome).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim() === alvo);
+    if (exato) return exato.id;
+    const palavras = new Set(alvo.split(" ")), tam = tamanho(alvo.replace(/(\d+) ml/g, "$1ml"));
+    let melhor = [], nota = 0;
+    for (const p of prods) {
+      const pal = normalizar(p.nome).replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !/^\d+$/.test(w) && w !== "cera" && w !== "ml");
+      if (!pal.length || !palavras.has(pal[0])) continue;
+      const tp = tamanho(p.nome);
+      if (tam && tp && tam !== tp) continue;
+      const n = pal.filter((w) => palavras.has(w)).length + (tam && tp === tam ? 2 : 0) + (!tam && tp === "100" ? 0.5 : 0) + (!tam && !tp ? 0.5 : 0);
+      if (n > nota) { nota = n; melhor = [p]; } else if (n === nota) melhor.push(p);
+    }
+    return melhor.length === 1 ? melhor[0].id : null;
+  }
+  const nomeStock = (id) => S.stk?.produtos?.[id]?.nome;
+  function avisoStock(antes, depois) {
+    const a = antes || {}, d = depois || {}, saiu = [], voltou = [];
+    for (const k of new Set([...Object.keys(a), ...Object.keys(d)])) { const dif = (d[k] || 0) - (a[k] || 0); if (dif > 0) saiu.push(dif + "× " + (nomeStock(k) || "produto")); else if (dif < 0) voltou.push(-dif + "× " + (nomeStock(k) || "produto")); }
+    // depois do aviso da mudança de estado, para não se taparem
+    setTimeout(() => { if (saiu.length) toast("Saiu do stock: " + saiu.join(", ")); else if (voltou.length) toast("Voltou ao stock: " + voltou.join(", ")); }, 1600);
+    stk()?.recarregar?.();
+  }
   function listaProdutos() {
-    const prods = S.crm?.produtos ? Object.values(S.crm.produtos) : [];
-    if (!prods.length) return "";
-    return '<datalist id="lista-produtos">' + prods.slice(0, 600).map((p) => '<option value="' + esc(p.descricao) + '">').join("") + "</datalist>";
+    const st = produtosStock().map((p) => p.nome);
+    const prods = S.crm?.produtos ? Object.values(S.crm.produtos).map((p) => p.descricao) : [];
+    const todos = [...new Set([...st, ...prods])];
+    if (!todos.length) return "";
+    return '<datalist id="lista-produtos">' + todos.slice(0, 700).map((p) => '<option value="' + esc(p) + '">').join("") + "</datalist>";
+  }
+  function linhaStock(e, it, trata) {
+    const prods = produtosStock(); if (!prods.length) return "";
+    const p = it.produto_id && S.stk.produtos[it.produto_id];
+    const qtd = p ? (p.quantidade == null ? "por contar" : p.quantidade + " " + p.unidade + " em stock") : "";
+    if (!trata) return p ? '<div class="cl-stock"><span class="tag-stock">' + I.stock + esc(p.nome) + " · " + esc(qtd) + "</span></div>" : "";
+    const cats = [...new Set(prods.map((x) => x.categoria))];
+    return '<div class="cl-stock"><label class="sr" for="ei-s-' + it.id + '">Produto do stock</label><select id="ei-s-' + it.id + '" class="sel-stock" data-item="' + it.id + '" data-campo="produto_id">' +
+      '<option value="">Não mexe no stock</option>' + cats.map((c) => '<optgroup label="' + esc(c) + '">' + prods.filter((x) => x.categoria === c).sort((a, b) => a.ordem - b.ordem).map((x) => '<option value="' + x.id + '"' + (x.id === it.produto_id ? " selected" : "") + ">" + esc(x.nome) + "</option>").join("") + "</optgroup>").join("") + "</select>" +
+      (p ? '<span class="tag-stock' + (p.alerta !== "ok" ? " baixo" : "") + '">' + esc(qtd) + "</span>" : "") + "</div>";
   }
   function clientesCrm() { return S.crm?.clientes ? Object.values(S.crm.clientes).filter((c) => c.tipo !== "interno") : []; }
 
@@ -289,7 +343,7 @@ export function criarLogistica(ctx) {
   async function criarEncomenda(f) {
     const n = G.nova || {};
     const cliente = $("#ne-cliente").value.trim();
-    const itens = (n.itens || []).map((it) => ({ id: it.id, descricao: String(it.descricao || "").trim(), qtd: Math.max(1, +it.qtd || 1), preparado: false })).filter((it) => it.descricao);
+    const itens = (n.itens || []).map((it) => { const descricao = String(it.descricao || "").trim(); const pid = ligarProduto(descricao); return { id: it.id, descricao, qtd: Math.max(1, +it.qtd || 1), preparado: false, ...(pid ? { produto_id: pid } : {}) }; }).filter((it) => it.descricao);
     if (!cliente) { toast("Indica o cliente ou o destino.", true); $("#ne-cliente").focus(); return; }
     if (!itens.length) { toast("Junta pelo menos um artigo.", true); return; }
     const crm = clientesCrm().find((x) => x.nome === cliente);
@@ -486,9 +540,13 @@ export function criarLogistica(ctx) {
       const e = G.encomendas[S.aberto.id]; if (!e) return false;
       const campos = { "enc-cliente": "cliente_nome", "enc-contacto": "contacto", "enc-morada": "morada", "enc-fatnum": "fatura_numero", "enc-notas": "notas" };
       if (campos[t.id]) { clearTimeout(timers[t.id]); timers[t.id] = setTimeout(() => gravarEnc(e.id, { [campos[t.id]]: t.value }), 900); return true; }
-      if (t.dataset.item && t.dataset.campo) {
+      if (t.dataset.item && t.dataset.campo && t.tagName !== "SELECT") {
         clearTimeout(timers[t.id]);
-        timers[t.id] = setTimeout(() => { const atual = G.encomendas[e.id]; gravarEnc(e.id, { itens: atual.itens.map((i) => (i.id === t.dataset.item ? { ...i, [t.dataset.campo]: t.dataset.campo === "qtd" ? Math.max(0, +t.value || 0) : t.value } : i)) }); }, 900);
+        timers[t.id] = setTimeout(() => { const atual = G.encomendas[e.id]; gravarEnc(e.id, { itens: atual.itens.map((i) => {
+          if (i.id !== t.dataset.item) return i;
+          if (t.dataset.campo === "qtd") return { ...i, qtd: Math.max(0, +t.value || 0) };
+          const pid = ligarProduto(t.value); return { ...i, descricao: t.value, ...(pid ? { produto_id: pid } : {}) };
+        }) }); }, 900);
         return true;
       }
     }
@@ -507,6 +565,10 @@ export function criarLogistica(ctx) {
       const enc = G.encomendas[S.aberto.id]; if (!enc) return false;
       const m = { "enc-tipo": "tipo", "enc-prio": "prioridade", "enc-data": "data_prevista", "enc-resp": "responsavel_id" };
       if (m[t.id]) { gravarEnc(enc.id, { [m[t.id]]: t.value || null }); return true; }
+      if (t.classList.contains("sel-stock") && t.dataset.item) {
+        gravarEnc(enc.id, { itens: enc.itens.map((i) => { if (i.id !== t.dataset.item) return i; const { produto_id, ...resto } = i; return t.value ? { ...resto, produto_id: t.value } : resto; }) });
+        return true;
+      }
       if (t.id === "enc-fatura" && t.files?.[0]) {
         const f = t.files[0];
         if (f.size > 10 * 1024 * 1024) { toast("A fatura tem mais de 10 MB.", true); return true; }
@@ -523,6 +585,7 @@ export function criarLogistica(ctx) {
       e.preventDefault();
       const enc = G.encomendas[S.aberto?.id]; if (!enc) return true;
       const it = lerItemTexto(t.value); t.value = "";
+      const pid = ligarProduto(it.descricao); if (pid) it.produto_id = pid;
       gravarEnc(enc.id, { itens: enc.itens.concat([{ id: uidc(), ...it, preparado: false }]), ...(enc.estado === "pronta" ? { estado: "em_preparacao" } : {}) }).then(() => { renderPainel(true); $("#enc-novoitem")?.focus(); });
       return true;
     }

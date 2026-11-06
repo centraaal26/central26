@@ -55,6 +55,8 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
 - **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
+- **Pesquisa global:** Ctrl/⌘ + K (ou o botão «Procurar…») procura em tarefas, pessoas, clientes, encomendas, produtos, fornecedores, publicações, auditoria, agenda e conversas.
+- **Cópia de segurança (direção):** todos os dados num ficheiro .json (para recuperar) ou em Excel (para consultar).
   - Resumo do ano com o estado de cada mês (importado, em falta, custos copiados de outro mês), médias e gráfico de faturação e custos.
   - Barbearias: faturação, pagamentos aos barbeiros, custos fixos e resultado de cada espaço, e a evolução mês a mês.
   - Despesas partilhadas, impostos, Hairshopping, Tech e Formação por rubrica e por mês, agrupadas por categoria (editável), com os valores fora do normal destacados.
@@ -146,6 +148,11 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/11-mensagens-e-se
    5. Volta a instalar a função `enviar-push` com o código atual (passo 3b). Na app, **Mais → Avisos por email → Enviar email de teste**.
 4. Stocks: preenche as quantidades produto a produto («Acertar contagem») ou em **Stocks → Importar → Descarregar modelo**, preenche o Excel e importa-o. Em **Stocks → Avisos** (direção) escolhes quem recebe os lembretes e o horário.
 
+### 3m. Encomendas ligadas aos Stocks e cópias de segurança
+SQL Editor → **New query** → cola o conteúdo de `supabase/13-encomendas-stocks-copias.sql` → **Run**.
+- Os artigos das encomendas ligam-se aos produtos dos Stocks (a app reconhece «6 SPARK», «Shampoo Hack 1000ML»…; a Logística pode corrigir a ligação em cada artigo). Quando a encomenda fica **Pronta**, o stock desce; se for cancelada ou voltar atrás, volta a entrar.
+- **Mais → Cópia de segurança** (direção): descarrega todos os dados num ficheiro. Se passar uma semana sem cópia, a direção recebe um lembrete à segunda-feira às 9h.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -180,6 +187,7 @@ js/fornecedores.js · js/xlsx.js             fornecedores, pedidos de orçamento
 js/financeiro.js                            faturação e custos por mês (folhas da Ondina & Maia)
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
+js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K)
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos
 supabase/functions/                         funções de servidor

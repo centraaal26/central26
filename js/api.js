@@ -384,6 +384,27 @@ export function criarApi() {
       async emailTeste() { return invocar("enviar-push", { acao: "email-teste" }); },
     },
 
+    // Cópia de segurança: lê todas as tabelas a que a pessoa tem acesso (a direção vê quase tudo)
+    async copia(progresso) {
+      const TABELAS = { perfis: "id", departamentos: "id", tarefas: "id", atividade: "id", notificacoes: "id", configuracao: "chave", preferencias: "perfil_id",
+        crm_clientes: "id", crm_produtos: "codigo", crm_vendas: "documento,linha", crm_contactos: "id", crm_importacoes: "id",
+        chat_canais: "id", chat_membros: "canal_id,perfil_id", chat_mensagens: "id", agenda_eventos: "id",
+        log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id",
+        tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
+        op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
+        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id" };
+      const tabelas = {}, avisos = [];
+      let i = 0;
+      for (const [t, ordem] of Object.entries(TABELAS)) {
+        progresso?.(++i, Object.keys(TABELAS).length, t);
+        try {
+          tabelas[t] = await todas(() => { let q = sb.from(t).select("*"); ordem.split(",").forEach((c) => (q = q.order(c))); return q; });
+        } catch (e) { avisos.push(t + ": " + (e?.message || e)); }
+      }
+      return { tabelas, avisos };
+    },
+    async registarCopia() { return ok(await sb.rpc("registar_copia")); },
+
     stk: {
       async carregar() {
         const [produtos, movimentos, config] = await Promise.all([

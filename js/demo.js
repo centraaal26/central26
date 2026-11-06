@@ -90,6 +90,7 @@ export function criarDemo() {
       responsavel_id: r.responsavel_id, acao, periodo: r.estado_periodo, detalhe: {}, criado_em: agora() };
     db.atividade.unshift(a); emitir("atividade", "INSERT", a);
   }
+  const ganchos = {}; // ligação entre módulos da demonstração (encomendas → stocks)
   function notificar(dest, tipo, titulo, corpo, link) {
     const n = { id: db.seq++, destinatario_id: dest, tipo, titulo, corpo, link, lida: false, criado_em: agora() };
     db.notificacoes.unshift(n);
@@ -405,6 +406,7 @@ export function criarDemo() {
             const antes = r.estado;
             if ("morada" in campos && campos.morada !== r.morada && !("morada_geo" in campos)) Object.assign(r, { lat: null, lng: null, morada_geo: "" });
             Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId });
+            if (("estado" in campos || "itens" in campos) && ganchos.stock) ganchos.stock(r);
             if (r.estado === "entregue" && antes !== "entregue") { r.entregue_em = agora(); r.entregue_por = euId; }
             if (r.estado !== antes && ["pronta", "entregue", "cancelada"].includes(r.estado) && r.criado_por !== euId)
               notificar(r.criado_por, "encomenda", "Encomenda E-" + String(r.numero).padStart(4, "0") + " " + ({ pronta: "pronta", entregue: "entregue", cancelada: "cancelada" })[r.estado], r.cliente_nome + " · " + nome(euId), "#encomenda-" + r.id);
@@ -707,6 +709,12 @@ export function criarDemo() {
       async teste() { throw new Error("As notificações no telemóvel não funcionam no modo de demonstração."); },
       async emailTeste() { throw new Error("Os emails não são enviados no modo de demonstração."); },
     },
+    async copia() {
+      const tabelas = {};
+      for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("central26-demo")) { try { tabelas[k] = JSON.parse(localStorage.getItem(k)); } catch { tabelas[k] = localStorage.getItem(k); } } }
+      return { tabelas, avisos: ["Modo de demonstração: a cópia tem só os dados de exemplo deste aparelho."] };
+    },
+    async registarCopia() { if (!eGestor(eu())) throw new Error("Só a direção faz cópias de segurança."); try { localStorage.setItem("central26-demo-ultima-copia", agora()); } catch { /* */ } return agora(); },
     preferencias: (() => {
       const K = "central26-demo-pref-v1";
       const todas = () => { try { return JSON.parse(localStorage.getItem(K) || "{}"); } catch { return {}; } };
@@ -744,6 +752,28 @@ export function criarDemo() {
         });
         p.ultimo_aviso = agora(); gravar(db);
       }
+      // Encomenda pronta → o stock desce; cancelada ou de volta → volta a entrar (igual ao script 13)
+      ganchos.stock = (enc) => {
+        ler();
+        const ref = "E-" + String(enc.numero).padStart(4, "0"), alvo = {};
+        if (["pronta", "em_rota", "entregue"].includes(enc.estado)) (enc.itens || []).forEach((i) => { if (i.produto_id) alvo[i.produto_id] = (alvo[i.produto_id] || 0) + Math.max(0, +i.qtd || 1); });
+        const atual = enc.stock_movido || {}, novo = {};
+        for (const k of new Set([...Object.keys(alvo), ...Object.keys(atual)])) {
+          const quer = alvo[k] || 0, tem = atual[k] || 0; let feito = 0;
+          const p = d.produtos.find((x) => x.id === k);
+          if (quer !== tem && p && p.quantidade != null) {
+            const v = Math.max(0, p.quantidade - (quer - tem)); feito = p.quantidade - v;
+            if (feito) {
+              d.movimentos.unshift({ id: seq++, produto_id: k, tipo: feito > 0 ? "saida" : "entrada", quantidade: Math.abs(feito), antes: p.quantidade, depois: v,
+                nota: (quer > tem ? "Encomenda " + ref + " · " + enc.cliente_nome + (quer - tem > p.quantidade ? " · faltavam " + (quer - tem - p.quantidade) : "") : enc.estado === "cancelada" ? "Encomenda " + ref + " cancelada" : "Encomenda " + ref + " alterada"), autor_id: euId, criado_em: agora() });
+              p.quantidade = v; estado(p); if (p.alerta === "alerta" && !p.ultimo_aviso) avisar(p); if (p.alerta === "ok") limparAvisos(k);
+            }
+          }
+          if (tem + feito) novo[k] = tem + feito;
+        }
+        enc.stock_movido = Object.keys(novo).length ? novo : null;
+        guardar();
+      };
       const limparAvisos = (id) => { db.notificacoes = db.notificacoes.filter((n) => !(n.link === "#stock-" + id && !n.lida)); gravar(db); };
       return {
         async carregar() { ler(); if (!pode()) return { produtos: [], movimentos: [], config: null }; return structuredClone({ produtos: d.produtos, movimentos: d.movimentos.slice(0, 300), config: d.config }); },

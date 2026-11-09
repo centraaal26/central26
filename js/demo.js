@@ -838,5 +838,87 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    // Seguros e viaturas (igual ao script 15): os avisos são simulados ao abrir a página
+    prz: (() => {
+      const K = "central26-demo-prz-v1";
+      let d = null;
+      const pode = () => { const e = eu(); return !!e && (eGestor(e) || ["administrativo", "logistica"].includes(e.departamento_id)); };
+      const dia = (n) => ymd(new Date(Date.now() + n * 864e5));
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const v1 = { id: "v-" + uid(), nome: "Carrinha de entregas", matricula: "AA-00-AA", modelo: "Exemplo · carrinha", km: 84200, responsavel_id: "p-rui", notas: "", ativo: true, criado_em: agora(), atualizado_em: agora() };
+          const v2 = { id: "v-" + uid(), nome: "Carro da direção", matricula: "BB-11-BB", modelo: "Exemplo · ligeiro", km: 41500, responsavel_id: "p-marcos", notas: "", ativo: true, criado_em: agora(), atualizado_em: agora() };
+          const P = (tipo, titulo, v, data, extra = {}) => ({ id: "z-" + uid(), tipo, titulo, viatura_id: v ? v.id : null, entidade: "", referencia: "", data, valor: null, repetir: "anual", avisar_dias: 30, km_limite: null, responsavel_id: null, notas: "",
+            estado: "ativo", tratado_em: null, tratado_por: null, tratado_nota: "", anterior_id: null, criado_por: "p-samuel", criado_em: agora(), atualizado_em: agora(), ...extra });
+          d = { viaturas: [v1, v2], prazos: [
+            P("seguro", "Seguro automóvel · Carrinha de entregas", v1, dia(12), { entidade: "Seguradora (exemplo)", referencia: "AP-0001", valor: 640, responsavel_id: "p-samuel" }),
+            P("revisao", "Revisão · Carrinha de entregas", v1, dia(-3), { entidade: "Oficina (exemplo)", km_limite: 90000, avisar_dias: 15 }),
+            P("iuc", "IUC · Carrinha de entregas", v1, dia(20), { avisar_dias: 15, valor: 52 }),
+            P("inspecao", "Inspeção · Carro da direção", v2, dia(45), { entidade: "Centro de inspeção (exemplo)" }),
+            P("seguro", "Seguro automóvel · Carro da direção", v2, dia(130), { entidade: "Seguradora (exemplo)", referencia: "AP-0002", valor: 520 }),
+            P("revisao", "Revisão · Carro da direção", v2, dia(160), { avisar_dias: 15 }),
+            P("seguro", "Seguro multirriscos · sede", null, dia(75), { entidade: "Seguradora (exemplo)", referencia: "MR-0003", valor: 410, responsavel_id: "p-samuel" }),
+            P("seguro", "Seguro de acidentes de trabalho", null, dia(200), { entidade: "Seguradora (exemplo)", referencia: "AT-0004", valor: 980, responsavel_id: "p-samuel" }),
+          ], avisos: [], config: { id: 1, avisar: [], hora: 9 } };
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const vejo = (p) => pode() || p.responsavel_id === euId || d.viaturas.find((v) => v.id === p.viatura_id)?.responsavel_id === euId;
+      const dias = (s) => { const [a, m, x] = s.split("-").map(Number); const h = new Date(); h.setHours(0, 0, 0, 0); return Math.round((new Date(a, m - 1, x) - h) / 864e5); };
+      function destinos(p) {
+        const v = d.viaturas.find((x) => x.id === p.viatura_id);
+        const l = [...new Set([p.responsavel_id, v?.responsavel_id, ...d.config.avisar].filter(Boolean))].filter((id) => db.perfis.find((x) => x.id === id && x.ativo));
+        return l.length ? l : db.perfis.filter((x) => x.ativo && ["ceo", "admin"].includes(x.papel)).map((x) => x.id);
+      }
+      function lembretes() {
+        for (const p of d.prazos.filter((x) => x.estado === "ativo")) {
+          const n = dias(p.data);
+          const marco = n < 0 ? "atraso-" + Math.floor((-n - 1) / 7) : n === 0 ? "dia" : n === 1 ? "vespera" : n > p.avisar_dias ? null : n <= 7 ? "semana" : "antes";
+          if (!marco || d.avisos.includes(p.id + "|" + marco)) continue;
+          d.avisos.push(p.id + "|" + marco);
+          const v = d.viaturas.find((x) => x.id === p.viatura_id);
+          const tit = n < 0 ? "Em atraso: " + p.titulo : n === 0 ? "Hoje: " + p.titulo : n === 1 ? "Amanhã: " + p.titulo : p.titulo + " · daqui a " + n + " dias";
+          const corpo = [(n < 0 ? "Passou a " : "Data: ") + p.data.split("-").reverse().join("/"), v ? v.nome + (v.matricula ? " (" + v.matricula + ")" : "") : "", p.entidade, p.referencia ? "Ref. " + p.referencia : ""].filter(Boolean).join(" · ") +
+            ". Quando estiver tratado, marca-o como " + ({ seguro: "renovado", iuc: "pago" }[p.tipo] || "feito") + " na Central.";
+          destinos(p).forEach((dest) => { db.notificacoes = db.notificacoes.filter((x) => !(x.destinatario_id === dest && x.link === "#prazo-" + p.id && !x.lida)); notificar(dest, "prazo", tit, corpo, "#prazo-" + p.id); });
+        }
+        gravar(db); guardar();
+      }
+      const limpar = (id) => { d.avisos = d.avisos.filter((x) => !x.startsWith(id + "|")); db.notificacoes = db.notificacoes.filter((x) => !(x.link === "#prazo-" + id && !x.lida)); gravar(db); };
+      const somar = (s, meses) => { const [a, m, x] = s.split("-").map(Number); const t = new Date(a, m - 1 + meses, 1); t.setDate(Math.min(x, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate())); return ymd(t); };
+      const MESES = { mensal: 1, trimestral: 3, semestral: 6, anual: 12, bienal: 24 };
+      const exigir = () => { if (!pode()) throw new Error("Sem acesso aos seguros e viaturas."); };
+      return {
+        async carregar() {
+          ler(); lembretes();
+          const ps = d.prazos.filter(vejo), vs = d.viaturas.filter((v) => pode() || v.responsavel_id === euId || ps.some((p) => p.viatura_id === v.id));
+          return structuredClone({ viaturas: vs, prazos: ps, config: pode() ? d.config : null });
+        },
+        async criarPrazo(c) { ler(); exigir(); const p = { id: "z-" + uid(), entidade: "", referencia: "", valor: null, repetir: "anual", avisar_dias: 30, km_limite: null, responsavel_id: null, notas: "", estado: "ativo", tratado_em: null, tratado_por: null, tratado_nota: "", anterior_id: null, criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...c };
+          d.prazos.push(p); guardar(); lembretes(); return structuredClone(p); },
+        async atualizarPrazo(id, campos) { ler(); exigir(); const p = d.prazos.find((x) => x.id === id); if (!p) throw new Error("Este prazo já não existe.");
+          if (("data" in campos && campos.data !== p.data) || ("avisar_dias" in campos && campos.avisar_dias !== p.avisar_dias)) limpar(id);
+          Object.assign(p, campos, { atualizado_em: agora() }); guardar(); return structuredClone(p); },
+        async apagarPrazo(id) { ler(); if (!eGestor(eu())) throw new Error("Só a direção elimina prazos."); limpar(id); d.prazos = d.prazos.filter((x) => x.id !== id); guardar(); },
+        async tratar(id, proxima, nota) {
+          ler(); const p = d.prazos.find((x) => x.id === id); if (!p || !vejo(p)) throw new Error("Este prazo já não existe."); if (p.estado !== "ativo") throw new Error("Este prazo já foi tratado.");
+          Object.assign(p, { estado: "tratado", tratado_em: agora(), tratado_por: euId, tratado_nota: nota || "" }); limpar(id);
+          const data = proxima || (MESES[p.repetir] ? somar(p.data, MESES[p.repetir]) : null);
+          if (!data) { guardar(); return structuredClone(p); }
+          const novo = { ...p, id: "z-" + uid(), data, km_limite: null, estado: "ativo", tratado_em: null, tratado_por: null, tratado_nota: "", anterior_id: p.id, criado_por: euId, criado_em: agora(), atualizado_em: agora() };
+          d.prazos.push(novo); guardar(); return structuredClone(novo);
+        },
+        async reabrir(id) { ler(); exigir(); d.prazos = d.prazos.filter((x) => !(x.anterior_id === id && x.estado === "ativo")); const p = d.prazos.find((x) => x.id === id); if (!p) throw new Error("Este prazo já não existe.");
+          Object.assign(p, { estado: "ativo", tratado_em: null, tratado_por: null, tratado_nota: "" }); limpar(id); guardar(); return structuredClone(p); },
+        async criarViatura(c) { ler(); exigir(); const v = { id: "v-" + uid(), matricula: "", modelo: "", km: null, responsavel_id: null, notas: "", ativo: true, criado_em: agora(), atualizado_em: agora(), ...c }; d.viaturas.push(v); guardar(); return structuredClone(v); },
+        async atualizarViatura(id, campos) { ler(); exigir(); const v = d.viaturas.find((x) => x.id === id); Object.assign(v, campos, { atualizado_em: agora() }); guardar(); return structuredClone(v); },
+        async apagarViatura(id) { ler(); if (!eGestor(eu())) throw new Error("Só a direção elimina viaturas."); d.prazos.filter((p) => p.viatura_id === id).forEach((p) => limpar(p.id)); d.prazos = d.prazos.filter((p) => p.viatura_id !== id); d.viaturas = d.viaturas.filter((x) => x.id !== id); guardar(); },
+        async guardarConfig(campos) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda os avisos."); Object.assign(d.config, campos); guardar(); return structuredClone(d.config); },
+        subscrever() { return () => {}; },
+      };
+    })(),
   };
 }

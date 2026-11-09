@@ -55,6 +55,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
 - **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
+- **Seguros e viaturas (direção, Administrativo e Logística):** datas dos seguros, das revisões, das inspeções e do IUC de cada viatura, com avisos no telemóvel antes de cada data e até alguém a marcar como tratada; ao renovar, a data seguinte fica logo criada.
 - **Pesquisa global:** Ctrl/⌘ + K (ou o botão «Procurar…») procura em tarefas, pessoas, clientes, encomendas, produtos, fornecedores, publicações, auditoria, agenda e conversas.
 - **Assistente (IA):** cada pessoa pede ajuda para escrever (descrições, legendas, emails, resumos) ou pergunta sobre o seu trabalho; o assistente consulta os dados da Central com as permissões dessa pessoa.
 - **Cópia de segurança (direção):** todos os dados num ficheiro .json (para recuperar) ou em Excel (para consultar).
@@ -166,6 +167,11 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/13-encomendas-sto
 
 O assistente só consulta o que a pessoa que pergunta já pode ver na app (as mesmas regras de acesso) e não altera nada. As conversas são privadas: nem a direção as lê, só vê quantos pedidos cada pessoa fez. Os dados consultados para responder são enviados ao serviço de IA escolhido.
 
+### 3o. Seguros e viaturas
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
+2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
+3. A Central avisa no telemóvel quando faltam os dias escolhidos em cada prazo (30 por defeito nos seguros), na última semana, na véspera, no próprio dia e, se passar, uma vez por semana até ser marcado como **Renovado** ou **Feito**. Recebem o responsável do prazo e o da viatura; em **Avisos** (direção) escolhes quem recebe também todos os avisos e a hora.
+
 ### 4. Primeira conta
 1. Supabase → **Authentication** → **Users** → **Add user** → **Create new user**. Usa o teu email e uma palavra-passe forte, com **Auto Confirm User** ligado.
 2. **SQL Editor**: cola `supabase/primeiro-acesso.sql`, troca `COLOCA-AQUI-O-TEU-EMAIL` pelo teu email e carrega em **Run**.
@@ -200,6 +206,7 @@ js/fornecedores.js · js/xlsx.js             fornecedores, pedidos de orçamento
 js/financeiro.js                            faturação e custos por mês (folhas da Ondina & Maia)
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
+js/prazos.js                                seguros e viaturas: datas, avisos antes do dia e histórico
 js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K)
 js/assistente.js                            assistente de IA (conversas, sugestões por departamento, utilização)
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos

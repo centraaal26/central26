@@ -399,7 +399,7 @@ export function criarApi() {
       const TABELAS = { perfis: "id", departamentos: "id", tarefas: "id", atividade: "id", notificacoes: "id", configuracao: "chave", preferencias: "perfil_id",
         crm_clientes: "id", crm_produtos: "codigo", crm_vendas: "documento,linha", crm_contactos: "id", crm_importacoes: "id",
         chat_canais: "id", chat_membros: "canal_id,perfil_id", chat_mensagens: "id", agenda_eventos: "id",
-        log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id",
+        log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id" };
@@ -435,6 +435,34 @@ export function criarApi() {
         const canal = sb.channel("central26-stk")
           .on("postgres_changes", { event: "*", schema: "public", table: "stk_produtos" }, (p) => cb("produto", p.eventType, p.new, p.old))
           .on("postgres_changes", { event: "INSERT", schema: "public", table: "stk_movimentos" }, (p) => cb("movimento", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
+
+    // Seguros e viaturas: datas com avisos antes do dia (script 15)
+    prz: {
+      async carregar() {
+        const [viaturas, prazos, config] = await Promise.all([
+          todas(() => sb.from("prz_viaturas").select("*").order("nome")),
+          todas(() => sb.from("prz_prazos").select("*").order("data")),
+          sb.from("prz_config").select("*").eq("id", 1).maybeSingle(),
+        ]);
+        return { viaturas, prazos, config: config.error ? null : config.data };
+      },
+      async criarPrazo(p) { return ok(await sb.from("prz_prazos").insert(p).select().single()); },
+      async atualizarPrazo(id, campos) { return ok(await sb.from("prz_prazos").update(campos).eq("id", id).select().single()); },
+      async apagarPrazo(id) { ok(await sb.from("prz_prazos").delete().eq("id", id)); },
+      async tratar(id, proxima, nota) { return ok(await sb.rpc("prz_tratar", { p_prazo: id, p_proxima: proxima || null, p_nota: nota || "" })); },
+      async reabrir(id) { return ok(await sb.rpc("prz_reabrir", { p_prazo: id })); },
+      async criarViatura(v) { return ok(await sb.from("prz_viaturas").insert(v).select().single()); },
+      async atualizarViatura(id, campos) { return ok(await sb.from("prz_viaturas").update(campos).eq("id", id).select().single()); },
+      async apagarViatura(id) { ok(await sb.from("prz_viaturas").delete().eq("id", id)); },
+      async guardarConfig(campos) { return ok(await sb.from("prz_config").update({ ...campos, atualizado_em: new Date().toISOString() }).eq("id", 1).select().single()); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-prz")
+          .on("postgres_changes", { event: "*", schema: "public", table: "prz_prazos" }, (p) => cb("prazo", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "prz_viaturas" }, (p) => cb("viatura", p.eventType, p.new, p.old))
           .subscribe();
         return () => sb.removeChannel(canal);
       },

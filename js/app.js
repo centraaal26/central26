@@ -965,7 +965,7 @@ function vistaDefinicoes() {
     '<p class="campo ajuda" style="margin:0">Cargo: ' + esc(S.eu.cargo || "—") + " · " + esc(depNome(S.eu.departamento_id)) + " · " + esc(PAPEIS[S.eu.papel]) + '. Estes dados são alterados pela administração.</p><div class="acts"><button class="btn pri" type="submit">Guardar</button></div></form></section>';
   const pr = S.prefs || {};
   h += '<section class="cartao-sec"><h3>Avisos por email</h3>' + (pr.falta ? '<p class="muted">Os avisos por email precisam do script supabase/12-perfil-email-stocks.sql no Supabase.</p>' :
-    "<p>Recebe um email em <b>" + esc(S.eu.email) + "</b> quando:</p>" + '<div class="prefs">' + [["email_tarefas", "Te atribuem uma tarefa"], ["email_agenda", "Te convidam ou alteram um evento da agenda"], ["email_mensagens", "Recebes uma mensagem (um email por conversa até a leres)"]].map(([k, rot]) =>
+    "<p>Recebe um email em <b>" + esc(S.eu.email) + "</b> quando:</p>" + '<div class="prefs">' + [["email_tarefas", "Te atribuem uma tarefa"], ["email_agenda", "Te convidam ou alteram um evento da agenda, ou se aproxima a data de um seguro ou de uma viatura"], ["email_mensagens", "Recebes uma mensagem (um email por conversa até a leres)"]].map(([k, rot]) =>
       '<label class="interruptor"><input type="checkbox" data-pref="' + k + '"' + (pr[k] !== false ? " checked" : "") + (pr.aCarregar ? " disabled" : "") + "><span class=\"int-t\"></span>" + rot + "</label>").join("") + "</div>" +
     '<div class="acts"><button class="btn sec" data-acao="email-teste">Enviar email de teste</button></div>') + "</section>";
   h += '<section class="cartao-sec"><h3>Notificações neste aparelho</h3><p>' + esc(p.txt) + '</p><div class="acts">' +

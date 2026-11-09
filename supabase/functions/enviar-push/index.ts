@@ -4,7 +4,7 @@
 // - Chamada pela app para obter a chave pública (acao "chave") e para um envio de teste (acao "teste").
 // As chaves VAPID são criadas automaticamente na primeira utilização e guardadas na base de dados.
 // Email (opcional): com o segredo RESEND_API_KEY definido, também envia um email para tarefas atribuídas,
-// eventos da agenda e mensagens, conforme as preferências de cada pessoa. EMAIL_REMETENTE define o remetente.
+// eventos da agenda, datas dos seguros e viaturas e mensagens, conforme as preferências de cada pessoa. EMAIL_REMETENTE define o remetente.
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -71,6 +71,7 @@ const TIPOS_EMAIL: Record<string, string> = {
   agenda: "email_agenda",
   lembrete: "email_agenda",
   mensagem: "email_mensagens",
+  prazo: "email_agenda", // seguros e viaturas: datas a chegar ou em atraso
 };
 const escHtml = (t: string) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 

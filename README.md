@@ -143,10 +143,10 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/11-mensagens-e-se
 ### 3l. Foto de perfil, avisos por email e Stocks da TwentySix
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/12-perfil-email-stocks.sql` → **Run**. Liga a foto e a cor de perfil, as preferências de email e os Stocks (já com a lista de produtos da TwentySix, sem quantidades).
 2. Se aparecer o aviso «pg_cron indisponível», ativa **pg_cron** em **Database → Extensions** e corre o script outra vez: é o que envia os lembretes de stock de 15 em 15 minutos.
-3. **Emails (opcional).** Os avisos por email usam o serviço Resend (gratuito até 3000 emails por mês):
+3. **Emails (opcional).** Os avisos por email usam o serviço Resend (gratuito até 3000 emails por mês e 100 por dia). Saem emails das tarefas atribuídas, da agenda, das datas dos seguros e viaturas e das mensagens (um por conversa até ser lida); cada pessoa escolhe em **Mais** quais quer receber:
    1. Cria uma conta em resend.com, vai a **Domains → Add domain** e adiciona `avisos.twentysix.pt` (um subdomínio, para não mexer no email normal da empresa).
    2. Copia os registos DNS que o Resend mostra para o painel de DNS do domínio `twentysix.pt` e espera que fiquem verificados.
-   3. Em **API Keys**, cria uma chave com permissão de envio.
+   3. Em **API Keys**, cria uma chave com permissão de envio (**Sending access**) só para esse domínio. Sem domínio verificado, o Resend só deixa enviar para o email de quem criou a conta.
    4. No Supabase: **Edge Functions → Secrets** → adiciona `RESEND_API_KEY` com a chave e `EMAIL_REMETENTE` com `Central 26 <central@avisos.twentysix.pt>`.
    5. Volta a instalar a função `enviar-push` com o código atual (passo 3b). Na app, **Mais → Avisos por email → Enviar email de teste**.
 4. Stocks: preenche as quantidades produto a produto («Acertar contagem») ou em **Stocks → Importar → Descarregar modelo**, preenche o Excel e importa-o. Em **Stocks → Avisos** (direção) escolhes quem recebe os lembretes e o horário.

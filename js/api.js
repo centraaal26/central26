@@ -399,7 +399,7 @@ export function criarApi() {
       const TABELAS = { perfis: "id", departamentos: "id", tarefas: "id", atividade: "id", notificacoes: "id", configuracao: "chave", preferencias: "perfil_id",
         crm_clientes: "id", crm_produtos: "codigo", crm_vendas: "documento,linha", crm_contactos: "id", crm_importacoes: "id",
         chat_canais: "id", chat_membros: "canal_id,perfil_id", chat_mensagens: "id", agenda_eventos: "id",
-        log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id",
+        log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id" };
@@ -435,6 +435,47 @@ export function criarApi() {
         const canal = sb.channel("central26-stk")
           .on("postgres_changes", { event: "*", schema: "public", table: "stk_produtos" }, (p) => cb("produto", p.eventType, p.new, p.old))
           .on("postgres_changes", { event: "INSERT", schema: "public", table: "stk_movimentos" }, (p) => cb("movimento", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
+
+    // Prospeção de barbearias: base, propostas do agente, aprovação e envio (script 16 + função «prospecao»)
+    prs: {
+      async carregar() {
+        const COLS = "id, nome, distrito, concelho, morada, telefone, email, website, instagram, whatsapp, link_marcacao, link_mapa, tipo_negocio, confianca, prioridade, estado_prospecao, score, motivo, canal_recomendado, nivel_visita, proximo_passo, zona_codigo, origem, etapa, tipo, responsavel_id, recolhido_em, criado_em";
+        const [config, propostas, balancos, zonas, leads, excl] = await Promise.all([
+          sb.from("prs_config").select("*").eq("id", 1).maybeSingle(),
+          todas(() => sb.from("prs_propostas").select("*").order("criado_em", { ascending: false })),
+          sb.from("prs_balancos").select("*").order("criado_em", { ascending: false }).limit(40),
+          sb.from("prs_zonas").select("*").order("codigo"),
+          todas(() => sb.from("crm_clientes").select(COLS).or("origem.in.(prospecao,auto,base_leads),tipo.eq.lead").order("nome")),
+          sb.from("prs_excluidos").select("chave", { count: "exact", head: true }),
+        ]);
+        if (config.error) throw config.error;
+        return { config: config.data, propostas, balancos: ok(balancos), zonas: ok(zonas), leads, excluidos: excl.count || 0 };
+      },
+      async importar(parte) { return ok(await sb.rpc("prs_importar", { p: parte })); },
+      async decidir(id, acao, campos = {}) {
+        return ok(await sb.rpc("prs_decidir", { p_id: id, p_acao: acao, p_canal: campos.canal ?? null, p_assunto: campos.assunto ?? null, p_mensagem: campos.mensagem ?? null, p_perguntas: campos.perguntas ?? null, p_motivo: campos.motivo || "" }));
+      },
+      async registarEnvio(id, detalhe) { return ok(await sb.rpc("prs_registar_envio", { p_id: id, p_detalhe: detalhe || "" })); },
+      async gerar(id, respostas) { return (await invocar("prospecao", { acao: "gerar", id, respostas })).proposta; },
+      async enviarEmail(id) { return (await invocar("prospecao", { acao: "enviar", id })).proposta; },
+      async pesquisarAgora() { return invocar("prospecao", { acao: "pesquisar" }); },
+      async semanaAgora() { return invocar("prospecao", { acao: "semana" }); },
+      async guardarConfig(campos) { return ok(await sb.from("prs_config").update(campos).eq("id", 1).select().single()); },
+      async guardarZona(codigo, campos) { return ok(await sb.from("prs_zonas").update(campos).eq("codigo", codigo).select().single()); },
+      async excluidos(q, de, ate) {
+        let x = sb.from("prs_excluidos").select("*", { count: "exact" }).order("nome").range(de, ate);
+        if (q) x = x.or("nome.ilike.%" + q.replace(/[%,()]/g, " ") + "%,concelho.ilike.%" + q.replace(/[%,()]/g, " ") + "%,distrito.ilike.%" + q.replace(/[%,()]/g, " ") + "%");
+        const r = await x; if (r.error) throw r.error; return { itens: r.data, total: r.count || 0 };
+      },
+      async recuperar(chave) { return ok(await sb.rpc("prs_recuperar", { p_chave: chave })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-prs")
+          .on("postgres_changes", { event: "*", schema: "public", table: "prs_propostas" }, (p) => cb("proposta", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "prs_balancos" }, (p) => cb("balanco", p.eventType, p.new, p.old))
           .subscribe();
         return () => sb.removeChannel(canal);
       },

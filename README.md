@@ -55,6 +55,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
 - **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
+- **Prospeção de barbearias (direção e Comercial):** base de prospeção importada do Excel (estado, prioridade, zonas e plano de rua, guiões), pesquisa automática de barbearias novas todas as semanas, balanço semanal, e um agente que prepara a primeira abordagem a cada barbearia (mensagem para o contacto principal e questões a definir). Quem aprova revê, decide e envia: o email sai da app; o WhatsApp e o Instagram abrem com a mensagem pronta. Cada envio fica registado no CRM, com o seguimento da visita com amostras.
 - **Seguros e viaturas (direção, Administrativo e Logística):** datas dos seguros, das revisões, das inspeções e do IUC de cada viatura, com avisos no telemóvel antes de cada data e até alguém a marcar como tratada; ao renovar, a data seguinte fica logo criada.
 - **Pesquisa global:** Ctrl/⌘ + K (ou o botão «Procurar…») procura em tarefas, pessoas, clientes, encomendas, produtos, fornecedores, publicações, auditoria, agenda e conversas.
 - **Assistente (IA):** cada pessoa pede ajuda para escrever (descrições, legendas, emails, resumos) ou pergunta sobre o seu trabalho; o assistente consulta os dados da Central com as permissões dessa pessoa.
@@ -167,6 +168,16 @@ SQL Editor → **New query** → cola o conteúdo de `supabase/13-encomendas-sto
 
 O assistente só consulta o que a pessoa que pergunta já pode ver na app (as mesmas regras de acesso) e não altera nada. As conversas são privadas: nem a direção as lê, só vê quantos pedidos cada pessoa fez. Os dados consultados para responder são enviados ao serviço de IA escolhido.
 
+### 3p. Prospeção de barbearias
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/16-prospecao.sql` → **Run**.
+2. Edge Functions → **Deploy a new function** → **Via Editor** → nome `prospecao` → apaga o exemplo, cola o código de `supabase/functions/prospecao/index.ts` → **Deploy**. Na página da função, desliga **Verify JWT** (a função valida a sessão no código e aceita o relógio da base de dados).
+3. Usa os mesmos segredos do assistente (`GROQ_API_KEY` ou `ANTHROPIC_API_KEY`) e dos emails (`RESEND_API_KEY`). Opcionais: `PROSPECAO_REMETENTE` (ex.: `Wembley Costa · TwentySix <comercial@avisos.twentysix.pt>`) e `GOOGLE_PLACES_KEY` (pesquisa também no Google Maps; sem ela usa o OpenStreetMap, gratuito).
+4. Na app: **Prospeção → Importar** → escolhe o Excel da base de barbearias → **Importar**.
+5. **Prospeção → Definições**: escolhe quem aprova (ex.: Marcos, Wembley, Samuel), quem faz a visita com amostras, a assinatura e o email para as respostas; revê a oferta e as questões. Em **Rotas** confirma a data de início do plano de rua.
+6. Todas as semanas (por defeito à segunda às 8h) a Central procura barbearias novas, escolhe 25 para abordar e o agente prepara as propostas; quem aprova recebe um aviso. Para começar já: **Definições → Preparar as propostas agora**.
+
+O WhatsApp e o Instagram não deixam enviar mensagens automáticas a quem nunca falou connosco sem a API paga do WhatsApp Business (e o Instagram não deixa de todo): a app abre a conversa com a mensagem pronta e quem aprova só carrega em enviar. O email sai da própria app quando o domínio estiver verificado no Resend.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -207,6 +218,9 @@ js/financeiro.js                            faturação e custos por mês (folha
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
 js/prazos.js                                seguros e viaturas: datas, avisos antes do dia e histórico
+js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
+js/prospecao-importar.js                    leitura do Excel da base de prospeção
+supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)
 js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K)
 js/assistente.js                            assistente de IA (conversas, sugestões por departamento, utilização)
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos

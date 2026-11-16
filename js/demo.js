@@ -1,7 +1,7 @@
 // Modo de demonstração: imita a base de dados dentro do navegador (abrir a app com ?demo).
 // Serve para mostrar a app e testá-la sem mexer nos dados reais. Nada sai deste aparelho.
 import { MODELOS } from "./modelos.js";
-import { periodo, ymd, podeVer, podeAtribuirA, eGestor } from "./dados.js";
+import { periodo, ymd, podeVer, podeAtribuirA, eGestor, semanaIso } from "./dados.js";
 import { CATALOGO_STK } from "./stocks-catalogo.js";
 
 const CHAVE = "central26-demo-v1";
@@ -838,6 +838,129 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+    // Prospeção (igual ao script 16): o agente é simulado com os guiões (sem IA no modo de demonstração)
+    prs: (() => {
+      const K = "central26-demo-prs-v1";
+      let d = null;
+      const GUIOES = [
+        { tipo: "Mensagem WhatsApp", texto: "Olá, {Nome}. Falo da TwentySix, marca portuguesa de produtos profissionais para barbearias. Gostávamos de passar aí com umas amostras e apresentar a linha. Que dia vos dá mais jeito?" },
+        { tipo: "Mensagem Instagram DM", texto: "Olá, {Nome}! Somos a TwentySix, marca portuguesa de grooming. Podemos passar aí com amostras para conhecerem os produtos?" },
+        { tipo: "Email profissional de apresentação", texto: "Assunto: TwentySix | apresentação para a {Nome}\n\nOlá,\n\nSomos a TwentySix, marca portuguesa de produtos profissionais de grooming. Gostávamos de marcar uma visita curta para mostrar a linha e deixar amostras.\n\nObrigado," },
+      ];
+      const L = (nome, concelho, distrito, extra) => ({ id: "l-" + uid(), nome, concelho, distrito, morada: "", telefone: "", email: "", website: "", instagram: "", whatsapp: "", link_marcacao: "", link_mapa: "",
+        tipo_negocio: "Barbearia", confianca: "Alta", prioridade: "alta", estado_prospecao: "Pronto a contactar", score: 80, motivo: "Exemplo", canal_recomendado: "WhatsApp / Telefone", nivel_visita: "B - visita normal",
+        proximo_passo: "Pré-contactar antes da visita", zona_codigo: "Z01", origem: "prospecao", etapa: "lead", tipo: "lead", responsavel_id: null, recolhido_em: hoje(), criado_em: agora(), ...extra });
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const leads = [
+            L("Barbearia Exemplo Norte", "Porto", "Porto", { telefone: "+351 910 000 001", score: 95 }),
+            L("Studio Exemplo Fade", "Matosinhos", "Porto", { telefone: "+351 910 000 002", instagram: "https://www.instagram.com/exemplo.fade", zona_codigo: "Z02" }),
+            L("Barber Exemplo Centro", "Braga", "Braga", { email: "geral@exemplo.pt", telefone: "+351 253 000 003", zona_codigo: "Z06", canal_recomendado: "" }),
+            L("Barbearia Exemplo Sul", "Coimbra", "Coimbra", { instagram: "https://www.instagram.com/exemplo.sul", canal_recomendado: "Instagram DM", zona_codigo: "Z12", prioridade: "média", estado_prospecao: "Bom lead digital", score: 70 }),
+            L("Exemplo Barber Club", "Viseu", "Viseu", { telefone: "+351 910 000 005", zona_codigo: "Z15", estado_prospecao: "A validar", prioridade: "baixa", score: 45 }),
+          ];
+          d = { cfg: { id: 1, ativo: true, por_semana: 25, dia_semana: 1, hora: 8, aprovadores: ["p-marcos", "p-wembley", "p-samuel"], comercial_id: "p-wembley", assinatura: "Wembley Costa · TwentySix", email_resposta: "",
+            oferta: "Linha profissional TwentySix e formações da 26 Academy. A primeira abordagem serve para marcar uma visita do comercial com amostras.",
+            perguntas_internas: ["Levamos amostras nesta visita? De que produtos?", "Em que dia propomos a visita (dentro da rota da zona)?", "Apresentamos também a 26 Academy?", "Há alguma condição para a primeira encomenda?"],
+            perguntas_barbearia: ["Quantas cadeiras e barbeiros têm?", "Que marcas usam hoje, e onde compram?", "Vendem produtos aos clientes?", "Quem decide as compras, e qual o melhor dia para uma visita?", "Têm interesse em formação para a equipa?"],
+            guioes: GUIOES, pesquisa_auto: true, distritos: [], max_novos: 40, plano_inicio: null, ultima_semana: "", ultima_pesquisa: null },
+            leads, propostas: [], balancos: [], excluidos: [{ chave: "exemplo posto de parte|lisboa", nome: "Exemplo posto de parte", distrito: "Lisboa", concelho: "Lisboa", motivo: "distrito fora do reforço prioritário", morada: "", telefone: "", email: "", website: "", instagram: "" }],
+            zonas: [{ codigo: "Z01", nome: "Porto Centro", semana: 1, dia: 1, distritos: "Porto", concelhos: "Porto", visitas: 12, remotos: 12, recursos: "1 comercial", objetivo: "Visitar as contas prioritárias", observacoes: "", estado: "Por executar" },
+              { codigo: "Z02", nome: "Matosinhos", semana: 1, dia: 2, distritos: "Porto", concelhos: "Matosinhos", visitas: 8, remotos: 10, recursos: "1 comercial", objetivo: "", observacoes: "", estado: "Por executar" }] };
+          leads.slice(0, 4).forEach((c) => d.propostas.push(gerar(nova(c))));
+        }
+        return d;
+      };
+      const hoje = () => ymd(new Date());
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const semana = () => { const [a, w] = semanaIso(new Date()); return a + "-S" + String(w).padStart(2, "0"); };
+      const canais = (c) => { const o = {}; const t = String(c.telefone || "").split(/[\/;,]| ou /i)[0].replace(/\D/g, ""); const n9 = t.length === 9 ? "351" + t : t;
+        if (/^3519\d{8}$/.test(n9)) o.whatsapp = n9; if (c.email) o.email = c.email; const ig = (c.instagram || "").match(/instagram\.com\/([A-Za-z0-9_.]+)/); if (ig) o.instagram = ig[1]; if (n9.length === 12) o.telefone = n9; return o; };
+      const canal = (c) => { const k = canais(c); if (/instagram/i.test(c.canal_recomendado) && k.instagram) return "instagram"; return ["whatsapp", "email", "instagram", "telefone"].find((x) => k[x]) || ""; };
+      const nova = (c) => ({ id: "pr-" + uid(), cliente_id: c.id, semana: semana(), canal: canal(c), destino: canais(c)[canal(c)] || "", assunto: "", mensagem: "", mensagens: {}, resumo: "", fontes: [], perguntas: [], perguntas_visita: [],
+        estado: "a_gerar", tentativas: 0, erro: "", motivo: "", modelo: "", gerada_em: null, aprovada_por: null, aprovada_em: null, enviada_por: null, enviada_em: null, envio_detalhe: "", criado_em: agora(), atualizado_em: agora() });
+      function gerar(p, respostas = []) {
+        const c = (d?.leads || []).find((x) => x.id === p.cliente_id) || {}, cfg = d?.cfg || { guioes: GUIOES, perguntas_internas: [], perguntas_barbearia: [], assinatura: "Wembley Costa · TwentySix" };
+        const g = (t) => ((cfg.guioes || []).find((x) => new RegExp(t, "i").test(x.tipo))?.texto || "").replace(/\{Nome\}/g, c.nome || "");
+        const extra = respostas.filter((r) => r.resposta).map((r) => r.resposta).join(". ");
+        const assin = "\n\n" + (cfg.assinatura || "Equipa TwentySix");
+        const ms = {}; const k = canais(c);
+        if (k.whatsapp) ms.whatsapp = g("whatsapp") + (extra ? " " + extra + "." : "") + assin;
+        if (k.instagram) ms.instagram = g("instagram") + assin;
+        if (k.email) { const t = g("email"); const m = t.match(/^Assunto:\s*(.+)\n+/); ms.email = { assunto: m ? m[1] : "TwentySix | apresentação", corpo: (m ? t.slice(m[0].length) : t) + assin + "\n\nSe preferir não receber mais mensagens nossas, basta responder a dizer e não voltamos a contactar." }; }
+        if (k.telefone) ms.telefone = "Apresentar: TwentySix, marca portuguesa de produtos para barbearias.\nMotivo: mostrar a linha e deixar amostras.\nPerguntar: que marcas usam hoje?\nPropor: visita do Wembley esta semana.\nAgradecer.";
+        const can = p.canal && ms[p.canal] ? p.canal : Object.keys(ms)[0] || p.canal;
+        return { ...p, estado: "pendente", erro: "", canal: can, destino: k[can] || "", mensagens: ms, assunto: can === "email" ? ms.email.assunto : "", mensagem: can === "email" ? ms.email?.corpo || "" : ms[can] || "",
+          resumo: "Exemplo do modo de demonstração: " + (c.tipo_negocio || "barbearia") + " em " + (c.concelho || "—") + ", " + (c.estado_prospecao || "") + ". Na app real, o agente lê o site da barbearia e escreve a proposta com IA.",
+          perguntas: (cfg.perguntas_internas || []).slice(0, 4).map((t) => ({ texto: t, resposta: (respostas.find((r) => r.texto === t) || {}).resposta || "" })), perguntas_visita: (cfg.perguntas_barbearia || []).slice(0, 6), fontes: c.website ? [c.website] : [], modelo: "demo", gerada_em: agora() };
+      }
+      const aprova = () => { const e = eu(); return !!e && (eGestor(e) || (d.cfg.aprovadores || []).includes(e.id)); };
+      const avisar = (titulo, corpo, link) => { (d.cfg.aprovadores.length ? d.cfg.aprovadores : db.perfis.filter((x) => ["ceo", "admin"].includes(x.papel)).map((x) => x.id)).forEach((id) => notificar(id, "prospecao", titulo, corpo, link)); gravar(db); };
+      const prop = (id) => { const p = d.propostas.find((x) => x.id === id); if (!p) throw new Error("Esta proposta já não existe."); return p; };
+      return {
+        async carregar() { ler(); return structuredClone({ config: d.cfg, propostas: d.propostas, balancos: d.balancos.slice().reverse(), zonas: d.zonas, leads: d.leads, excluidos: d.excluidos.length }); },
+        async importar(p) {
+          ler(); const e = eu(); if (!e || !(eGestor(e) || (e.papel === "chefe" && e.departamento_id === "comercial"))) throw new Error("Só a direção e o chefe do Comercial podem importar a base de prospeção.");
+          let novos = 0, atualizados = 0;
+          for (const l of p.leads || []) {
+            const x = d.leads.find((y) => y.chave === l.chave || (y.nome === l.nome && y.concelho === l.concelho));
+            const campos = { nome: l.nome, distrito: l.distrito, concelho: l.concelho, morada: l.morada, telefone: l.telefone, email: l.email, website: l.website, instagram: l.instagram, whatsapp: l.whatsapp,
+              link_marcacao: l.link_marcacao, link_mapa: l.link_mapa, tipo_negocio: l.tipo_negocio, confianca: l.confianca, prioridade: l.prioridade, estado_prospecao: l.estado, score: l.score, motivo: l.motivo,
+              canal_recomendado: l.canal, nivel_visita: l.nivel, proximo_passo: l.proximo, zona_codigo: l.zona, recolhido_em: l.recolhido_em, chave: l.chave };
+            if (x) { Object.assign(x, campos); atualizados++; } else { d.leads.push(L(l.nome, l.concelho, l.distrito, { ...campos, origem: "prospecao" })); novos++; }
+          }
+          for (const z of p.zonas || []) { const i = d.zonas.findIndex((y) => y.codigo === z.codigo); const zz = { estado: "Por executar", ...z }; if (i >= 0) d.zonas[i] = { ...d.zonas[i], ...z }; else d.zonas.push(zz); }
+          const ch = new Set(d.excluidos.map((x) => x.chave)); for (const x of p.excluidos || []) if (!ch.has(x.chave)) { d.excluidos.push(x); ch.add(x.chave); }
+          if ((p.guioes || []).length) d.cfg.guioes = p.guioes;
+          if (p.registo) { d.balancos.push({ id: d.balancos.length + 1, semana: semana(), tipo: "importacao", titulo: "Base de prospeção importada: " + (p.registo.ficheiro || "Excel"), resumo: p.registo, criado_em: agora() });
+            avisar("Prospeção: " + p.registo.total + " barbearias na base", p.registo.novos + " novas no CRM e " + p.registo.atualizados + " atualizadas. Vê o balanço na Prospeção.", "#prospecao-balancos"); }
+          guardar(); return { novos, atualizados, zonas: (p.zonas || []).length, excluidos: (p.excluidos || []).length };
+        },
+        async decidir(id, acao, c = {}) {
+          ler(); if (!aprova()) throw new Error("Só quem aprova a prospeção pode decidir as propostas."); const p = prop(id);
+          if (acao === "guardar" || acao === "aprovar") Object.assign(p, { canal: c.canal ?? p.canal, assunto: c.assunto ?? p.assunto, mensagem: c.mensagem ?? p.mensagem, perguntas: c.perguntas ?? p.perguntas });
+          if (acao === "aprovar") Object.assign(p, { estado: "aprovada", aprovada_por: euId, aprovada_em: agora() });
+          if (acao === "rejeitar") Object.assign(p, { estado: "rejeitada", motivo: c.motivo || "", aprovada_por: euId, aprovada_em: agora() });
+          if (acao === "reabrir") Object.assign(p, { estado: "pendente", motivo: "" });
+          guardar(); return structuredClone(p);
+        },
+        async registarEnvio(id, detalhe) {
+          ler(); const p = prop(id); if (p.estado !== "aprovada" && p.estado !== "enviada") throw new Error("A proposta tem de estar aprovada antes de ser enviada.");
+          const c = d.leads.find((x) => x.id === p.cliente_id) || {};
+          Object.assign(p, { estado: "enviada", enviada_em: agora(), enviada_por: euId, envio_detalhe: detalhe || "" }); if (c.etapa === "lead") c.etapa = "contactado";
+          if (d.cfg.comercial_id) notificar(d.cfg.comercial_id, "prospecao", "Barbearia contactada: " + c.nome, "A primeira abordagem foi enviada por " + p.canal + ". Próximo passo: marcar a visita com amostras.", "#prospecao-barbearias");
+          gravar(db); guardar(); return structuredClone(p);
+        },
+        async gerar(id, respostas) { ler(); const i = d.propostas.findIndex((x) => x.id === id); if (i < 0) throw new Error("Esta proposta já não existe."); await new Promise((r) => setTimeout(r, 600)); d.propostas[i] = gerar(d.propostas[i], respostas || []); guardar(); return structuredClone(d.propostas[i]); },
+        async enviarEmail(id) { ler(); const p = prop(id); if (p.canal !== "email") throw new Error("Só os emails saem da app."); return this.registarEnvio(id, "email (demonstração: não foi enviado nenhum email)"); },
+        async pesquisarAgora() {
+          ler(); const novos = ["Barbearia Exemplo Nova A", "Exemplo Barber Lab", "Barbearia Exemplo Nova B"].map((n, i) => L(n, ["Gondomar", "Maia", "Valongo"][i], "Porto", { origem: "auto", telefone: "+351 910 000 1" + i + "0", score: 70 - i * 5, estado_prospecao: "Pronto a contactar", motivo: "Encontrada pela pesquisa automática (exemplo)" }));
+          d.leads.push(...novos); d.cfg.ultima_pesquisa = agora();
+          d.balancos.push({ id: d.balancos.length + 1, semana: semana(), tipo: "pesquisa", titulo: "Pesquisa de barbearias novas", criado_em: agora(), resumo: { novos: 3, encontrados: 3, distritos: ["Porto"], por_distrito: { Porto: 3 },
+            destaques: novos.map((c) => ({ id: c.id, nome: c.nome, concelho: c.concelho, distrito: c.distrito, canal: "whatsapp", contacto: canais(c).whatsapp })) } });
+          avisar("Prospeção: 3 barbearias novas", "Encontradas em Porto. Vê o balanço na Prospeção.", "#prospecao-balancos"); guardar();
+          return { novos: 3, distritos: ["Porto"], encontrados: 3 };
+        },
+        async semanaAgora() {
+          ler(); const com = new Set(d.propostas.map((p) => p.cliente_id));
+          const esc = d.leads.filter((c) => c.etapa === "lead" && !com.has(c.id) && canal(c)).sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, d.cfg.por_semana);
+          esc.forEach((c) => d.propostas.push(gerar(nova(c)))); d.cfg.ultima_semana = semana();
+          d.balancos.push({ id: d.balancos.length + 1, semana: semana(), tipo: "semana", titulo: "Prospeção da semana " + semana().slice(-2), criado_em: agora(),
+            resumo: { novos: 0, propostas: esc.length, distritos: [], por_distrito: {}, escolhidas: esc.map((c) => ({ id: c.id, nome: c.nome, concelho: c.concelho, distrito: c.distrito, canal: canal(c), contacto: canais(c)[canal(c)] })) } });
+          if (esc.length) avisar(esc.length + " propostas prontas para aprovar", "Revê a mensagem e as questões a definir de cada barbearia, aprova e envia.", "#prospecao");
+          guardar(); return { feito: true, propostas: esc.length };
+        },
+        async guardarConfig(c) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda as definições."); Object.assign(d.cfg, c); guardar(); return structuredClone(d.cfg); },
+        async guardarZona(codigo, c) { ler(); const z = d.zonas.find((x) => x.codigo === codigo); Object.assign(z, c); guardar(); return structuredClone(z); },
+        async excluidos(q, de, ate) { ler(); const n = (s) => String(s || "").toLowerCase(); const l = d.excluidos.filter((x) => !q || n(x.nome + " " + x.concelho + " " + x.distrito).includes(n(q))).sort((a, b) => a.nome.localeCompare(b.nome, "pt")); return { itens: structuredClone(l.slice(de, ate + 1)), total: l.length }; },
+        async recuperar(chave) { ler(); const x = d.excluidos.find((y) => y.chave === chave); if (!x) throw new Error("Esta barbearia já não está na lista."); d.excluidos = d.excluidos.filter((y) => y !== x);
+          const c = L(x.nome, x.concelho, x.distrito, { telefone: x.telefone, email: x.email, instagram: x.instagram, estado_prospecao: "A validar", prioridade: "", score: null, zona_codigo: "", motivo: "Recuperada: " + x.motivo }); d.leads.push(c); guardar(); return c.id; },
+        subscrever() { return () => {}; },
+      };
+    })(),
+
     // Seguros e viaturas (igual ao script 15): os avisos são simulados ao abrir a página
     prz: (() => {
       const K = "central26-demo-prz-v1";

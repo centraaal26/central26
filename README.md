@@ -55,7 +55,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
 - **Financeiro (só a direção):** faturação das barbearias e custos de cada mês, a partir das folhas mensais da Ondina & Maia.
 - **Marketing (Marketing e direção):** calendário de publicações por marca, ideias, texto das publicações e documentos (guiões, datas importantes). Importa o calendário do Notion.
 - **Stocks TwentySix (direção, Logística e Comercial):** produtos por categoria, retirar e dar entrada, mínimos com lembretes no telemóvel até ser reposto, histórico e importação de Excel.
-- **Prospeção de barbearias (direção e Comercial):** base de prospeção importada do Excel (estado, prioridade, zonas e plano de rua, guiões), pesquisa automática de barbearias novas todas as semanas, balanço semanal, e um agente que prepara a primeira abordagem a cada barbearia (mensagem para o contacto principal e questões a definir). Quem aprova revê, decide e envia: o email sai da app; o WhatsApp e o Instagram abrem com a mensagem pronta. Cada envio fica registado no CRM, com o seguimento da visita com amostras.
+- **Prospeção de barbearias (direção e Comercial):** base de prospeção importada do Excel (estado, prioridade, zonas e plano de rua, guiões), pesquisa automática de barbearias novas todas as semanas, balanço semanal, e um agente que prepara a primeira abordagem a cada barbearia (mensagem para o contacto principal e questões a definir). Quem aprova revê, decide e envia: o email sai da app; o WhatsApp e o Instagram abrem com a mensagem pronta. Cada envio fica registado no CRM, com o seguimento da visita com amostras. Se a barbearia não responder, a Central prepara os seguimentos dos guiões (também por aprovar).
 - **Seguros e viaturas (direção, Administrativo e Logística):** datas dos seguros, das revisões, das inspeções e do IUC de cada viatura, com avisos no telemóvel antes de cada data e até alguém a marcar como tratada; ao renovar, a data seguinte fica logo criada.
 - **Pesquisa global:** Ctrl/⌘ + K (ou o botão «Procurar…») procura em tarefas, pessoas, clientes, encomendas, produtos, fornecedores, publicações, auditoria, agenda e conversas.
 - **Assistente (IA):** cada pessoa pede ajuda para escrever (descrições, legendas, emails, resumos) ou pergunta sobre o seu trabalho; o assistente consulta os dados da Central com as permissões dessa pessoa.
@@ -65,7 +65,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Despesas partilhadas, impostos, Hairshopping, Tech e Formação por rubrica e por mês, agrupadas por categoria (editável), com os valores fora do normal destacados.
   - A folha RH (vencimentos de cada pessoa) não é lida: só entra o total pago aos barbeiros de cada espaço.
 - **Modelos sugeridos:** rotinas de cada marca e rotinas da Logística.
-- **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã.
+- **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã. O site tem uma política de segurança de conteúdo (só carrega código e dados dos serviços que usa) e o agente de prospeção só lê sites públicos e não copia links nem contactos estranhos das páginas para as mensagens.
 
 ## Instalação (uma única vez)
 
@@ -175,6 +175,17 @@ O assistente só consulta o que a pessoa que pergunta já pode ver na app (as me
 4. Na app: **Prospeção → Importar** → escolhe o Excel da base de barbearias → **Importar**.
 5. **Prospeção → Definições**: escolhe quem aprova (ex.: Marcos, Wembley, Samuel), quem faz a visita com amostras, a assinatura e o email para as respostas; revê a oferta e as questões. Em **Rotas** confirma a data de início do plano de rua.
 6. Todas as semanas (por defeito à segunda às 8h) a Central procura barbearias novas, escolhe 25 para abordar e o agente prepara as propostas; quem aprova recebe um aviso. Para começar já: **Definições → Preparar as propostas agora**.
+
+7. **Seguimentos** (opcional, recomendado): SQL Editor → cola `supabase/17-seguimentos.sql` → **Run**. Quando uma barbearia não responde, a Central prepara o «Follow-up 1» (4 dias depois) e o «Follow-up 2» (5 dias depois do primeiro) a partir dos guiões do Excel; ficam por aprovar como as propostas. Param quando alguém marca **A barbearia respondeu** na proposta enviada ou regista um contacto novo no CRM. Os dias mudam-se em **Definições → Seguimentos**.
+
+**Google Maps (opcional).** Sem chave, a pesquisa usa o OpenStreetMap. Com a chave, encontra mais barbearias e quase sempre com telefone e site:
+1. https://console.cloud.google.com → cria um projeto (ex.: «Central 26»).
+2. **APIs e serviços → Biblioteca** → ativa **Places API (New)**.
+3. **Faturação**: associa uma conta de faturação (pede um cartão). A pesquisa da Central usa o escalão «Text Search Enterprise», que tem 1000 pedidos grátis por mês; a Central faz cerca de 10 por semana (3 distritos × até 3 páginas), por isso fica dentro do grátis.
+4. **APIs e serviços → Credenciais → Criar credenciais → Chave de API**. Em **Restrições da API**, escolhe só **Places API (New)**. Em restrições de aplicação deixa **Nenhuma** (a chave só é usada no servidor, nunca vai para o site).
+5. **APIs e serviços → Places API (New) → Quotas**: limita «SearchTextRequest per day» a 100, e em **Faturação → Orçamentos e alertas** cria um orçamento de 1 € com alerta, para nunca haver surpresas.
+6. Supabase → **Edge Functions → Secrets** → `GOOGLE_PLACES_KEY` = a chave. Não é preciso voltar a publicar a função.
+7. Na app: **Prospeção → Definições → Procurar barbearias agora**. O balanço mostra quantas vieram do Google e do OpenStreetMap.
 
 O WhatsApp e o Instagram não deixam enviar mensagens automáticas a quem nunca falou connosco sem a API paga do WhatsApp Business (e o Instagram não deixa de todo): a app abre a conversa com a mensagem pronta e quem aprova só carrega em enviar. O email sai da própria app quando o domínio estiver verificado no Resend.
 

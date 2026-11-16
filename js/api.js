@@ -455,10 +455,23 @@ export function criarApi() {
         if (config.error) throw config.error;
         return { config: config.data, propostas, balancos: ok(balancos), zonas: ok(zonas), leads, excluidos: excl.count || 0 };
       },
+      // versão leve para o Início e a contagem do menu: só as propostas por aprovar e as barbearias delas
+      async resumo() {
+        const COLS = "id, nome, distrito, concelho, telefone, email, website, instagram, whatsapp, canal_recomendado, origem, etapa";
+        const [config, pend] = await Promise.all([
+          sb.from("prs_config").select("*").eq("id", 1).maybeSingle(),
+          sb.from("prs_propostas").select("*").eq("estado", "pendente").order("criado_em", { ascending: false }).limit(60),
+        ]);
+        if (config.error) throw config.error;
+        const propostas = ok(pend), ids = [...new Set(propostas.map((p) => p.cliente_id))];
+        const leads = ids.length ? ok(await sb.from("crm_clientes").select(COLS).in("id", ids)) : [];
+        return { config: config.data, propostas, leads };
+      },
       async importar(parte) { return ok(await sb.rpc("prs_importar", { p: parte })); },
       async decidir(id, acao, campos = {}) {
         return ok(await sb.rpc("prs_decidir", { p_id: id, p_acao: acao, p_canal: campos.canal ?? null, p_assunto: campos.assunto ?? null, p_mensagem: campos.mensagem ?? null, p_perguntas: campos.perguntas ?? null, p_motivo: campos.motivo || "" }));
       },
+      async respondeu(id, nota) { return ok(await sb.rpc("prs_respondeu", { p_id: id, p_nota: nota || "" })); },
       async registarEnvio(id, detalhe) { return ok(await sb.rpc("prs_registar_envio", { p_id: id, p_detalhe: detalhe || "" })); },
       async gerar(id, respostas) { return (await invocar("prospecao", { acao: "gerar", id, respostas })).proposta; },
       async enviarEmail(id) { return (await invocar("prospecao", { acao: "enviar", id })).proposta; },

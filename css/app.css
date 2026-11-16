@@ -1615,6 +1615,9 @@ html.pq-aberta,html.pq-aberta body{overflow:hidden}
 .prs-canal.c-whatsapp{background:color-mix(in srgb,var(--c-verde) 14%,var(--surface));border-color:color-mix(in srgb,var(--c-verde) 35%,var(--line))}
 .prs-canal.c-instagram{background:color-mix(in srgb,var(--c-vinho) 13%,var(--surface));border-color:color-mix(in srgb,var(--c-vinho) 35%,var(--line))}
 .prs-canal.c-email{background:color-mix(in srgb,var(--c-tech) 13%,var(--surface));border-color:color-mix(in srgb,var(--c-tech) 35%,var(--line))}
+.prs-tipo,.prs-resp{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;white-space:nowrap;background:var(--pm-bg);color:var(--pm);margin-left:6px}
+.prs-resp{background:var(--ok-bg);color:var(--ok)}
+.prs-ant{margin:8px 0}.prs-ant summary{cursor:pointer;color:var(--muted);font-size:13px}.prs-ant .prs-msg-lida{margin-top:8px}
 .prs-est{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--sunken);color:var(--muted);white-space:nowrap}
 .prs-est.e-pendente{background:color-mix(in srgb,var(--c-twentysix) 16%,var(--surface));color:var(--ink)}
 .prs-est.e-aprovada{background:var(--warn-bg);color:var(--warn)}
@@ -1657,3 +1660,5 @@ html.pq-aberta,html.pq-aberta body{overflow:hidden}
   .prs-excl-item{flex-direction:column;align-items:flex-start}
   .acts-fim{flex-wrap:wrap}
 }
+.prs-est-b{padding:0;background:none;border:0;cursor:pointer}
+.prs-est-b:hover .prs-est{filter:brightness(.95);text-decoration:underline}

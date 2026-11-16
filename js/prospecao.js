@@ -8,6 +8,7 @@ export const podeProspecao = (eu) => podeCrm(eu);
 const CANAIS = { whatsapp: "WhatsApp", instagram: "Instagram", email: "Email", telefone: "Telefone" };
 const ESTADOS_PR = { pendente: "Por aprovar", aprovada: "Aprovadas", a_gerar: "Em preparação", enviada: "Enviadas", rejeitada: "Rejeitadas", erro: "Com erro" };
 const ESTADO_UM = { pendente: "Por aprovar", aprovada: "Aprovada, por enviar", a_gerar: "Em preparação", enviada: "Enviada", rejeitada: "Rejeitada", erro: "Com erro" };
+const TIPOS_PR = { seguimento1: "1.º seguimento", seguimento2: "2.º seguimento" };
 const ESTADOS_LEAD = ["Pronto a contactar", "Bom lead digital", "A validar", "Fraco"];
 const DIAS = ["", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 const n = (s) => normalizar(s).replace(/\s+/g, " ").trim();
@@ -18,7 +19,7 @@ const local = (c) => [...new Set([c.concelho, c.distrito].filter(Boolean))].join
 const fmtData = (s) => { const [, m, d] = s.split("-").map(Number); return d + " " + MES[m - 1]; };
 
 export function criarProspecao(ctx) {
-  const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo } = ctx;
+  const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo, abrirCliente } = ctx;
   const R = (S.prs = { estado: "por-carregar", cfg: null, propostas: {}, balancos: [], zonas: [], leads: {}, excluidos: 0, tab: "propostas", filtro: "pendente", pag: 1,
     q: "", fEstado: "", fDistrito: "", fZona: "", pagB: 1, excl: null, imp: null, rasc: {}, rejeitar: false, ocupado: false });
   let desligar = null;
@@ -38,6 +39,24 @@ export function criarProspecao(ctx) {
     agendarRender();
     if (S.aberto?.tipo === "proposta") renderPainel(true);
   }
+  // Início e menu: só as propostas por aprovar (a base completa carrega quando se abre a Prospeção)
+  let resumo = "por-carregar";
+  async function carregarResumo() {
+    if (resumo !== "por-carregar" || R.estado !== "por-carregar") return;
+    resumo = "a-carregar";
+    try {
+      if (!api.prs?.resumo) throw new Error("sem resumo");
+      const d = await api.prs.resumo();
+      if (R.estado !== "por-carregar") { resumo = "falta"; return; } // a base completa já está a chegar
+      R.cfg = d.config;
+      R.propostas = Object.fromEntries(d.propostas.map((p) => [p.id, p]));
+      R.leads = Object.fromEntries(d.leads.map((c) => [c.id, c]));
+      resumo = d.config ? "pronto" : "falta";
+      if (resumo === "pronto" && !desligar && api.prs.subscrever) desligar = api.prs.subscrever(aoMudar);
+    } catch { resumo = "falta"; }
+    agendarRender();
+  }
+  const temPendentes = () => R.estado === "pronto" || resumo === "pronto";
   function aoMudar(t, ev, novo, antigo) {
     if (t === "proposta") { if (ev === "DELETE") delete R.propostas[antigo.id]; else R.propostas[novo.id] = { ...(R.propostas[novo.id] || {}), ...novo }; }
     if (t === "balanco" && novo) R.balancos = [novo, ...R.balancos.filter((b) => b.id !== novo.id)];
@@ -50,12 +69,14 @@ export function criarProspecao(ctx) {
   const lista = (estado) => Object.values(R.propostas).filter((p) => p.estado === estado);
   const lead = (p) => R.leads[p.cliente_id] || S.crm?.clientes?.[p.cliente_id] || null;
   const pillCanal = (c) => (c ? '<span class="prs-canal c-' + c + '">' + esc(CANAIS[c] || c) + "</span>" : "");
+  const pillTipo = (p) => (TIPOS_PR[p.tipo] ? '<span class="prs-tipo">' + TIPOS_PR[p.tipo] + "</span>" : "");
+  const pillResp = (p) => (p.respondeu_em ? '<span class="prs-resp">Respondeu</span>' : "");
   const pillEstado = (e) => '<span class="prs-est e-' + e + '">' + esc(ESTADO_UM[e] || e) + "</span>";
 
   /* ============================== Vistas ============================== */
   function vista(param) {
     if (R.estado === "por-carregar") carregar();
-    if (param !== R.ultimoParam) { R.ultimoParam = param; R.tab = ["barbearias", "rotas", "balancos", "definicoes", "importar"].includes(param) ? param : "propostas"; }
+    if (param !== undefined && param !== R.ultimoParam) { R.ultimoParam = param; R.tab = ["barbearias", "rotas", "balancos", "definicoes", "importar"].includes(param) ? param : "propostas"; }
     let h = '<div class="cab" data-marca="twentysix"><div><div class="eyebrow">Comercial</div><h1>Prospeção</h1><p class="sub-cab">Barbearias novas todas as semanas, cada uma com uma proposta de primeira abordagem preparada pelo agente. Quem aprova revê, decide e envia para o contacto principal da barbearia.</p></div></div>';
     const tabs = [["propostas", "Propostas"], ["barbearias", "Barbearias"], ["rotas", "Rotas"], ["balancos", "Balanços"], ["definicoes", "Definições"]].concat(podeImportar(S.eu) ? [["importar", "Importar"]] : []);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="prs-tab" data-tab="' + k + '" aria-selected="' + (R.tab === k) + '">' + r + (k === "propostas" && aprova() && lista("pendente").length ? ' <span class="ct-tab">' + lista("pendente").length + "</span>" : "") + "</button>").join("") + "</div>";
@@ -95,16 +116,17 @@ export function criarProspecao(ctx) {
     const corpo = p.estado === "a_gerar" ? '<span class="muted">' + (p.erro ? "A tentar outra vez: " + esc(p.erro) : "O agente está a preparar a proposta…") + "</span>"
       : p.estado === "erro" ? '<span class="prs-erro">' + esc(p.erro || "Não foi possível preparar a proposta.") + "</span>"
       : esc((p.mensagem || "").replace(/\s+/g, " ").slice(0, 170)) + ((p.mensagem || "").length > 170 ? "…" : "");
-    return '<button class="prs-cartao e-' + p.estado + '" data-acao="prs-abrir" data-id="' + p.id + '"><span class="prs-c-cab"><b>' + esc(c.nome) + "</b>" + pillCanal(p.canal) + "</span>" +
+    return '<button class="prs-cartao e-' + p.estado + '" data-acao="prs-abrir" data-id="' + p.id + '"><span class="prs-c-cab"><b>' + esc(c.nome) + "</b>" + pillTipo(p) + pillCanal(p.canal) + "</span>" +
       '<small class="prs-c-loc">' + esc(local(c)) + (c.zona_codigo ? " · zona " + esc(c.zona_codigo) : "") + (c.prioridade ? " · prioridade " + esc(c.prioridade) : "") + "</small>" +
       '<span class="prs-c-msg">' + corpo + "</span>" +
-      '<span class="prs-c-pe">' + pillEstado(p.estado) + "<small>" + esc(p.estado === "enviada" ? "enviada " + haQuanto(p.enviada_em) + " por " + ((nomeDe(p.enviada_por) || "").split(" ")[0] || "—") : "semana " + String(p.semana).slice(-2)) + "</small></span></button>";
+      '<span class="prs-c-pe">' + pillEstado(p.estado) + pillResp(p) + "<small>" + esc(p.estado === "enviada" ? "enviada " + haQuanto(p.enviada_em) + " por " + ((nomeDe(p.enviada_por) || "").split(" ")[0] || "—") : "semana " + String(p.semana).slice(-2)) + "</small></span></button>";
   }
   const nomesAprovadores = () => { const a = (R.cfg?.aprovadores || []).map((id) => (nomeDe(id) || "").split(" ")[0]).filter(Boolean); return a.length ? a.join(", ") : "a direção"; };
 
   function vistaBarbearias() {
     const todos = Object.values(R.leads), q = n(R.q);
-    const prop = {}; Object.values(R.propostas).forEach((p) => { if (!prop[p.cliente_id] || p.estado === "enviada") prop[p.cliente_id] = p; });
+    const prop = {}; Object.values(R.propostas).forEach((p) => { const a = prop[p.cliente_id]; if (!a || String(p.criado_em) > String(a.criado_em)) prop[p.cliente_id] = p; });
+    const respondeu = new Set(Object.values(R.propostas).filter((p) => p.respondeu_em).map((p) => p.cliente_id));
     const conta = (e) => todos.filter((c) => (e === "auto" ? c.origem === "auto" : c.estado_prospecao === e)).length;
     const distritos = [...new Set(todos.map((c) => c.distrito).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt"));
     const zonas = [...new Set(todos.map((c) => c.zona_codigo).filter(Boolean))].sort();
@@ -120,9 +142,9 @@ export function criarProspecao(ctx) {
     h += '<div class="tabela-scroll"><table class="crm-tabela prs-tab"><thead><tr><th>Barbearia</th><th>Local</th><th>Estado</th><th class="num">Score</th><th>Contacto principal</th><th>Zona</th><th>Abordagem</th></tr></thead><tbody>' +
       (pg.itens.map((c) => {
         const k = canalPrincipal(c), cont = canaisDe(c)[k] || "", p = prop[c.id];
-        return '<tr><td><a href="#cliente-' + c.id + '"><b>' + esc(c.nome) + "</b></a>" + (c.origem === "auto" ? ' <span class="prs-novo">nova</span>' : "") + "<small>" + esc(c.tipo_negocio || "") + "</small></td><td>" + esc(local(c)) + "</td><td>" + esc(c.estado_prospecao || "—") + (c.prioridade ? "<small>prioridade " + esc(c.prioridade) + "</small>" : "") +
+        return '<tr><td><button class="c-link" data-acao="prs-cliente" data-id="' + c.id + '">' + esc(c.nome) + "</button>" + (c.origem === "auto" ? ' <span class="prs-novo">nova</span>' : "") + "<small>" + esc(c.tipo_negocio || "") + "</small></td><td>" + esc(local(c)) + "</td><td>" + esc(c.estado_prospecao || "—") + (c.prioridade ? "<small>prioridade " + esc(c.prioridade) + "</small>" : "") +
           '</td><td class="num mono">' + (c.score ?? "—") + "</td><td>" + (k ? pillCanal(k) + " <small>" + esc(k === "whatsapp" || k === "telefone" ? fmtTel(cont) : k === "instagram" ? "@" + cont : cont) + "</small>" : '<span class="muted">sem contacto</span>') +
-          "</td><td>" + esc(c.zona_codigo || "—") + "</td><td>" + (p ? '<a href="#proposta-' + p.id + '">' + pillEstado(p.estado) + "</a>" : c.etapa !== "lead" ? esc(c.etapa) : '<span class="muted">—</span>') + "</td></tr>";
+          "</td><td>" + esc(c.zona_codigo || "—") + "</td><td>" + (p ? '<button class="prs-est-b" data-acao="prs-abrir" data-id="' + p.id + '">' + (respondeu.has(c.id) ? '<span class="prs-resp">Respondeu</span>' : pillTipo(p) + pillEstado(p.estado)) + "</button>" : c.etapa !== "lead" ? esc(c.etapa) : '<span class="muted">—</span>') + "</td></tr>";
       }).join("") || '<tr><td colspan="7" class="muted">Nada encontrado.</td></tr>') + "</tbody></table></div>" + paginador(pg, "prs-pag-b", "barbearias");
     h += '<section class="cartao-sec prs-excl"><h3>Postas de parte <span class="mono muted">' + R.excluidos.toLocaleString("pt-PT") + '</span></h3><p>Barbearias que ficaram fora da campanha ou foram excluídas na base (por exemplo, distritos fora do reforço, ou sem prova de serem barbearias). A pesquisa automática não as volta a propor. Se alguma fizer sentido, passa-a para o CRM.</p>' +
       (R.excl ? vistaExcluidos() : '<div class="acts"><button class="btn sec" data-acao="prs-excl-ver">Ver a lista</button></div>') + "</section>";
@@ -165,7 +187,7 @@ export function criarProspecao(ctx) {
       h += '<section class="prs-rota-sem' + (atual ? " atual" : "") + '"><h2>Semana ' + s + (atual ? ' <span class="prs-est e-pendente">esta semana</span>' : "") + '</h2><div class="tabela-scroll"><table class="crm-tabela"><thead><tr><th>Dia</th><th>Zona</th><th>Concelhos</th><th class="num">Barbearias</th><th class="num">Por abordar</th><th>Objetivo</th><th>Estado</th></tr></thead><tbody>' +
         zs.map((z) => {
           const data = c.base ? fmtData(somarDias(c.base, (s - 1) * 7 + (z.dia - 1))) : "";
-          return "<tr><td><b>" + DIAS[z.dia] + "</b>" + (data ? "<small>" + data + "</small>" : "") + '</td><td><a href="#prospecao-barbearias" data-acao="prs-ver-zona" data-v="' + esc(z.codigo) + '"><b>' + esc(z.codigo) + "</b> " + esc(z.nome) + "</a>" + (z.recursos ? "<small>" + esc(z.recursos) + "</small>" : "") + "</td><td>" + esc(z.concelhos) +
+          return "<tr><td><b>" + DIAS[z.dia] + "</b>" + (data ? "<small>" + data + "</small>" : "") + '</td><td><button class="c-link" data-acao="prs-ver-zona" data-v="' + esc(z.codigo) + '"><b>' + esc(z.codigo) + "</b> " + esc(z.nome) + "</button>" + (z.recursos ? "<small>" + esc(z.recursos) + "</small>" : "") + "</td><td>" + esc(z.concelhos) +
             '</td><td class="num mono">' + (porZona[z.codigo] || 0) + '</td><td class="num mono">' + (porAbordar[z.codigo] || 0) + "</td><td><small>" + esc(z.objetivo || z.observacoes || "") + "</small></td><td>" +
             '<select class="sel" data-prs-zona="' + esc(z.codigo) + '" aria-label="Estado da zona ' + esc(z.codigo) + '">' + ["Por executar", "Em curso", "Feito"].map((e) => "<option" + (e === z.estado ? " selected" : "") + ">" + e + "</option>").join("") + "</select></td></tr>";
         }).join("") + "</tbody></table></div></section>";
@@ -182,10 +204,10 @@ export function criarProspecao(ctx) {
         : [["Barbearias novas", r.novos], ["Propostas", r.propostas], ["Distritos pesquisados", (r.distritos || []).length]];
       let h = '<section class="cartao-sec prs-bal"><h3>' + esc(b.titulo || "Balanço") + ' <span class="muted mono">' + esc(new Date(b.criado_em).toLocaleDateString("pt-PT", { day: "numeric", month: "short", year: "numeric" })) + "</span></h3>" +
         '<div class="resumo-crm resumo-eq">' + kpis.filter(([, v]) => v != null).map(([k, v]) => '<div class="kpi"><span>' + k + "</span><b>" + Number(v).toLocaleString("pt-PT") + "</b></div>").join("") + "</div>";
-      if (r.distritos?.length && b.tipo !== "importacao") h += "<p>Pesquisa em " + esc(r.distritos.join(", ")) + (r.encontrados != null ? " · " + r.encontrados + " encontradas, já sem as que estavam na base" : "") + ".</p>";
-      if (dist.length) h += '<div class="prs-dist">' + dist.map(([d, v]) => '<span class="prs-dchip">' + esc(d) + " <b>" + v + "</b></span>").join("") + "</div>";
+      if (r.distritos?.length && b.tipo !== "importacao") h += "<p>Pesquisa em " + esc(r.distritos.join(", ")) + (r.encontrados != null ? " · " + Number(r.encontrados) + " encontradas, já sem as que estavam na base" : "") + ".</p>";
+      if (dist.length) h += '<div class="prs-dist">' + dist.map(([d, v]) => '<span class="prs-dchip">' + esc(d) + " <b>" + Number(v) + "</b></span>").join("") + "</div>";
       const linhas = (x) => '<div class="tabela-scroll"><table class="crm-tabela"><thead><tr><th>Barbearia</th><th>Local</th><th>Contacto principal</th></tr></thead><tbody>' + x.map((d) =>
-        '<tr><td><a href="#cliente-' + esc(d.id) + '">' + esc(d.nome) + "</a></td><td>" + esc(local(d)) + "</td><td>" + (d.canal ? pillCanal(d.canal) + " <small>" + esc(d.canal === "whatsapp" || d.canal === "telefone" ? fmtTel(d.contacto) : d.canal === "instagram" ? "@" + d.contacto : d.contacto) + "</small>" : '<span class="muted">sem contacto</span>') + "</td></tr>").join("") + "</tbody></table></div>";
+        '<tr><td>' + (d.id && R.leads[d.id] ? '<button class="c-link" data-acao="prs-cliente" data-id="' + esc(d.id) + '">' + esc(d.nome) + "</button>" : esc(d.nome)) + "</td><td>" + esc(local(d)) + "</td><td>" + (d.canal ? pillCanal(d.canal) + " <small>" + esc(d.canal === "whatsapp" || d.canal === "telefone" ? fmtTel(d.contacto) : d.canal === "instagram" ? "@" + d.contacto : d.contacto) + "</small>" : '<span class="muted">sem contacto</span>') + "</td></tr>").join("") + "</tbody></table></div>";
       if (r.destaques?.length) h += '<h4>Barbearias novas</h4>' + linhas(r.destaques.slice(0, 15)) + (r.destaques.length > 15 ? '<p class="muted">E mais ' + (r.destaques.length - 15) + " no separador Barbearias (filtro «Novas da pesquisa»).</p>" : "");
       if (r.escolhidas?.length) h += '<h4>Escolhidas para abordar esta semana</h4>' + linhas(r.escolhidas.slice(0, 25));
       if (b.tipo === "importacao" && r.por_estado) h += '<div class="prs-dist">' + Object.entries(r.por_estado).map(([e, v]) => '<span class="prs-dchip">' + esc(e) + " <b>" + v + "</b></span>").join("") + "</div>";
@@ -209,6 +231,11 @@ export function criarProspecao(ctx) {
       '<div class="campos-2"><div class="campo"><label for="prs-comercial">Quem faz a visita com amostras</label><select id="prs-comercial" class="sel"' + dis + '><option value="">Ninguém em particular</option>' + pessoas.map((p) => '<option value="' + p.id + '"' + (p.id === c.comercial_id ? " selected" : "") + ">" + esc(p.nome) + "</option>").join("") + "</select></div>" +
       '<div class="campo"><label for="prs-resp">Email para as respostas</label><input id="prs-resp" type="email" value="' + esc(c.email_resposta) + '" placeholder="ex.: comercial@twentysix.pt"' + dis + "></div></div>" +
       '<div class="campo"><label for="prs-assin">Assinatura das mensagens</label><textarea id="prs-assin" rows="2" placeholder="ex.: Wembley Costa · TwentySix"' + dis + ">" + esc(c.assinatura) + "</textarea></div></section>";
+    if (!("seguimento1_dias" in c)) h += '<section class="cartao-sec"><h3>Seguimentos</h3><div class="aviso">Para ligar os seguimentos, corre no Supabase o script <b>supabase/17-seguimentos.sql</b>.</div></section>';
+    else h += '<section class="cartao-sec"><h3>Seguimentos</h3><label class="interruptor"><input type="checkbox" id="prs-seg"' + (c.seguimentos !== false ? " checked" : "") + dis + '><span class="int-t"></span>Preparar seguimentos quando a barbearia não responde</label>' +
+      '<div class="campos-3"><div class="campo"><label for="prs-seg1">1.º seguimento, dias depois da abordagem</label><input id="prs-seg1" type="number" min="1" max="60" value="' + Number(c.seguimento1_dias ?? 4) + '"' + dis + "></div>" +
+      '<div class="campo"><label for="prs-seg2">2.º seguimento, dias depois do 1.º</label><input id="prs-seg2" type="number" min="1" max="60" value="' + Number(c.seguimento2_dias ?? 5) + '"' + dis + "></div></div>" +
+      '<p class="muted">Usam os guiões «Follow-up 1» e «Follow-up 2» e ficam por aprovar, como as propostas. Param quando alguém marca «A barbearia respondeu» ou regista um contacto novo no CRM.</p></section>';
     h += '<section class="cartao-sec"><h3>O que propomos</h3><div class="campo"><label for="prs-oferta">Oferta (o agente nunca promete mais do que isto)</label><textarea id="prs-oferta" rows="4"' + dis + ">" + esc(c.oferta) + "</textarea></div>" +
       '<div class="campos-2"><div class="campo"><label for="prs-qint">Questões a definir por quem aprova (uma por linha)</label><textarea id="prs-qint" rows="6"' + dis + ">" + linhas(c.perguntas_internas) + "</textarea></div>" +
       '<div class="campo"><label for="prs-qbar">Perguntas para a barbearia, no contacto ou na visita (uma por linha)</label><textarea id="prs-qbar" rows="6"' + dis + ">" + linhas(c.perguntas_barbearia) + "</textarea></div></div>" +
@@ -291,35 +318,43 @@ export function criarProspecao(ctx) {
   }
 
   function painel(a) {
+    if (R.estado === "por-carregar") carregar(); // vindo do Início ou de um aviso: completa os dados da barbearia
     const p = R.propostas[a.id];
     if (!p) return mold(topo() + (R.estado === "pronto" ? '<div class="vazio"><h3>Esta proposta já não existe</h3></div>' : '<div class="esqueleto"><i style="width:60%"></i></div>'));
     const c = lead(p) || { nome: "Barbearia", id: p.cliente_id }, can = canaisDe(c), ap = aprova(), editavel = ap && ["pendente", "aprovada"].includes(p.estado);
-    let h = topo() + '<div class="prs-p-cab"><h2>' + esc(c.nome) + "</h2>" + pillEstado(p.estado) + "</div>" +
+    let h = topo() + '<div class="prs-p-cab"><h2>' + esc(c.nome) + "</h2>" + pillTipo(p) + pillEstado(p.estado) + pillResp(p) + "</div>" +
       '<p class="muted prs-p-sub">' + esc(local(c)) + (c.zona_codigo ? " · zona " + esc(c.zona_codigo) : "") + (c.prioridade ? " · prioridade " + esc(c.prioridade) : "") + (c.score != null ? " · score " + c.score : "") +
-      (demo ? "" : ' · <a href="#cliente-' + esc(c.id) + '">Abrir no CRM</a>') + "</p>";
+      (demo ? "" : ' · <button class="c-link" data-acao="prs-cliente" data-id="' + esc(c.id) + '">Ver a ficha no CRM</button>') + "</p>";
     if (p.estado === "a_gerar") return mold(h + '<div class="aviso">' + (p.erro ? "A tentar outra vez: " + esc(p.erro) : "O agente está a preparar esta proposta. Aparece aqui assim que estiver pronta.") + '</div><div class="esqueleto"><i style="width:70%"></i><i style="width:50%"></i></div>');
     if (p.estado === "erro") return mold(h + '<div class="aviso erro">' + esc(p.erro || "Não foi possível preparar a proposta.") + "</div>" + (ap ? '<div class="acts"><button class="btn pri" data-acao="prs-gerar"' + (R.ocupado ? " disabled" : "") + ">Tentar de novo</button></div>" : ""));
-    if (p.resumo || (p.fontes || []).length) h += '<section class="p-sec"><h3>O que o agente encontrou</h3>' + (p.resumo ? "<p>" + esc(p.resumo) + "</p>" : "") +
-      ((p.fontes || []).length ? '<p class="muted">Páginas lidas: ' + p.fontes.map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")) + "</a>").join(", ") + "</p>" : '<p class="muted">Sem site para ler: a proposta usa só os dados da base.</p>') + "</section>";
+    const seg = !!TIPOS_PR[p.tipo], ant = seg && p.anterior_id ? R.propostas[p.anterior_id] : null;
+    if (seg) h += '<section class="p-sec"><h3>Porquê este seguimento</h3><p>' + esc(p.resumo || "A barbearia ainda não respondeu.") + "</p>" + (ant ? '<details class="prs-ant"><summary>Mensagem anterior</summary><div class="prs-msg-lida">' + esc(ant.mensagem) + "</div></details>" : "") +
+      (p.estado === "enviada" ? "" : '<p class="muted">Texto do guião «' + (p.tipo === "seguimento1" ? "Follow-up 1" : "Follow-up 2") + '» da empresa. Podes ajustá-lo antes de aprovar.</p>') + "</section>";
+    else if (p.resumo || (p.fontes || []).length) h += '<section class="p-sec"><h3>O que o agente encontrou</h3>' + (p.resumo ? "<p>" + esc(p.resumo) + "</p>" : "") +
+      ((p.fontes || []).length ? '<p class="muted">Páginas lidas: ' + p.fontes.filter((u) => /^https?:\/\//i.test(u)).map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")) + "</a>").join(", ") + "</p>" : '<p class="muted">Sem site para ler: a proposta usa só os dados da base.</p>') + "</section>";
     if (p.estado === "enviada") {
       h += '<div class="aviso ok">Enviada ' + esc(haQuanto(p.enviada_em)) + " por " + esc(nomeDe(p.enviada_por) || "—") + " (" + esc(CANAIS[p.canal]) + (p.destino ? " · " + esc(p.canal === "instagram" ? "@" + p.destino : p.canal === "email" ? p.destino : fmtTel(p.destino)) : "") + "). Ficou registada no CRM, com o seguimento para a visita.</div>";
       h += '<section class="p-sec"><h3>Mensagem enviada</h3>' + (p.assunto ? "<p><b>" + esc(p.assunto) + "</b></p>" : "") + '<div class="prs-msg-lida">' + esc(p.mensagem) + "</div></section>";
-      return mold(h + visitaHTML(p));
+      if (p.respondeu_em) h += '<div class="aviso ok">A barbearia respondeu (marcado por ' + esc((nomeDe(p.respondeu_por) || "—").split(" ")[0]) + " " + esc(haQuanto(p.respondeu_em)) + ")" + (p.resposta ? ": «" + esc(p.resposta) + "»" : ".") + "</div>";
+      else if (!Object.values(R.propostas).some((x) => x.cliente_id === p.cliente_id && x.respondeu_em))
+        h += '<section class="p-sec"><h3>Resposta</h3><p class="muted">Se a barbearia respondeu (por mensagem, chamada ou na loja), marca aqui: os seguimentos param e ' + esc((nomeDe(R.cfg?.comercial_id) || "o comercial").split(" ")[0]) + " recebe um aviso para marcar a visita.</p>" +
+          '<div class="prs-rejeitar"><input id="prs-resposta" placeholder="O que disseram? (opcional)" maxlength="500"><button class="btn pri" data-acao="prs-respondeu"' + (R.ocupado ? " disabled" : "") + ">" + I.check + "A barbearia respondeu</button></div></section>";
+      return mold(h + (seg ? "" : visitaHTML(p)));
     }
     if (p.estado === "rejeitada") {
       h += '<div class="aviso">Rejeitada por ' + esc(nomeDe(p.aprovada_por) || "—") + " " + esc(haQuanto(p.aprovada_em)) + (p.motivo ? ": «" + esc(p.motivo) + "»" : ".") + "</div>" + '<div class="prs-msg-lida">' + esc(p.mensagem) + "</div>";
       return mold(h + (ap ? '<div class="acts"><button class="btn sec" data-acao="prs-reabrir">Reabrir</button></div>' : ""));
     }
     const r = rasc(p), canal = r.canal, dis = editavel ? "" : " disabled";
-    h += '<section class="p-sec"><h3>Contacto principal</h3><div class="seg prs-canais" role="radiogroup" aria-label="Canal">' + Object.keys(CANAIS).filter((k) => can[k]).map((k) =>
+    h += '<section class="p-sec"><h3>Contacto principal</h3><div class="seg prs-canais" role="radiogroup" aria-label="Canal">' + Object.keys(CANAIS).filter((k) => can[k] && (!seg || k === p.canal)).map((k) =>
       '<button type="button" role="radio" aria-checked="' + (k === canal) + '" data-acao="prs-canal" data-v="' + k + '"' + dis + ">" + esc(CANAIS[k]) + "<small>" + esc(k === "instagram" ? "@" + can[k] : k === "email" ? can[k] : fmtTel(can[k])) + "</small></button>").join("") + "</div>" +
-      (!r.mensagens[canal] && canal ? '<p class="muted">O agente não escreveu uma versão para este canal. Escreve-a ou carrega em «Preparar de novo».</p>' : "") + "</section>";
+      (!seg && !r.mensagens[canal] && canal ? '<p class="muted">O agente não escreveu uma versão para este canal. Escreve-a ou carrega em «Preparar de novo».</p>' : "") + "</section>";
     const m = r.mensagens[canal];
     h += '<section class="p-sec"><h3>' + (canal === "telefone" ? "Guião da chamada" : "Mensagem") + "</h3>" + (canal === "email" ? '<div class="campo"><label for="prs-assunto">Assunto</label><input id="prs-assunto" maxlength="140" value="' + esc(m?.assunto || "") + '"' + dis + "></div>" : "") +
       '<textarea id="prs-msg" class="prs-msg" rows="' + (canal === "email" ? 12 : 8) + '"' + dis + ">" + esc(canal === "email" ? m?.corpo || "" : m || "") + '</textarea><small class="muted prs-conta" id="prs-conta">' + (canal === "email" ? m?.corpo || "" : m || "").length + " caracteres</small></section>";
-    h += '<section class="p-sec"><h3>Questões a definir</h3>' + (r.perguntas.length ? '<div class="prs-perguntas">' + r.perguntas.map((q, i) => '<div class="campo"><label for="prs-q' + i + '">' + esc(q.texto) + '</label><input id="prs-q' + i + '" data-prs-perg="' + i + '" value="' + esc(q.resposta || "") + '" placeholder="A tua decisão (opcional)"' + dis + "></div>").join("") + "</div>" : '<p class="muted">Sem questões para esta barbearia.</p>') +
+    if (!seg) h += '<section class="p-sec"><h3>Questões a definir</h3>' + (r.perguntas.length ? '<div class="prs-perguntas">' + r.perguntas.map((q, i) => '<div class="campo"><label for="prs-q' + i + '">' + esc(q.texto) + '</label><input id="prs-q' + i + '" data-prs-perg="' + i + '" value="' + esc(q.resposta || "") + '" placeholder="A tua decisão (opcional)"' + dis + "></div>").join("") + "</div>" : '<p class="muted">Sem questões para esta barbearia.</p>') +
       (editavel ? '<div class="acts"><button class="btn sec" data-acao="prs-gerar"' + (R.ocupado ? " disabled" : "") + ">" + (R.ocupado === "gerar" ? "A preparar…" : "Preparar de novo com as respostas") + "</button></div>" : "") + "</section>";
-    h += visitaHTML(p);
+    if (!seg) h += visitaHTML(p);
     if (!ap) return mold(h + '<p class="muted">Quem aprova: ' + esc(nomesAprovadores()) + ".</p>");
     let pe = "";
     if (R.rejeitar) pe = '<div class="prs-rejeitar"><input id="prs-motivo" placeholder="Porquê? (opcional, ex.: já é cliente de outra marca)" maxlength="300"><button class="btn sec" data-acao="prs-rejeitar-nao">Cancelar</button><button class="btn perigo" data-acao="prs-rejeitar-sim">Rejeitar</button></div>';
@@ -377,7 +412,8 @@ export function criarProspecao(ctx) {
       case "prs-pag": R.pag = +el.dataset.p; render(); return true;
       case "prs-pag-b": R.pagB = +el.dataset.p; render(); return true;
       case "prs-f-estado": R.fEstado = el.dataset.v; R.pagB = 1; render(); return true;
-      case "prs-ver-zona": R.fZona = el.dataset.v; R.fEstado = ""; R.pagB = 1; R.tab = "barbearias"; return true;
+      case "prs-ver-zona": R.fZona = el.dataset.v; R.fEstado = ""; R.q = ""; R.pagB = 1; R.tab = "barbearias"; location.hash = "prospecao-barbearias"; return true;
+      case "prs-cliente": abrirCliente(el.dataset.id); return true;
       case "prs-abrir": R.rejeitar = false; abrir({ tipo: "proposta", id: el.dataset.id }); return true;
       case "prs-excl-ver": verExcluidos(1); return true;
       case "prs-excl-pag": verExcluidos(+el.dataset.p); return true;
@@ -400,6 +436,14 @@ export function criarProspecao(ctx) {
       case "prs-rejeitar": R.rejeitar = true; renderPainel(true); setTimeout(() => $("#prs-motivo")?.focus(), 30); return true;
       case "prs-rejeitar-nao": R.rejeitar = false; renderPainel(true); return true;
       case "prs-rejeitar-sim": if (p) api.prs.decidir(p.id, "rejeitar", { motivo: $("#prs-motivo")?.value.trim() || "" }).then((x) => { R.propostas[p.id] = { ...p, ...x }; R.rejeitar = false; render(); renderPainel(true); toast("Proposta rejeitada."); }).catch(falha); return true;
+      case "prs-respondeu": if (p && !R.ocupado) {
+        R.ocupado = "respondeu";
+        api.prs.respondeu(p.id, ($("#prs-resposta")?.value || "").trim()).then((x) => {
+          R.propostas[p.id] = { ...p, ...x };
+          Object.values(R.propostas).forEach((o) => { if (o.cliente_id === p.cliente_id && o.tipo && o.tipo !== "inicial" && ["pendente", "aprovada", "a_gerar", "erro"].includes(o.estado)) Object.assign(o, { estado: "rejeitada", motivo: "A barbearia respondeu" }); });
+          toast("Registado. Os seguimentos param e o comercial recebe um aviso.");
+        }).catch(falha).finally(() => { R.ocupado = false; render(); renderPainel(true); });
+      } return true;
       case "prs-reabrir": if (p) api.prs.decidir(p.id, "reabrir").then((x) => { R.propostas[p.id] = { ...p, ...x }; render(); renderPainel(true); }).catch(falha); return true;
       case "prs-copiar-visita": if (p) navigator.clipboard?.writeText((p.perguntas_visita || []).map((q) => "- " + q).join("\n")).then(() => toast("Perguntas copiadas.")).catch(() => toast("Não foi possível copiar.", true)); return true;
     }
@@ -423,7 +467,7 @@ export function criarProspecao(ctx) {
       aprovadores: [...document.querySelectorAll("[data-prs-aprov]")].filter((x) => x.checked).map((x) => x.dataset.prsAprov),
       comercial_id: $("#prs-comercial").value || null, email_resposta: $("#prs-resp").value.trim(), assinatura: $("#prs-assin").value.trim(), oferta: $("#prs-oferta").value.trim(),
       perguntas_internas: linhas("#prs-qint"), perguntas_barbearia: linhas("#prs-qbar"), guioes, pesquisa_auto: $("#prs-pauto").checked,
-      max_novos: Math.max(0, Math.min(500, +$("#prs-maxn").value || 0)), distritos: [...document.querySelectorAll("[data-prs-dist]")].filter((x) => x.checked).map((x) => x.dataset.prsDist),
+      max_novos: Math.max(0, Math.min(500, +$("#prs-maxn").value || 0)), ...("seguimento1_dias" in R.cfg ? { seguimentos: $("#prs-seg").checked, seguimento1_dias: Math.max(1, Math.min(60, +$("#prs-seg1").value || 4)), seguimento2_dias: Math.max(1, Math.min(60, +$("#prs-seg2").value || 5)) } : {}), distritos: [...document.querySelectorAll("[data-prs-dist]")].filter((x) => x.checked).map((x) => x.dataset.prsDist),
     };
     if (campos.email_resposta && !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(campos.email_resposta)) { toast("O email para as respostas não parece válido.", true); return; }
     try { R.cfg = await api.prs.guardarConfig(campos); render(); toast("Definições guardadas."); } catch (e) { falha(e); }
@@ -460,14 +504,15 @@ export function criarProspecao(ctx) {
   /* ============================== Início e contagens ============================== */
   function blocoInicio() {
     if (!pode()) return "";
-    if (R.estado === "por-carregar") carregar();
-    if (R.estado !== "pronto" || !aprova()) return "";
+    if (R.estado === "por-carregar") carregarResumo();
+    if (!temPendentes() || !aprova()) return "";
     const l = lista("pendente"); if (!l.length) return "";
     return '<section class="cartao-sec prs-inicio" data-marca="twentysix"><h3>Prospeção <span class="mono muted">' + l.length + ' por aprovar</span> <a class="c-link" href="#prospecao" style="font-size:13px;margin-left:8px">Abrir</a></h3><div class="prs-lista prs-lista-mini">' +
       l.slice(0, 3).map(cartao).join("") + "</div></section>";
   }
-  const contagem = () => (R.estado === "pronto" && aprova() ? lista("pendente").length : 0);
-  function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(R, { estado: "por-carregar", cfg: null, propostas: {}, balancos: [], zonas: [], leads: {}, rasc: {}, imp: null, excl: null, ocupado: false, rejeitar: false }); }
+  const contagem = () => (temPendentes() && aprova() ? lista("pendente").length : 0);
+  function reiniciar() { if (desligar) { desligar(); desligar = null; } resumo = "por-carregar"; Object.assign(R, { estado: "por-carregar", cfg: null, propostas: {}, balancos: [], zonas: [], leads: {}, rasc: {}, imp: null, excl: null, ocupado: false, rejeitar: false }); }
 
-  return { vista, painel, clique, escrever, mudar, submeter: async () => false, carregar, blocoInicio, contagem, reiniciar, estado: () => R.estado, digitos };
+  const hashAtual = () => "#prospecao" + (R.tab && R.tab !== "propostas" ? "-" + R.tab : "");
+  return { vista, painel, clique, escrever, mudar, submeter: async () => false, carregar, blocoInicio, contagem, reiniciar, estado: () => R.estado, hashAtual };
 }

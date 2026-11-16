@@ -480,7 +480,7 @@ function vistaApp() {
   else if (S.rota === "financeiro" && podeFinanceiro(S.eu)) corpo = FIN.vista(S.param);
   else if ((S.rota === "marketing" || S.rota === "publicacao") && podeMarketing(S.eu)) corpo = MK.vista(S.rota === "marketing" ? S.param : null);
   else if ((S.rota === "stocks" || S.rota === "stock") && podeStocks(S.eu)) corpo = STK.vista(S.rota === "stocks" ? S.param : null);
-  else if ((S.rota === "prospecao" || S.rota === "proposta") && podeProspecao(S.eu)) corpo = PRS.vista(S.rota === "prospecao" ? S.param : null);
+  else if ((S.rota === "prospecao" || S.rota === "proposta") && podeProspecao(S.eu)) corpo = PRS.vista(S.rota === "prospecao" ? S.param : undefined);
   else if (["prazos", "prazo", "viatura"].includes(S.rota) && (podePrazos(S.eu) || S.rota !== "prazos" || PRZ.estado() === "pronto")) corpo = PRZ.vista(S.rota === "prazos" ? S.param : null);
   else if (["operacional", "fornecedor", "pedido"].includes(S.rota) && podeOperacional(S.eu)) corpo = OP.vista(S.rota === "operacional" ? S.param : null);
   else if (S.rota === "auditoria") corpo = AUD.vista(/^[A-Z]{2,4}-/.test(S.param || "") ? null : S.param);
@@ -1201,7 +1201,7 @@ function fechar() {
   if (S.rota === "publicacao") history.replaceState(null, "", "#marketing"), lerRota();
   if (S.rota === "stock") history.replaceState(null, "", "#stocks"), lerRota();
   if (S.rota === "prazo" || S.rota === "viatura") history.replaceState(null, "", "#prazos"), lerRota();
-  if (S.rota === "proposta") history.replaceState(null, "", "#prospecao"), lerRota();
+  if (S.rota === "proposta") history.replaceState(null, "", PRS.hashAtual()), lerRota();
 }
 
 /* ============================== Ações sobre tarefas ============================== */
@@ -1535,7 +1535,8 @@ const PQ = criarPesquisa({
 });
 pesquisaAtiva = PQ;
 const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
-const PRS = criarProspecao({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo: DEMO });
+const PRS = criarProspecao({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo: DEMO,
+  abrirCliente: (id) => { if (CRM.estado() !== "pronto") CRM.carregar(); abrir({ tipo: "cliente", id }); } });
 const PRZ = criarPrazos({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const MK = criarMarketing({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });

@@ -365,12 +365,46 @@ function render() {
   else if (S.fase === "sem-perfil") app.innerHTML = vistaSemPerfil();
   else app.innerHTML = vistaApp();
   renderPainel();
+  ajustarEcra(app);
   if (pesquisaAtiva?.aberta()) pesquisaAtiva.atualizar();
   if (aid && !$("#painel-root").contains(document.getElementById(aid))) {
     const el = document.getElementById(aid);
     if (el && el !== document.activeElement) { el.focus(); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch { /* */ } }
   }
 }
+
+// Depois de desenhar: separadores com o ativo à vista, rótulos das listas em cartões (telemóvel) e textos de introdução abertos
+const introAberta = new Set();
+function marcarTabs(t) {
+  const m = t.scrollWidth - t.clientWidth;
+  t.classList.toggle("mais-dir", m > 2 && t.scrollLeft < m - 2);
+  t.classList.toggle("mais-esq", m > 2 && t.scrollLeft > 2);
+}
+function ajustarEcra(raiz) {
+  if (!raiz) return;
+  raiz.querySelectorAll(".tabs").forEach((t) => {
+    const a = t.querySelector('[aria-selected="true"]');
+    if (a && t.scrollWidth > t.clientWidth) {
+      const esq = a.offsetLeft - t.offsetLeft, dir = esq + a.offsetWidth;
+      if (esq < t.scrollLeft + 24 || dir > t.scrollLeft + t.clientWidth - 24) t.scrollLeft = Math.max(0, esq - (t.clientWidth - a.offsetWidth) / 2);
+    }
+    marcarTabs(t);
+  });
+  raiz.querySelectorAll("table.tab-cartoes").forEach((tb) => {
+    const rot = [...tb.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    tb.querySelectorAll("tbody tr").forEach((tr) => [...tr.children].forEach((td, i) => { if (rot[i] && td.colSpan === 1 && !td.dataset.rot) td.dataset.rot = rot[i]; }));
+  });
+  const chave = (location.hash || "#inicio").split("-")[0];
+  raiz.querySelectorAll(".sub-cab").forEach((p) => p.classList.toggle("aberto", introAberta.has(chave)));
+}
+document.addEventListener("scroll", (e) => { if (e.target?.classList?.contains("tabs")) marcarTabs(e.target); }, true);
+document.addEventListener("click", (e) => {
+  const p = e.target.closest?.(".sub-cab"); if (!p || window.innerWidth > 820) return;
+  const chave = (location.hash || "#inicio").split("-")[0];
+  introAberta.has(chave) ? introAberta.delete(chave) : introAberta.add(chave);
+  p.classList.toggle("aberto", introAberta.has(chave));
+});
+addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(marcarTabs));
 
 function marcaEntrada() {
   return '<div class="marca-entrada"><span class="nome">Central <b>26</b></span><span class="sub">Grupo TwentySix · espaço de trabalho interno</span></div>';
@@ -1074,6 +1108,7 @@ function renderPainel(forcar) {
   const ae = document.activeElement;
   if (!forcar && S.aberto && root.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
   root.innerHTML = S.fase === "app" ? painelHTML() : "";
+  ajustarEcra(root);
   const ta = root.querySelector(".p-titulo"); if (ta) autoAltura(ta);
 }
 const autoAltura = (el) => { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };

@@ -302,7 +302,7 @@ export function criarFornecedores(ctx) {
     // propostas
     h += '<section class="p-sec"><h3>Propostas <span class="mono muted">' + prs.filter((x) => ["recebida", "escolhida"].includes(x.estado)).length + "/" + prs.length + " recebidas</span></h3>";
     if (prs.length) {
-      h += '<div class="tabela-scroll"><table class="crm-tabela prop-tab"><thead><tr><th>Fornecedor</th><th>Estado</th><th class="n">Preço</th><th>Base</th><th>Entrega</th><th>Condições</th><th>Validade</th><th></th></tr></thead><tbody>' +
+      h += '<div class="tabela-scroll"><table class="crm-tabela prop-tab tab-cartoes"><thead><tr><th>Fornecedor</th><th>Estado</th><th class="n">Preço</th><th>Base</th><th>Entrega</th><th>Condições</th><th>Validade</th><th></th></tr></thead><tbody>' +
         prs.map((x) => {
           const f = O.forn[x.fornecedor_id], lid = x.id;
           return '<tr class="' + (x.estado === "escolhida" ? "escolhida" : x.estado === "recusada" ? "recusada" : "") + (melhor?.id === lid && p.estado !== "decidido" ? " melhor" : "") + '"><td><button class="c-link" data-acao="op-forn-abrir" data-id="' + esc(x.fornecedor_id) + '">' + esc(f?.nome || "—") + "</button>" + (melhor?.id === lid && p.estado !== "decidido" ? ' <span class="tag-tipo">mais barata</span>' : "") + "</td>" +

@@ -139,7 +139,7 @@ export function criarProspecao(ctx) {
       (!q || n([c.nome, c.concelho, c.distrito, c.telefone, c.email, c.instagram].join(" ")).includes(q)))
       .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || a.nome.localeCompare(b.nome, "pt"));
     const pg = paginar(l, R.pagB, 25); R.pagB = pg.pag;
-    h += '<div class="tabela-scroll"><table class="crm-tabela prs-tab"><thead><tr><th>Barbearia</th><th>Local</th><th>Estado</th><th class="num">Score</th><th>Contacto principal</th><th>Zona</th><th>Abordagem</th></tr></thead><tbody>' +
+    h += '<div class="tabela-scroll"><table class="crm-tabela prs-tab tab-cartoes"><thead><tr><th>Barbearia</th><th>Local</th><th>Estado</th><th class="num">Score</th><th>Contacto principal</th><th>Zona</th><th>Abordagem</th></tr></thead><tbody>' +
       (pg.itens.map((c) => {
         const k = canalPrincipal(c), cont = canaisDe(c)[k] || "", p = prop[c.id];
         return '<tr><td><button class="c-link" data-acao="prs-cliente" data-id="' + c.id + '">' + esc(c.nome) + "</button>" + (c.origem === "auto" ? ' <span class="prs-novo">nova</span>' : "") + "<small>" + esc(c.tipo_negocio || "") + "</small></td><td>" + esc(local(c)) + "</td><td>" + esc(c.estado_prospecao || "—") + (c.prioridade ? "<small>prioridade " + esc(c.prioridade) + "</small>" : "") +

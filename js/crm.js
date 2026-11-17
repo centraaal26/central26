@@ -98,11 +98,7 @@ export function criarCrm(ctx) {
   async function carregar() {
     C.estado = "a-carregar"; agendarRender();
     try {
-      const d = await api.crm.carregar();
-      C.clientes = Object.fromEntries(d.clientes.map((c) => [c.id, c]));
-      C.produtos = Object.fromEntries(d.produtos.map((p) => [p.codigo, p]));
-      C.vendas = d.vendas; C.contactos = d.contactos; C.importacoes = d.importacoes;
-      C.estado = "pronto"; C.versao++;
+      aplicar(await api.crm.carregar(), true);
       if (!desligar && api.crm.subscrever) desligar = api.crm.subscrever(aoMudar);
     } catch (e) {
       C.estado = "erro";
@@ -110,6 +106,14 @@ export function criarCrm(ctx) {
     }
     agendarRender();
     if (S.aberto?.tipo === "cliente") renderPainel(true);
+  }
+  // dados novos do servidor (também quando a app abriu com a cópia guardada no aparelho)
+  function aplicar(d, primeira) {
+    C.clientes = Object.fromEntries(d.clientes.map((c) => [c.id, c]));
+    C.produtos = Object.fromEntries(d.produtos.map((p) => [p.codigo, p]));
+    C.vendas = d.vendas; C.contactos = d.contactos; C.importacoes = d.importacoes;
+    C.estado = "pronto"; C.versao++;
+    if (!primeira) { agendarRender(); if (S.aberto?.tipo === "cliente") renderPainel(); }
   }
   function aoMudar(tabela, ev, novo, antigo) {
     if (tabela === "crm_clientes") { if (ev === "DELETE") delete C.clientes[antigo.id]; else C.clientes[novo.id] = novo; }
@@ -650,5 +654,5 @@ export function criarCrm(ctx) {
   function mudarEtapa(id, etapa) { if (C.clientes[id] && C.clientes[id].etapa !== etapa) gravar(id, { etapa }); }
 
   function reiniciar() { MAPA.reiniciar(); if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
-  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, reiniciar, blocoInicio, contagem, estado: () => C.estado };
+  return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, aplicar, reiniciar, blocoInicio, contagem, estado: () => C.estado };
 }

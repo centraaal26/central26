@@ -3,7 +3,23 @@ import { normalizar, MARCA } from "./dados.js";
 
 export function criarPesquisa(ctx) {
   const { S, esc, I, todas, ativos, nomeDe, modulos, paginas } = ctx;
-  const P = { aberta: false, q: "", sel: 0, res: [] };
+  const P = { aberta: false, q: "", sel: 0, res: [], remoto: { q: "", res: [] } };
+  let tempoRemoto = null;
+  // No servidor procura também nas mensagens, nas notas dos clientes e nos comentários (e no que ainda não foi aberto)
+  const GRUPO_REMOTO = { mensagem: "Mensagens", contacto: "Notas de clientes", comentario: "Comentários", cliente: "Clientes", tarefa: "Tarefas", encomenda: "Encomendas",
+    evento: "Agenda", fornecedor: "Fornecedores", prazo: "Seguros e viaturas", viatura: "Seguros e viaturas", publicacao: "Publicações" };
+  function pedirRemoto(q) {
+    clearTimeout(tempoRemoto);
+    if (!ctx.api?.pesquisar || q.trim().length < 2) return;
+    tempoRemoto = setTimeout(async () => {
+      try {
+        const l = await ctx.api.pesquisar(q.trim());
+        if (!l || P.q !== q) return;
+        P.remoto = { q, res: l };
+        if (P.aberta) { P.res = procurar(P.q); P.sel = Math.min(P.sel, Math.max(0, P.res.length - 1)); desenhar(); }
+      } catch { /* sem rede: fica só a pesquisa local */ }
+    }, 280);
+  }
   let root = null;
 
   const n = (s) => normalizar(s).replace(/\s+/g, " ").trim();
@@ -39,7 +55,19 @@ export function criarPesquisa(ctx) {
     if (S.agenda?.estado === "pronto") r.push(...grupo("Agenda", Object.values(S.agenda.eventos).filter((e) => ok([e.titulo, e.local, e.notas].join(" "))).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))
       .map((e) => ({ titulo: e.titulo, sub: new Date(e.inicio).toLocaleString("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + (e.local ? " · " + e.local : ""), href: "#agenda-" + e.id, ic: I.cal })), 4));
     if (S.chat?.estado === "pronto") r.push(...grupo("Conversas", S.chat.resumo.map((c) => ({ c, nome: c.tipo === "direto" ? nomeDe(c.outro_id) || "" : c.tipo === "geral" ? "Geral" : c.nome })).filter((x) => x.nome && ok(x.nome))
-      .map((x) => ({ titulo: x.nome, sub: x.c.tipo === "direto" ? "Mensagem direta" : x.c.tipo === "grupo" ? "Grupo" : "Canal", href: "#chat-" + x.c.canal_id, ic: I.chat })), 3));
+      .map((x) => ({ titulo: x.nome, sub: x.c.tipo === "direto" ? "Mensagem direta" : x.c.tipo === "grupo" ? "Grupo" : "Canal", href: "#chat-" + x.c.canal_id, ic: I.balao })), 3));
+    if (P.remoto.q === q && P.remoto.res.length) {
+      const ja = new Set(r.map((x) => x.href)), porGrupo = {};
+      for (const x of P.remoto.res) {
+        const g = GRUPO_REMOTO[x.tipo] || "Outros", href = x.link || "#";
+        if ((x.tipo !== "mensagem" && x.tipo !== "contacto" && x.tipo !== "comentario" && ja.has(href)) || (porGrupo[g] = (porGrupo[g] || 0) + 1) > 5) continue;
+        ja.add(href + "|" + x.id);
+        r.push({ titulo: x.titulo, sub: x.sub || "", href, ic: x.tipo === "mensagem" ? I.balao : x.tipo === "comentario" || x.tipo === "contacto" ? I.nota || I.lupa : I.lupa, grupo: g });
+      }
+      // junta os do mesmo grupo
+      const ordem = [...new Set(r.map((x) => x.grupo))];
+      r.sort((a, b) => ordem.indexOf(a.grupo) - ordem.indexOf(b.grupo));
+    }
     return r;
   }
 
@@ -50,7 +78,7 @@ export function criarPesquisa(ctx) {
   }
 
   function htmlResultados() {
-    if (!P.q.trim()) return '<div class="pq-vazio"><p>Procura tarefas, pessoas, clientes, encomendas, produtos, seguros, viaturas, fornecedores, publicações…</p><p class="pq-teclas"><kbd>↑</kbd><kbd>↓</kbd> escolher · <kbd>Enter</kbd> abrir · <kbd>Esc</kbd> fechar</p></div>';
+    if (!P.q.trim()) return '<div class="pq-vazio"><p>Procura tarefas, pessoas, clientes, encomendas, produtos, seguros, viaturas, fornecedores, publicações, mensagens e comentários…</p><p class="pq-teclas"><kbd>↑</kbd><kbd>↓</kbd> escolher · <kbd>Enter</kbd> abrir · <kbd>Esc</kbd> fechar</p></div>';
     if (!P.res.length) return '<div class="pq-vazio"><p>Nada encontrado para «' + esc(P.q) + "».</p></div>";
     let h = "", g = "";
     P.res.forEach((x, i) => {
@@ -72,7 +100,7 @@ export function criarPesquisa(ctx) {
   }
   function abrir() {
     if (!root) { root = document.createElement("div"); root.id = "pesquisa-root"; document.body.appendChild(root); ligar(); }
-    P.aberta = true; P.sel = 0; P.res = procurar(P.q); carregarTudo(); desenhar();
+    P.aberta = true; P.sel = 0; P.res = procurar(P.q); carregarTudo(); desenhar(); pedirRemoto(P.q);
     document.documentElement.classList.add("pq-aberta");
   }
   function fechar() { P.aberta = false; desenhar(); document.documentElement.classList.remove("pq-aberta"); }
@@ -83,7 +111,7 @@ export function criarPesquisa(ctx) {
       if (e.target.closest("[data-pq-fechar]")) { fechar(); return; }
       const a = e.target.closest("[data-pq]"); if (a) { e.preventDefault(); ir(+a.dataset.pq); }
     });
-    root.addEventListener("input", (e) => { if (e.target.id === "pq-input") { P.q = e.target.value; P.sel = 0; P.res = procurar(P.q); desenhar(); } });
+    root.addEventListener("input", (e) => { if (e.target.id === "pq-input") { P.q = e.target.value; P.sel = 0; P.res = procurar(P.q); desenhar(); pedirRemoto(P.q); } });
     root.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.preventDefault(); fechar(); }
       else if (e.key === "ArrowDown") { e.preventDefault(); P.sel = Math.min(P.res.length - 1, P.sel + 1); desenhar(); }

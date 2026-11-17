@@ -97,7 +97,7 @@ export function criarDemo() {
     if (dest === euId) emitir("notificacoes", "INSERT", n);
   }
 
-  return {
+  const API = {
     modo: "demo",
     pessoas: () => db.perfis.filter((p) => p.ativo),
     async sessao() { return eu() ? { id: euId, email: eu().email } : null; },
@@ -746,7 +746,7 @@ export function criarDemo() {
       const K = "central26-demo-pref-v1";
       const todas = () => { try { return JSON.parse(localStorage.getItem(K) || "{}"); } catch { return {}; } };
       return {
-        async ler(id) { return { perfil_id: id, email_tarefas: true, email_agenda: true, email_mensagens: true, ...(todas()[id] || {}) }; },
+        async ler(id) { return { perfil_id: id, email_tarefas: true, email_agenda: true, email_mensagens: true, sossego: false, sossego_inicio: 21, sossego_fim: 8, sossego_fds: true, resumo_diario: false, resumo_hora: 8, email_por_ler: true, ...(todas()[id] || {}) }; },
         async guardar(id, campos) { const t = todas(); t[id] = { ...(t[id] || {}), ...campos }; try { localStorage.setItem(K, JSON.stringify(t)); } catch { /* */ } return this.ler(id); },
       };
     })(),
@@ -1081,4 +1081,89 @@ export function criarDemo() {
       };
     })(),
   };
+  fiabilidadeDemo(API);
+  return API;
+
+  // Histórico, reciclagem e comentários do modo de demonstração (na base real faz-se no servidor, script 18)
+  function fiabilidadeDemo(api) {
+    const KF = "central26-demo-fia-v1";
+    let fd = null;
+    const lerF = () => { if (!fd) { try { fd = JSON.parse(localStorage.getItem(KF) || "null"); } catch { fd = null; } fd = fd || { hist: [], coment: [], seq: 1 }; } return fd; };
+    const guardarF = () => { try { localStorage.setItem(KF, JSON.stringify(fd)); } catch { /* sem espaço */ } };
+    const ouvC = new Set();
+    const LINK = { tarefas: "#tarefa-", crm_clientes: "#cliente-", agenda_eventos: "#agenda-", log_encomendas: "#encomenda-", op_fornecedores: "#fornecedor-", op_pedidos: "#pedido-", mk_publicacoes: "#publicacao-", stk_produtos: "#stock-", prz_prazos: "#prazo-", prz_viaturas: "#viatura-" };
+    const IGNORAR = new Set(["atualizado_em", "atualizado_por", "estado_periodo", "checklist_periodo", "lat", "lng", "_pendente"]);
+    const dono = (cam) => { const p = cam.split("."), f = p.pop(); return [p.reduce((x, k) => x?.[k], api), f]; };
+    const antesDe = (tabela, id) => (tabela === "tarefas" ? db.tarefas.find((t) => t.id === id) : null) || api.conhecido?.(tabela, id) || null;
+    const ATUALIZAR = [["tarefas.atualizar", "tarefas"], ["crm.atualizar", "crm_clientes"], ["log.encomendas.atualizar", "log_encomendas"], ["agenda.atualizar", "agenda_eventos"],
+      ["op.fornecedores.atualizar", "op_fornecedores"], ["op.pedidos.atualizar", "op_pedidos"], ["mk.pub.atualizar", "mk_publicacoes"], ["stk.atualizar", "stk_produtos"],
+      ["prz.atualizarPrazo", "prz_prazos"], ["prz.atualizarViatura", "prz_viaturas"]];
+    for (const [cam, tabela] of ATUALIZAR) {
+      const [o, f] = dono(cam); if (!o || typeof o[f] !== "function") continue;
+      const orig = o[f].bind(o);
+      o[f] = async (id, campos, ...resto) => {
+        const antes = structuredClone(antesDe(tabela, id));
+        const r = await orig(id, campos, ...resto);
+        if (antes && r) {
+          const a = {}, d = {};
+          for (const k of Object.keys(campos)) if (!IGNORAR.has(k) && JSON.stringify(antes[k] ?? null) !== JSON.stringify(r[k] ?? null)) { a[k] = antes[k] ?? null; d[k] = r[k] ?? null; }
+          if (Object.keys(d).length) {
+            const F = lerF(), ult = F.hist.find((h) => h.tabela === tabela && h.registo_id === String(id) && h.acao === "alterado");
+            if (ult && ult.autor_id === euId && Date.now() - new Date(ult.criado_em) < 600000) { ult.antes = { ...a, ...ult.antes }; ult.depois = { ...ult.depois, ...d }; ult.criado_em = agora(); }
+            else F.hist.unshift({ id: F.seq++, tabela, registo_id: String(id), acao: "alterado", antes: a, depois: d, autor_id: euId, criado_em: agora(), lote: F.seq });
+            guardarF();
+          }
+        }
+        return r;
+      };
+    }
+    const APAGAR = [["tarefas.apagar", "tarefas", "tarefas.criar"], ["crm.apagar", "crm_clientes", "crm.criar"], ["log.encomendas.apagar", "log_encomendas", "log.encomendas.criar"],
+      ["agenda.apagar", "agenda_eventos", "agenda.criar"], ["op.fornecedores.apagar", "op_fornecedores", "op.fornecedores.criar"], ["op.pedidos.apagar", "op_pedidos", "op.pedidos.criar"],
+      ["prz.apagarPrazo", "prz_prazos", "prz.criarPrazo"], ["prz.apagarViatura", "prz_viaturas", "prz.criarViatura"]];
+    const criarDe = {};
+    for (const [cam, tabela, criar] of APAGAR) {
+      criarDe[tabela] = criar;
+      const [o, f] = dono(cam); if (!o || typeof o[f] !== "function") continue;
+      const orig = o[f].bind(o);
+      o[f] = async (id, ...resto) => {
+        const antes = structuredClone(antesDe(tabela, id));
+        const r = await orig(id, ...resto);
+        if (antes) { const F = lerF(); F.hist.unshift({ id: F.seq++, tabela, registo_id: String(id), acao: "apagado", antes, autor_id: euId, criado_em: agora(), lote: F.seq }); guardarF(); }
+        return r;
+      };
+    }
+    api.hist = {
+      async de(tabela, id) { return structuredClone(lerF().hist.filter((h) => h.tabela === tabela && h.registo_id === String(id))); },
+      async reciclagem() {
+        const g = eGestor(eu()), desde = Date.now() - 30 * 864e5;
+        return structuredClone(lerF().hist.filter((h) => h.acao === "apagado" && !h.recuperado_em && new Date(h.criado_em) > desde && (g || h.autor_id === euId)));
+      },
+      async recuperar(hid) {
+        const F = lerF(), h = F.hist.find((x) => x.id === hid);
+        if (!h || h.recuperado_em) throw new Error("Este registo já não está na reciclagem.");
+        const [o, f] = dono(criarDe[h.tabela] || ""); if (!o || typeof o[f] !== "function") throw new Error("Não foi possível recuperar este registo.");
+        const dados = { ...h.antes }; ["id", "criado_em", "atualizado_em", "numero", "_pendente"].forEach((k) => delete dados[k]);
+        await o[f](dados);
+        h.recuperado_em = agora(); h.recuperado_por = euId; guardarF();
+        return 1;
+      },
+    };
+    api.coment = {
+      async de(tabela, id) { return structuredClone(lerF().coment.filter((c) => c.tabela === tabela && c.registo_id === String(id))); },
+      async criar(tabela, id, texto, mencoes) {
+        const F = lerF(), c = { id: F.seq++, tabela, registo_id: String(id), autor_id: euId, texto, mencoes: mencoes || [], criado_em: agora() };
+        F.coment.push(c); guardarF();
+        (mencoes || []).forEach((p) => { if (p !== euId) notificar(p, "comentario", nome(euId).split(" ")[0] + " mencionou-te", texto.slice(0, 160), (LINK[tabela] || "#") + id); });
+        return structuredClone(c);
+      },
+      async apagar(cid) { const F = lerF(); F.coment = F.coment.filter((c) => c.id !== cid); guardarF(); ouvC.forEach((cb) => cb("DELETE", null, { id: cid })); },
+      subscrever(cb) { ouvC.add(cb); return () => ouvC.delete(cb); },
+    };
+    api.pesquisar = async () => null;
+    api.copias = {
+      async listar() { return []; },
+      async agora() { throw new Error("No modo de demonstração não há cópias automáticas."); },
+      async descarregar() { throw new Error("No modo de demonstração não há cópias automáticas."); },
+    };
+  }
 }

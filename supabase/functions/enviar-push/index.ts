@@ -3,6 +3,7 @@
 // - Chamada automaticamente pela base de dados sempre que é criada uma notificação (acao "enviar").
 // - Chamada pela app para obter a chave pública (acao "chave") e para um envio de teste (acao "teste").
 // As chaves VAPID são criadas automaticamente na primeira utilização e guardadas na base de dados.
+// - Chamada pela base de dados com a acao "email" quando um aviso importante fica 4 horas por ler (script 18).
 // Email (opcional): com o segredo RESEND_API_KEY definido, também envia um email para tarefas atribuídas,
 // eventos da agenda, datas dos seguros e viaturas e mensagens, conforme as preferências de cada pessoa. EMAIL_REMETENTE define o remetente.
 import webpush from "npm:web-push@3.6.7";
@@ -137,6 +138,17 @@ Deno.serve(async (req) => {
         emailDaNotificacao(n).catch((e) => ({ ok: false, motivo: String(e?.message || e) })),
       ]);
       return json({ ok: true, enviados, email });
+    }
+    // Aviso importante que ficou por ler (chamado pela base de dados, avisos_escalar): segue por email
+    if (corpo.acao === "email") {
+      const { data } = await admin.from("configuracao_privada").select("valor").eq("chave", "segredo_webhook").maybeSingle();
+      if (!data || req.headers.get("x-segredo") !== data.valor) return json({ erro: "Não autorizado." }, 401);
+      const n = corpo.notificacao || {};
+      if (!n.destinatario_id || !Deno.env.get("RESEND_API_KEY")) return json({ ok: false, motivo: "sem-email" });
+      const { data: p } = await admin.from("perfis").select("nome, email, ativo").eq("id", n.destinatario_id).maybeSingle();
+      if (!p?.ativo || !p.email) return json({ ok: false, motivo: "sem-destinatario" });
+      const r = await enviarEmail(p.email, p.nome || "", n.titulo || "Central 26", (n.corpo ? n.corpo + " " : "") + "(Este aviso ainda está por ler na Central 26.)", n.link || "");
+      return json(r);
     }
 
     // Pedidos da app: exige sessão de um empregado ativo

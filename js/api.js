@@ -1,6 +1,7 @@
 // Ligação à base de dados (Supabase). O modo de demonstração (demo.js) imita esta interface.
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm";
 import { SUPABASE_URL, SUPABASE_CHAVE } from "./config.js";
+import { envolverApi } from "./offline.js";
 
 const TRADUCOES = [
   [/Invalid login credentials/i, "Email ou palavra-passe errados."],
@@ -48,19 +49,19 @@ export function criarApi() {
     return data;
   }
 
-  // O Supabase devolve no máximo 1000 linhas por pedido: lê por páginas
+  // O Supabase devolve no máximo 1000 linhas por pedido: lê por páginas, três de cada vez
   async function todas(construir, tamanho = 1000) {
-    const out = [];
-    for (let de = 0; ; de += tamanho) {
-      const { data, error } = await construir().range(de, de + tamanho - 1);
-      if (error) throw erroPt(error);
-      out.push(...data);
-      if (data.length < tamanho) return out;
+    const pagina = async (n) => { const { data, error } = await construir().range(n * tamanho, n * tamanho + tamanho - 1); if (error) throw erroPt(error); return data; };
+    const out = await pagina(0);
+    if (out.length < tamanho) return out;
+    for (let n = 1; ; n += 3) {
+      const lote = await Promise.all([pagina(n), pagina(n + 1), pagina(n + 2)]);
+      for (const d of lote) { out.push(...d); if (d.length < tamanho) return out; }
     }
   }
   const semFuncao = (e) => /PGRST202|Could not find the function/i.test(String(e?.code) + " " + String(e?.message));
 
-  return {
+  const objeto = {
     modo: "real",
 
     async sessao() { const { data } = await sb.auth.getSession(); return data.session?.user || null; },
@@ -402,7 +403,7 @@ export function criarApi() {
         log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
-        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id" };
+        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -521,5 +522,58 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    // histórico e reciclagem (script 18)
+    hist: {
+      async de(tabela, id) {
+        const { data, error } = await sb.from("historico").select("*").eq("tabela", tabela).eq("registo_id", String(id)).order("criado_em", { ascending: false }).limit(60);
+        if (error) { if (/historico|PGRST205|does not exist/i.test(error.message)) throw new Error("FALTA_SCRIPT"); throw erroPt(error); }
+        return data;
+      },
+      async reciclagem() {
+        const desde = new Date(Date.now() - 30 * 864e5).toISOString();
+        const { data, error } = await sb.from("historico").select("*").eq("acao", "apagado").is("recuperado_em", null).gte("criado_em", desde).order("criado_em", { ascending: false }).limit(300);
+        if (error) { if (/historico|PGRST205|does not exist/i.test(error.message)) throw new Error("FALTA_SCRIPT"); throw erroPt(error); }
+        return data;
+      },
+      async recuperar(id) { return ok(await sb.rpc("recuperar", { p_id: id })); },
+    },
+    coment: {
+      async de(tabela, id) {
+        const { data, error } = await sb.from("comentarios").select("*").eq("tabela", tabela).eq("registo_id", String(id)).order("criado_em");
+        if (error) { if (/comentarios|PGRST205|does not exist/i.test(error.message)) throw new Error("FALTA_SCRIPT"); throw erroPt(error); }
+        return data;
+      },
+      async criar(tabela, id, texto, mencoes) { return ok(await sb.from("comentarios").insert({ tabela, registo_id: String(id), texto, mencoes: mencoes || [] }).select().single()); },
+      async apagar(id) { ok(await sb.from("comentarios").delete().eq("id", id)); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-comentarios")
+          .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, (p) => cb(p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
+    async pesquisar(q) {
+      const { data, error } = await sb.rpc("pesquisar", { p_q: q });
+      if (error) { if (semFuncao(error)) return null; throw erroPt(error); }
+      return data || [];
+    },
+    copias: {
+      async listar() {
+        const { data, error } = await sb.from("copias").select("*").order("criado_em", { ascending: false }).limit(20);
+        if (error) { if (/copias|PGRST205|does not exist/i.test(error.message)) throw new Error("FALTA_SCRIPT"); throw erroPt(error); }
+        return data;
+      },
+      async agora() { return invocar("copia-seguranca", { acao: "agora" }); },
+      async descarregar(id) { return invocar("copia-seguranca", { acao: "link", id }); },
+    },
   };
+  // usado pela camada sem rede (offline.js) para detetar alterações de outras pessoas
+  const extras = {
+    async lerLinha(tabela, id) { return ok(await sb.from(tabela).select("*").eq("id", id).maybeSingle()); },
+    async ultimaAlteracao(tabela, id) {
+      const { data, error } = await sb.from("historico").select("autor_id, criado_em").eq("tabela", tabela).eq("registo_id", String(id)).order("criado_em", { ascending: false }).limit(1);
+      return error ? null : data?.[0] || null;
+    },
+  };
+  return envolverApi(objeto, extras);
 }

@@ -1,8 +1,8 @@
 // Central 26 — service worker: abre a app sem rede e mostra as notificações.
-const VERSAO = "central26-v1.16.3";
+const VERSAO = "central26-v1.17.0";
 const BASE = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/app.js", "js/api.js", "js/crm.js", "js/chat.js", "js/agenda.js", "js/logistica.js", "js/geo.js", "js/mapa.js", "js/auditoria.js", "js/fornecedores.js", "js/financeiro.js", "js/marketing.js", "js/stocks.js", "js/stocks-catalogo.js", "js/prazos.js", "js/prospecao.js", "js/prospecao-importar.js", "js/pesquisa.js", "js/assistente.js", "js/xlsx.js", "geo/portugal.json", "js/demo.js", "js/dados.js", "js/modelos.js", "js/config.js",
+  "js/app.js", "js/api.js", "js/crm.js", "js/chat.js", "js/agenda.js", "js/logistica.js", "js/geo.js", "js/mapa.js", "js/auditoria.js", "js/fornecedores.js", "js/financeiro.js", "js/marketing.js", "js/stocks.js", "js/stocks-catalogo.js", "js/prazos.js", "js/offline.js", "js/fiabilidade.js", "js/prospecao.js", "js/prospecao-importar.js", "js/pesquisa.js", "js/assistente.js", "js/xlsx.js", "geo/portugal.json", "js/demo.js", "js/dados.js", "js/modelos.js", "js/config.js",
   "img/icone-192.png", "img/icone-512.png", "img/badge-96.png",
   "img/logo-twentysix.webp", "img/logo-barbearia.webp", "img/logo-academy.webp", "img/logo-tech.webp",
 ];
@@ -14,16 +14,29 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== VERSAO).map((k) => caches.delete(k)))).then(() => self.clients.claim()),
+    caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== VERSAO && k !== "central26-ext").map((k) => caches.delete(k)))).then(() => self.clients.claim()),
   );
 });
 
 // Ficheiros da app: primeiro a rede (para receber atualizações), depois a cópia guardada.
 // «no-cache» obriga a confirmar com o servidor (o GitHub Pages deixa os ficheiros 10 minutos na cache do browser).
 // Pedidos à base de dados e a outros sites passam diretamente.
+// Bibliotecas e letras de outros sites (versões fixas, nunca mudam): primeiro a cópia guardada, para a app abrir sem rede.
+const EXTERNOS = ["cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"];
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+  if (e.request.method !== "GET") return;
+  if (EXTERNOS.includes(url.host)) {
+    e.respondWith(caches.open("central26-ext").then(async (c) => {
+      const guardado = await c.match(e.request);
+      if (guardado) return guardado;
+      const r = await fetch(e.request);
+      if (r.ok || r.type === "opaque") c.put(e.request, r.clone());
+      return r;
+    }));
+    return;
+  }
+  if (url.origin !== self.location.origin) return;
   const pedido = e.request.mode === "navigate" ? fetch(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : fetch(e.request, { cache: "no-cache" });
   e.respondWith(
     pedido

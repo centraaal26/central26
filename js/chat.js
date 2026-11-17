@@ -18,7 +18,7 @@ function quando(ts) {
 }
 
 export function criarChat(ctx) {
-  const { S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $ } = ctx;
+  const { S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $, novaTarefa } = ctx;
   const C = (S.chat = { estado: "por-carregar", resumo: [], ativo: null, msgs: {}, temMais: {}, rascunho: {}, editar: null, nova: false, modoNova: "pessoa", filtroNova: "", grupoNome: "", grupoSel: new Set(), membros: {}, gravacao: null, sairConfirmar: false, sugestoes: [] });
   const players = {}; // áudios carregados: caminho → { audio, url, pos }
   let aTocar = null;
@@ -181,7 +181,11 @@ export function criarChat(ctx) {
           if (m.anexo_path) h += audioHTML(m);
           if (m.texto) h += '<p class="msg-t">' + formatar(m.texto) + (m.editado_em ? ' <small class="muted">(editada)</small>' : "") + "</p>";
         }
-        h += "</div>" + (meu && !m.apagado && C.editar !== m.id ? '<span class="msg-acts">' + (m.texto ? '<button class="ib" data-acao="chat-editar" data-id="' + m.id + '" aria-label="Editar mensagem">Editar</button>' : "") + '<button class="ib perigo" data-acao="chat-apagar" data-id="' + m.id + '" aria-label="Apagar mensagem">' + I.lixo + "</button></span>" : "") + "</div>";
+        const acts = !m.apagado && C.editar !== m.id
+          ? (m.texto ? '<button class="ib" data-acao="chat-tarefa" data-id="' + m.id + '" aria-label="Criar tarefa a partir desta mensagem" title="Criar tarefa">' + I.tarefas + "</button>" : "") +
+            (meu ? (m.texto ? '<button class="ib" data-acao="chat-editar" data-id="' + m.id + '" aria-label="Editar mensagem">Editar</button>' : "") + '<button class="ib perigo" data-acao="chat-apagar" data-id="' + m.id + '" aria-label="Apagar mensagem">' + I.lixo + "</button>" : "")
+          : "";
+        h += "</div>" + (acts ? '<span class="msg-acts">' + acts + "</span>" : "") + "</div>";
         ant = m;
       }
     }
@@ -318,6 +322,15 @@ export function criarChat(ctx) {
       case "chat-nova-fechar": C.nova = false; render(); return true;
       case "chat-direto": abrirDireto(id); return true;
       case "chat-antes": antes(); return true;
+      case "chat-tarefa": {
+        const m = (C.msgs[C.ativo] || []).find((x) => String(x.id) === String(id));
+        if (m && novaTarefa) {
+          const canal = C.resumo.find((c) => c.canal_id === C.ativo || c.id === C.ativo), onde = canal ? (canal.tipo === "direto" ? "conversa com " + (nomeDe(canal.outro_id) || "") : "#" + nomeCanal(canal)) : "conversa";
+          const limpo = m.texto.replace(/\s+/g, " ").trim();
+          novaTarefa({ titulo: limpo.length > 90 ? limpo.slice(0, 87) + "…" : limpo, notas: m.texto + "\n\n— " + (nomeDe(m.autor_id) || "Mensagem") + ", " + onde, origem: "#chat-" + C.ativo });
+        }
+        return true;
+      }
       case "chat-editar": C.editar = +id; render(); setTimeout(() => { const t = $("#chat-editar"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 0); return true;
       case "chat-editar-cancelar": C.editar = null; render(); return true;
       case "chat-apagar": apagar(+id); return true;

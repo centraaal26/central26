@@ -65,6 +65,7 @@ Espaço de trabalho interno do Grupo TwentySix: tarefas por marca e por período
   - Despesas partilhadas, impostos, Hairshopping, Tech e Formação por rubrica e por mês, agrupadas por categoria (editável), com os valores fora do normal destacados.
   - A folha RH (vencimentos de cada pessoa) não é lida: só entra o total pago aos barbeiros de cada espaço.
 - **Modelos sugeridos:** rotinas de cada marca e rotinas da Logística.
+- **Fiabilidade:** funciona sem rede (os dados ficam no aparelho e as alterações seguem quando a rede volta), avisa quando outra pessoa mudou o mesmo campo, reciclagem de 30 dias, histórico e comentários em cada ficha, pesquisa nas mensagens e notas, horas de sossego e resumo diário dos avisos, e cópia de segurança automática semanal.
 - **Segurança:** as permissões são aplicadas na própria base de dados, não só no ecrã. O site tem uma política de segurança de conteúdo (só carrega código e dados dos serviços que usa) e o agente de prospeção só lê sites públicos e não copia links nem contactos estranhos das páginas para as mensagens.
 
 ## Instalação (uma única vez)
@@ -90,6 +91,8 @@ Só é preciso para os avisos chegarem ao telemóvel; dentro da app funcionam se
 |---|---|
 | `enviar-push` | `supabase/functions/enviar-push/index.ts` |
 | `assistente` (passo 3n, opcional) | `supabase/functions/assistente/index.ts` |
+| `prospecao` (passo 3p) | `supabase/functions/prospecao/index.ts` |
+| `copia-seguranca` (passo 3q) | `supabase/functions/copia-seguranca/index.ts` |
 
 O editor do Supabase sugere um nome automático (por exemplo «hyper-function»). Apaga-o e escreve `enviar-push` antes de carregar em **Deploy**.
 
@@ -189,6 +192,23 @@ O assistente só consulta o que a pessoa que pergunta já pode ver na app (as me
 
 O WhatsApp e o Instagram não deixam enviar mensagens automáticas a quem nunca falou connosco sem a API paga do WhatsApp Business (e o Instagram não deixa de todo): a app abre a conversa com a mensagem pronta e quem aprova só carrega em enviar. O email sai da própria app quando o domínio estiver verificado no Resend.
 
+### 3q. Fiabilidade: histórico, reciclagem, comentários, avisos e cópias automáticas
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/18-fiabilidade.sql` → **Run**.
+2. Edge Functions → **Deploy a new function** → **Via Editor** → nome `copia-seguranca` → apaga o exemplo, cola o código de `supabase/functions/copia-seguranca/index.ts` → **Deploy**. Na página da função, desliga **Verify JWT**.
+3. Edge Functions → `enviar-push` → cola outra vez o código de `supabase/functions/enviar-push/index.ts` → **Deploy** (passa a enviar por email os avisos importantes que ficam por ler).
+4. Na app (direção): **Mais → Definições → Cópia de segurança → Fazer uma cópia agora**, para confirmar que fica guardada.
+
+O que passa a existir:
+- **Sem rede:** a app abre com os últimos dados guardados no aparelho. Tarefas, fichas de clientes, encomendas e contactos feitos sem rede ficam «por enviar» e seguem sozinhos quando a rede volta.
+- **Alterações de outras pessoas:** antes de gravar, a app confirma se alguém mudou o mesmo campo entretanto e pergunta com que versão ficar, em vez de apagar a alteração do outro sem aviso.
+- **Reciclagem** (Mais → Reciclagem): o que é apagado fica 30 dias e pode ser recuperado, com o que foi apagado junto (ex.: os contactos de um cliente). A direção vê tudo; cada pessoa vê o que apagou.
+- **Histórico** em cada ficha: quem mudou o quê e quando.
+- **Comentários** em tarefas, clientes, encomendas, eventos, fornecedores, pedidos, publicações, produtos, prazos e viaturas, com @menções (quem é mencionado e o responsável recebem um aviso).
+- **Pesquisa** também nas mensagens, nas notas dos clientes e nos comentários.
+- **Avisos** (Mais → Definições → Quando recebo avisos): horas de sossego, resumo diário e email quando um aviso importante fica 4 horas por ler.
+- **Mensagem → tarefa:** em cada mensagem do chat há um botão para criar uma tarefa com o texto e a ligação à conversa.
+- **Cópia automática** todos os domingos às 3h, guardada num armazenamento privado do Supabase (ficam as 12 últimas). Se falhar, a direção recebe um aviso. Continua a ser boa ideia descarregar uma cópia de vez em quando para fora do Supabase.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -232,7 +252,10 @@ js/prazos.js                                seguros e viaturas: datas, avisos an
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)
-js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K)
+js/pesquisa.js                              pesquisa global (Ctrl/⌘ + K), também no servidor
+js/offline.js                               sem rede: dados guardados no aparelho, alterações por enviar, conflitos
+js/fiabilidade.js                           comentários e histórico nas fichas, reciclagem, avisos e cópias automáticas
+supabase/functions/copia-seguranca/index.ts cópia de segurança automática semanal
 js/assistente.js                            assistente de IA (conversas, sugestões por departamento, utilização)
 js/dados.js · js/modelos.js                 marcas, períodos, regras e modelos
 supabase/schema.sql                         tabelas, permissões e automatismos

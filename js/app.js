@@ -406,9 +406,9 @@ document.addEventListener("click", (e) => {
 });
 addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(marcarTabs));
 
-// iPhone com a app instalada: depois de o teclado fechar, o iOS às vezes deixa o ecrã 59 pt mais curto
-// (fica uma faixa vazia por baixo da barra de baixo) até a app ser fechada. Pede ao Safari para medir outra vez;
-// se não resultar, encosta a barra ao fundo para a faixa parecer parte dela.
+// iPhone com a app instalada: o iOS às vezes deixa a página 59 pt mais curta do que o ecrã (fica uma faixa
+// vazia por baixo da barra de baixo), sobretudo depois de o teclado fechar, até a app ser fechada.
+// Pede ao Safari para medir outra vez; se continuar curta, a barra de baixo e os painéis descem até ao fundo real.
 (function ecraIPhone() {
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -417,15 +417,16 @@ addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(marc
   const sonda = document.createElement("div");
   sonda.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)";
   document.body.append(sonda);
+  // altura real do ecrã na orientação atual
   const alto = () => (innerWidth < innerHeight ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
-  let esperado = Math.max(innerHeight, alto());
   const teclado = () => { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
-  // só conta quando o conteúdo está mesmo por baixo da barra das horas (topo seguro > 0); noutros modos o iOS já tira a altura dela
-  const falta = () => (parseFloat(getComputedStyle(sonda).paddingTop) > 0 ? esperado - innerHeight : 0);
-  let larg = innerWidth;
+  // só conta quando o conteúdo vai até por baixo da barra das horas (topo seguro > 0): aí a página devia ocupar o ecrã todo
+  const falta = () => (parseFloat(getComputedStyle(sonda).paddingTop) > 0 ? Math.max(0, Math.round(alto() - innerHeight)) : 0);
   function medir() {
-    if (innerWidth !== larg) { larg = innerWidth; esperado = Math.max(innerHeight, alto()); }
-    html.classList.toggle("ios-curto", !teclado() && falta() > 30);
+    if (teclado()) return;
+    const f = falta(), curto = f > 20 && f < 120;
+    html.classList.toggle("ios-curto", curto);
+    html.style.setProperty("--ios-falta", (curto ? f : 0) + "px");
   }
   function curar() {
     if (teclado()) return;
@@ -436,6 +437,7 @@ addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(marc
     }
     setTimeout(medir, 250);
   }
+  medir();
   addEventListener("focusout", () => setTimeout(curar, 160));
   addEventListener("resize", () => setTimeout(medir, 60));
   window.visualViewport?.addEventListener("resize", () => setTimeout(medir, 60));
@@ -1065,7 +1067,7 @@ function vistaDefinicoes() {
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   if (!standalone) h += '<section class="cartao-sec so-browser"><h3>Instalar a app</h3><p>No Android: Chrome → menu ⋮ → «Instalar app». No iPhone: Safari → Partilhar → «Adicionar ao ecrã principal».</p>' + (S.instalar ? '<div class="acts"><button class="btn pri" data-acao="instalar">Instalar agora</button></div>' : "") + "</section>";
   h += '<section class="cartao-sec"><h3>Palavra-passe</h3><form class="form" id="form-mudar"><div class="campos-2"><div class="campo"><label for="mp-1">Nova palavra-passe</label><input id="mp-1" type="password" autocomplete="new-password" minlength="8"></div><div class="campo"><label for="mp-2">Repetir</label><input id="mp-2" type="password" autocomplete="new-password" minlength="8"></div></div><div class="acts"><button class="btn sec" type="submit">Mudar palavra-passe</button></div></form></section>';
-  h += '<section class="cartao-sec"><h3>Sessão</h3><p>Central 26 · versão ' + VERSAO + (api.modo === "demo" ? " · modo de demonstração" : "") + '</p><div class="acts"><button class="btn perigo-sec" data-acao="sair">Sair</button></div></section>';
+  h += '<section class="cartao-sec"><h3>Sessão</h3><p>Central 26 · versão ' + VERSAO + (api.modo === "demo" ? " · modo de demonstração" : "") + (document.documentElement.style.getPropertyValue("--ios-falta") ? ' <small class="muted">· ecrã ' + innerHeight + "/" + Math.max(screen.width, screen.height) + (document.documentElement.classList.contains("ios-curto") ? " ajustado" : "") + "</small>" : "") + '</p><div class="acts"><button class="btn perigo-sec" data-acao="sair">Sair</button></div></section>';
   return h;
 }
 

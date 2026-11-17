@@ -1700,9 +1700,8 @@ input:disabled,select:disabled,textarea:disabled{-webkit-text-fill-color:current
   .tab-cartoes td.vazio-linha{flex:1 1 100%}
 }
 
-/* iPhone: quando o iOS deixa o ecrã mais curto (ver ecraIPhone em app.js), a faixa de baixo fica com a cor da barra */
-html.ios-curto{background:var(--surface)}
-html.ios-curto .tabbar{padding-bottom:0}
-html.ios-curto .p-pe{padding-bottom:12px}
-html.ios-curto .wrap{padding-bottom:96px}
-html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h))}
+/* iPhone: quando o iOS deixa a página mais curta do que o ecrã (ver ecraIPhone em app.js), o que está preso ao fundo desce até ao fundo real */
+html.ios-curto .tabbar,html.ios-curto .painel,html.ios-curto .veu{bottom:calc(-1 * var(--ios-falta,0px))}
+html.ios-curto .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px) - var(--ios-falta,0px))}
+html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-bottom,0px) - var(--ios-falta,0px))}
+@media (max-width:820px){html.ios-curto .wrap.chat-wrap{height:calc(100% - 58px - var(--tabbar-h) - env(safe-area-inset-bottom,0px) + var(--ios-falta,0px));padding-bottom:8px}}

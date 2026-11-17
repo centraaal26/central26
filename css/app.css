@@ -1699,3 +1699,10 @@ input:disabled,select:disabled,textarea:disabled{-webkit-text-fill-color:current
   .tab-cartoes tr[data-acao]:active{background:var(--hover)}
   .tab-cartoes td.vazio-linha{flex:1 1 100%}
 }
+
+/* iPhone: quando o iOS deixa o ecrã mais curto (ver ecraIPhone em app.js), a faixa de baixo fica com a cor da barra */
+html.ios-curto{background:var(--surface)}
+html.ios-curto .tabbar{padding-bottom:0}
+html.ios-curto .p-pe{padding-bottom:12px}
+html.ios-curto .wrap{padding-bottom:96px}
+html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h))}

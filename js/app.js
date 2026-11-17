@@ -406,6 +406,44 @@ document.addEventListener("click", (e) => {
 });
 addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(marcarTabs));
 
+// iPhone com a app instalada: depois de o teclado fechar, o iOS às vezes deixa o ecrã 59 pt mais curto
+// (fica uma faixa vazia por baixo da barra de baixo) até a app ser fechada. Pede ao Safari para medir outra vez;
+// se não resultar, encosta a barra ao fundo para a faixa parecer parte dela.
+(function ecraIPhone() {
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  if (!ios || !instalada) return;
+  const html = document.documentElement;
+  const sonda = document.createElement("div");
+  sonda.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)";
+  document.body.append(sonda);
+  const alto = () => (innerWidth < innerHeight ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height));
+  let esperado = Math.max(innerHeight, alto());
+  const teclado = () => { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
+  // só conta quando o conteúdo está mesmo por baixo da barra das horas (topo seguro > 0); noutros modos o iOS já tira a altura dela
+  const falta = () => (parseFloat(getComputedStyle(sonda).paddingTop) > 0 ? esperado - innerHeight : 0);
+  let larg = innerWidth;
+  function medir() {
+    if (innerWidth !== larg) { larg = innerWidth; esperado = Math.max(innerHeight, alto()); }
+    html.classList.toggle("ios-curto", !teclado() && falta() > 30);
+  }
+  function curar() {
+    if (teclado()) return;
+    if (falta() > 4) {
+      const el = document.getElementById("app"), caixas = [...el.querySelectorAll(".main, .p-scroll, .chat-msgs")].map((c) => [c, c.scrollTop]);
+      el.style.display = "none"; void el.offsetHeight; el.style.display = "";
+      caixas.forEach(([c, t]) => { c.scrollTop = t; });
+    }
+    setTimeout(medir, 250);
+  }
+  addEventListener("focusout", () => setTimeout(curar, 160));
+  addEventListener("resize", () => setTimeout(medir, 60));
+  window.visualViewport?.addEventListener("resize", () => setTimeout(medir, 60));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(curar, 300); });
+  addEventListener("pageshow", () => setTimeout(curar, 300));
+  setTimeout(curar, 600);
+})();
+
 function marcaEntrada() {
   return '<div class="marca-entrada"><span class="nome">Central <b>26</b></span><span class="sub">Grupo TwentySix · espaço de trabalho interno</span></div>';
 }

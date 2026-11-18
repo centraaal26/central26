@@ -1080,6 +1080,91 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+
+    // 26 Academy (igual ao script 19), com formandos e formações de exemplo
+    aca: (() => {
+      const K = "central26-demo-aca-v1";
+      let d = null;
+      const pode = () => { const e = eu(); return !!e && (eGestor(e) || e.departamento_id === "administrativo"); };
+      const so = () => { if (!pode()) throw new Error("Sem acesso à Academy."); };
+      const dia = (n) => ymd(new Date(Date.now() + n * 864e5));
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          // [concelho, código, região] de exemplo
+          const L = [["Porto", "1312", "Norte"], ["Vila Nova de Gaia", "1317", "Norte"], ["Gondomar", "1304", "Norte"], ["Braga", "0303", "Norte"], ["Penafiel", "1311", "Norte"], ["Santa Maria da Feira", "0109", "Norte"],
+            ["Aveiro", "0105", "Centro"], ["Coimbra", "0603", "Centro"], ["Viseu", "1823", "Centro"], ["Leiria", "1009", "Centro"], ["Santarém", "1416", "Oeste e Vale do Tejo"], ["Lisboa", "1106", "Grande Lisboa"],
+            ["Setúbal", "1512", "Península de Setúbal"], ["Faro", "0805", "Algarve"], ["Évora", "0705", "Alentejo"], ["Ponta Delgada", "4203", "Açores"], ["Funchal", "3103", "Madeira"]];
+          const pesos = [8, 7, 5, 3, 4, 4, 3, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1];
+          const sorteio = pesos.flatMap((p, i) => Array(p).fill(i));
+          const formacoes = [["Ação 1", -700, "Concluída"], ["Ação 2", -560, "Concluída"], ["Ação 3", -420, "Concluída"], ["Ação 4", -280, "Concluída"], ["Ação 5", -140, "Em avaliação"], ["Ação 6", -20, "A decorrer"]]
+            .map(([nome, dd, estado], i) => ({ id: "af-" + uid(), externo_id: null, nome, curso: "Barbeiro · Formação inicial (exemplo)", ano: dia(dd).slice(0, 4), local: "Sede (exemplo)", inicio: dia(dd), fim: null, estado, estado_em: dia(dd + 90), notas: "", criado_em: agora(), atualizado_em: agora(), atualizado_por: null, _n: [7, 9, 8, 10, 8, 9][i] }));
+          const formandos = [], inscricoes = [];
+          let k = 0;
+          for (const f of formacoes) {
+            for (let j = 0; j < f._n; j++) {
+              k++;
+              const [conc, cod, reg] = k % 23 === 0 ? ["", "", ""] : L[sorteio[(k * 7 + j * 3) % sorteio.length]];
+              const t = { id: "at-" + uid(), externo_id: null, nome: "Formando " + String(k).padStart(2, "0"), pais: "Portugal", cp4: "", localidade: "", concelho: conc, distrito: "", concelho_codigo: cod, regiao: reg, regiao_aprox: false, notas: "", criado_em: agora(), atualizado_em: agora(), atualizado_por: null };
+              formandos.push(t);
+              inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: j === 0 && k % 3 === 0, criado_em: agora() });
+            }
+            delete f._n;
+          }
+          // um formando que fez duas formações
+          inscricoes.push({ formacao_id: formacoes[4].id, formando_id: formandos[3].id, desistente: false, criado_em: agora() });
+          d = { formacoes, formandos, inscricoes, config: { id: 1, zonas: { Norte: "Norte", Centro: "Centro", "Oeste e Vale do Tejo": "Centro", "Grande Lisboa": "Sul", "Península de Setúbal": "Sul", Alentejo: "Sul", Algarve: "Sul", "Açores": "Açores", Madeira: "Madeira", Estrangeiro: "Estrangeiro" }, ultima_importacao: null, ultima_fonte: "" } };
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const linha = (l, id) => { const x = l.find((y) => y.id === id); if (!x) throw new Error("Já não existe."); return x; };
+      const limpo = (o, campos) => Object.fromEntries(Object.entries(o).filter(([c]) => campos.includes(c)));
+      const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas"];
+      return {
+        async carregar() { so(); ler(); return structuredClone({ formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente }) => ({ formacao_id, formando_id, desistente })), config: d.config }); },
+        async importar(p) {
+          so(); ler();
+          const r = { formacoes_novas: 0, formacoes_atualizadas: 0, formandos_novos: 0, formandos_atualizados: 0, inscricoes: 0 };
+          for (const x of p.formacoes || []) {
+            const ja = d.formacoes.find((y) => y.externo_id && y.externo_id === x.externo_id);
+            if (ja) { Object.assign(ja, limpo({ ...x, inicio: x.inicio || null, estado_em: x.estado_em || null }, CF), { atualizado_em: agora() }); r.formacoes_atualizadas++; }
+            else { d.formacoes.push({ id: "af-" + uid(), externo_id: x.externo_id, fim: null, notas: "", ...limpo({ ...x, inicio: x.inicio || null, estado_em: x.estado_em || null }, CF), criado_em: agora(), atualizado_em: agora(), atualizado_por: euId }); r.formacoes_novas++; }
+          }
+          for (const x of p.formandos || []) {
+            const ja = d.formandos.find((y) => y.externo_id && y.externo_id === x.externo_id);
+            if (ja) { Object.assign(ja, limpo(x, CT), { atualizado_em: agora() }); r.formandos_atualizados++; }
+            else { d.formandos.push({ id: "at-" + uid(), externo_id: x.externo_id, notas: "", ...limpo(x, CT), criado_em: agora(), atualizado_em: agora(), atualizado_por: euId }); r.formandos_novos++; }
+          }
+          for (const x of p.inscricoes || []) {
+            const f = d.formacoes.find((y) => y.externo_id === x.formacao), t = d.formandos.find((y) => y.externo_id === x.formando);
+            if (!f || !t) continue;
+            const ja = d.inscricoes.find((i) => i.formacao_id === f.id && i.formando_id === t.id);
+            if (ja) ja.desistente = !!x.desistente; else d.inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: !!x.desistente, criado_em: agora() });
+            r.inscricoes++;
+          }
+          d.config.ultima_importacao = agora(); d.config.ultima_fonte = String(p.fonte || "").slice(0, 200);
+          guardar(); return r;
+        },
+        async criarFormacao(f) { so(); ler(); const x = { id: "af-" + uid(), externo_id: null, nome: "", curso: "", ano: "", local: "", inicio: null, fim: null, estado: "", estado_em: null, notas: "", ...limpo(f, CF), criado_em: agora(), atualizado_em: agora(), atualizado_por: euId }; d.formacoes.push(x); guardar(); return structuredClone(x); },
+        async atualizarFormacao(id, c) { so(); ler(); const x = linha(d.formacoes, id); Object.assign(x, limpo(c, CF), { atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(x); },
+        async apagarFormacao(id) { so(); ler(); d.formacoes = d.formacoes.filter((x) => x.id !== id); d.inscricoes = d.inscricoes.filter((i) => i.formacao_id !== id); guardar(); },
+        async criarFormando(t) { so(); ler(); const x = { id: "at-" + uid(), externo_id: null, nome: "", pais: "Portugal", cp4: "", localidade: "", concelho: "", distrito: "", concelho_codigo: "", regiao: "", regiao_aprox: false, notas: "", ...limpo(t, CT), criado_em: agora(), atualizado_em: agora(), atualizado_por: euId }; d.formandos.push(x); guardar(); return structuredClone(x); },
+        async atualizarFormando(id, c) { so(); ler(); const x = linha(d.formandos, id); Object.assign(x, limpo(c, CT), { atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(x); },
+        async apagarFormando(id) { so(); ler(); d.formandos = d.formandos.filter((x) => x.id !== id); d.inscricoes = d.inscricoes.filter((i) => i.formando_id !== id); guardar(); },
+        async inscrever(formacao_id, formando_id) {
+          so(); ler();
+          let i = d.inscricoes.find((x) => x.formacao_id === formacao_id && x.formando_id === formando_id);
+          if (!i) { i = { formacao_id, formando_id, desistente: false, criado_em: agora() }; d.inscricoes.push(i); guardar(); }
+          return { formacao_id, formando_id, desistente: i.desistente };
+        },
+        async desinscrever(formacao_id, formando_id) { so(); ler(); d.inscricoes = d.inscricoes.filter((x) => !(x.formacao_id === formacao_id && x.formando_id === formando_id)); guardar(); },
+        async marcarDesistente(formacao_id, formando_id, v) { so(); ler(); const i = d.inscricoes.find((x) => x.formacao_id === formacao_id && x.formando_id === formando_id); if (i) i.desistente = !!v; guardar(); },
+        async guardarConfig(c) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda esta divisão."); Object.assign(d.config, limpo(c, ["zonas"])); guardar(); return structuredClone(d.config); },
+        subscrever() { return () => {}; },
+      };
+    })(),
   };
   fiabilidadeDemo(API);
   return API;

@@ -172,6 +172,7 @@ export function envolverApi(api, extra) {
   substituir("stk.carregar", leitor("stk"));
   substituir("prz.carregar", leitor("prz"));
   substituir("prs.carregar", leitor("prs"));
+  substituir("aca.carregar", leitor("aca"));
   substituir("prs.resumo", leitor("prs-resumo"));
   substituir("chat.resumo", leitor("chat-resumo"));
   substituir("chat.mensagens", leitor((canal, antes) => (antes ? null : "chat-" + canal)));

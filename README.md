@@ -209,6 +209,20 @@ O que passa a existir:
 - **Mensagem → tarefa:** em cada mensagem do chat há um botão para criar uma tarefa com o texto e a ligação à conversa.
 - **Cópia automática** todos os domingos às 3h, guardada num armazenamento privado do Supabase (ficam as 12 últimas). Se falhar, a direção recebe um aviso. Continua a ser boa ideia descarregar uma cópia de vez em quando para fora do Supabase.
 
+### 3r. 26 Academy: formandos, formações e estatística regional
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/19-academy.sql` → **Run**.
+2. Edge Functions → `copia-seguranca` → cola outra vez o código de `supabase/functions/copia-seguranca/index.ts` → **Deploy** (a cópia automática passa a incluir a Academy).
+3. Na app: **26 Academy → Importar** → escolhe o ficheiro `.json` tirado da Secretaria Online → **Importar**. Pode ser importado outra vez sempre que houver ações novas: quem já existe é atualizado pelo número da Secretaria Online, sem duplicar.
+
+Quem vê: a direção e o Administrativo e Operacional. Os dados dos formandos nunca vão para o GitHub: entram só pela importação na app.
+
+O que passa a existir:
+- **Formações e formandos**, com as inscrições de cada formando em cada formação (e quem desistiu). Também se registam à mão.
+- **De onde vêm os formandos:** a região de cada formando sai do concelho de residência (com o distrito ou o código postal como último recurso). Percentagem e número de formandos do Norte, do Centro, do Sul, dos Açores, da Madeira e do estrangeiro, as regiões oficiais (NUTS II de 2024), um mapa por concelho e os concelhos com mais formandos.
+- **Comparação entre formações** e a estatística de cada formação no painel dela.
+- **Atualização automática:** quando alguém importa ou acrescenta formandos ou formações, os números mudam logo no ecrã de toda a gente.
+- **Definições** (direção): em que zona (Norte, Centro ou Sul) conta cada região. Por defeito, o Oeste e Vale do Tejo conta no Centro, e a Grande Lisboa, a Península de Setúbal, o Alentejo e o Algarve contam no Sul.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -249,6 +263,7 @@ js/financeiro.js                            faturação e custos por mês (folha
 js/marketing.js                             calendário de publicações, ideias e documentos do Marketing
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
 js/prazos.js                                seguros e viaturas: datas, avisos antes do dia e histórico
+js/academy.js · js/academy-regioes.js      26 Academy: formandos, formações e estatística por região (concelhos e NUTS II)
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

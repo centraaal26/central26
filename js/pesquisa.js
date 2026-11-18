@@ -42,6 +42,7 @@ export function criarPesquisa(ctx) {
       .sort((a, b) => b.numero - a.numero).map((e) => ({ titulo: "E-" + String(e.numero).padStart(4, "0") + " · " + e.cliente_nome, sub: (e.itens || []).slice(0, 3).map((i) => (i.qtd || 1) + "× " + i.descricao).join(", "), href: "#encomenda-" + e.id, ic: I.camiao }))));
     if (m.stk) r.push(...grupo("Stocks", m.stk.pesquisar(ok).map((x) => ({ ...x, ic: I.stock }))));
     if (m.prz) r.push(...grupo("Seguros e viaturas", m.prz.pesquisar(ok).map((x) => ({ ...x, ic: I.carro }))));
+    if (m.aca) r.push(...grupo("26 Academy", m.aca.pesquisar(ok).map((x) => ({ ...x, ic: I.capelo || I.lista }))));
     if (m.op && S.op?.estado === "pronto") {
       r.push(...grupo("Fornecedores", Object.values(S.op.forn).filter((f) => ok([f.nome, f.categoria, f.contacto_nome, f.email, f.telefone, f.notas].join(" "))).map((f) => ({ titulo: f.nome, sub: f.categoria || "", href: "#fornecedor-" + f.id, ic: I.caixa }))));
       r.push(...grupo("Pedidos de orçamento", Object.values(S.op.pedidos).filter((p) => ok(["P-" + String(p.numero).padStart(3, "0"), p.titulo, p.descricao].join(" "))).map((p) => ({ titulo: "P-" + String(p.numero).padStart(3, "0") + " · " + p.titulo, sub: p.categoria || "", href: "#pedido-" + p.id, ic: I.caixa })), 3));
@@ -78,7 +79,7 @@ export function criarPesquisa(ctx) {
   }
 
   function htmlResultados() {
-    if (!P.q.trim()) return '<div class="pq-vazio"><p>Procura tarefas, pessoas, clientes, encomendas, produtos, seguros, viaturas, fornecedores, publicações, mensagens e comentários…</p><p class="pq-teclas"><kbd>↑</kbd><kbd>↓</kbd> escolher · <kbd>Enter</kbd> abrir · <kbd>Esc</kbd> fechar</p></div>';
+    if (!P.q.trim()) return '<div class="pq-vazio"><p>Procura tarefas, pessoas, clientes, encomendas, produtos, seguros, viaturas, formandos, fornecedores, publicações, mensagens e comentários…</p><p class="pq-teclas"><kbd>↑</kbd><kbd>↓</kbd> escolher · <kbd>Enter</kbd> abrir · <kbd>Esc</kbd> fechar</p></div>';
     if (!P.res.length) return '<div class="pq-vazio"><p>Nada encontrado para «' + esc(P.q) + "».</p></div>";
     let h = "", g = "";
     P.res.forEach((x, i) => {

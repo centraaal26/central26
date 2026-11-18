@@ -5,12 +5,14 @@ import { rotuloCampo } from "./offline.js";
 export const TIPO_TABELA = {
   tarefa: "tarefas", cliente: "crm_clientes", encomenda: "log_encomendas", evento: "agenda_eventos", fornecedor: "op_fornecedores",
   pedido: "op_pedidos", publicacao: "mk_publicacoes", stock: "stk_produtos", prazo: "prz_prazos", viatura: "prz_viaturas",
+  formacao: "aca_formacoes", formando: "aca_formandos",
 };
 const NOME_TABELA = {
   tarefas: "Tarefa", crm_clientes: "Cliente", crm_contactos: "Contacto do cliente", agenda_eventos: "Evento", log_encomendas: "Encomenda", log_rotas: "Rota",
   op_fornecedores: "Fornecedor", op_pedidos: "Pedido de orçamento", mk_publicacoes: "Publicação", stk_produtos: "Produto", prz_prazos: "Prazo", prz_viaturas: "Viatura",
+  aca_formacoes: "Formação da Academy", aca_formandos: "Formando da Academy",
 };
-const PRIORIDADE_LOTE = ["crm_clientes", "log_encomendas", "tarefas", "agenda_eventos", "op_fornecedores", "op_pedidos", "mk_publicacoes", "stk_produtos", "prz_viaturas", "prz_prazos", "log_rotas", "crm_contactos"];
+const PRIORIDADE_LOTE = ["crm_clientes", "log_encomendas", "tarefas", "agenda_eventos", "op_fornecedores", "op_pedidos", "mk_publicacoes", "stk_produtos", "prz_viaturas", "prz_prazos", "log_rotas", "crm_contactos", "aca_formacoes", "aca_formandos"];
 const VALORES = {
   estado: { por_fazer: "Por fazer", em_curso: "Em curso", concluido: "Concluída", ativo: "Ativo", tratado: "Tratado", nova: "Nova", em_preparacao: "Em preparação", pronta: "Pronta", em_rota: "Em rota", entregue: "Entregue", cancelada: "Cancelada" },
   prioridade: { alta: "Alta", media: "Média", baixa: "Baixa", urgente: "Urgente", normal: "Normal" },

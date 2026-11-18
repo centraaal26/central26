@@ -403,7 +403,8 @@ export function criarApi() {
         log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
-        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id" };
+        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -519,6 +520,39 @@ export function criarApi() {
           .on("postgres_changes", { event: "*", schema: "public", table: "prz_prazos" }, (p) => cb("prazo", p.eventType, p.new, p.old))
           .on("postgres_changes", { event: "*", schema: "public", table: "prz_viaturas" }, (p) => cb("viatura", p.eventType, p.new, p.old))
           .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
+    // 26 Academy: formações, formandos e inscrições (script 19)
+    aca: {
+      async carregar() {
+        const [formacoes, formandos, inscricoes, config] = await Promise.all([
+          todas(() => sb.from("aca_formacoes").select("*").order("inicio", { ascending: false }).order("id")),
+          todas(() => sb.from("aca_formandos").select("*").order("nome").order("id")),
+          todas(() => sb.from("aca_inscricoes").select("formacao_id, formando_id, desistente").order("formacao_id").order("formando_id")),
+          sb.from("aca_config").select("*").eq("id", 1).maybeSingle(),
+        ]);
+        return { formacoes, formandos, inscricoes, config: config.error ? null : config.data };
+      },
+      async importar(p) { return ok(await sb.rpc("aca_importar", { p })); },
+      async criarFormacao(f) { return ok(await sb.from("aca_formacoes").insert(f).select().single()); },
+      async atualizarFormacao(id, campos) { return ok(await sb.from("aca_formacoes").update(campos).eq("id", id).select().single()); },
+      async apagarFormacao(id) { ok(await sb.from("aca_formacoes").delete().eq("id", id)); },
+      async criarFormando(f) { return ok(await sb.from("aca_formandos").insert(f).select().single()); },
+      async atualizarFormando(id, campos) { return ok(await sb.from("aca_formandos").update(campos).eq("id", id).select().single()); },
+      async apagarFormando(id) { ok(await sb.from("aca_formandos").delete().eq("id", id)); },
+      async inscrever(formacao_id, formando_id) {
+        return ok(await sb.from("aca_inscricoes").upsert({ formacao_id, formando_id }, { onConflict: "formacao_id,formando_id" }).select("formacao_id, formando_id, desistente").single());
+      },
+      async desinscrever(formacao_id, formando_id) { ok(await sb.from("aca_inscricoes").delete().eq("formacao_id", formacao_id).eq("formando_id", formando_id)); },
+      async marcarDesistente(formacao_id, formando_id, desistente) {
+        ok(await sb.from("aca_inscricoes").update({ desistente }).eq("formacao_id", formacao_id).eq("formando_id", formando_id));
+      },
+      async guardarConfig(campos) { return ok(await sb.from("aca_config").update(campos).eq("id", 1).select().single()); },
+      subscrever(cb) {
+        let canal = sb.channel("central26-aca");
+        for (const t of ["aca_formacoes", "aca_formandos", "aca_inscricoes", "aca_config"]) canal = canal.on("postgres_changes", { event: "*", schema: "public", table: t }, (p) => cb(t, p.eventType, p.new, p.old));
+        canal.subscribe();
         return () => sb.removeChannel(canal);
       },
     },

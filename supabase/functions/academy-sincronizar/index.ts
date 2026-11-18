@@ -7,7 +7,8 @@
 //   no relógio, a chamada seguinte continua onde a anterior ficou.
 // Segredos (Supabase → Edge Functions → Secrets): FORINSIA_UTILIZADOR e FORINSIA_PALAVRA_PASSE.
 // Guarda só o nome, o n.º da Secretaria Online, a residência (país, código postal, localidade, concelho, distrito)
-// e as inscrições. Não lê documentos de identificação, NIF, datas de nascimento nem contactos.
+// e as inscrições, a idade de cada formando no início de cada ação (a data de nascimento não é guardada) e a
+// assiduidade de cada ação. Não lê documentos de identificação, NIF nem contactos.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOMParser } from "jsr:@b-fuze/deno-dom@0.1.49";
 
@@ -35,6 +36,7 @@ const PERMITIDOS = [
   /^ctl00\$ContentPlaceHolderNew\$Autenticacao1\$lnkAutAdministrador$/,
   /^ctl00\$ContentPlaceHolder2\$seleccionarAccao\$ctl01$/,
   /^ctl00\$ContentPlaceHolder2\$seleccionarAccao\$rptAccoesPorCaracterizacao\$\d+\$LinkButton4$/,
+  /^ctl00\$ContentPlaceHolder2\$seleccionarAccao\$rptAccoesPorCaracterizacao\$\d+\$LinkButton9$/, // relatório de assiduidade (só consulta)
   /^ctl00\$ContentPlaceHolder2\$processosAccao\$rptProcessos\$\d+\$Linkbutton2$/,
 ];
 
@@ -138,7 +140,33 @@ async function listarAccoes(s: Sessao, l: Pagina) {
   return { pagina: p, accoes: out };
 }
 // formandos de uma ação, com a residência de cada um
-async function lerAccao(s: Sessao, lista: Pagina, id: string, conhecidos: Map<string, any>, jaTemos: Set<string>) {
+// idade (em anos completos) numa data, a partir dos campos de nascimento da ficha; a data em si não sai daqui
+function idadeEm(doc: any, quando: string): number | null {
+  const v = (k: string) => Number(doc.getElementById(PP + "dataNascimento_ddl" + k)?.querySelector("option[selected]")?.getAttribute("value") || 0);
+  const a = v("Ano"), m = v("Mes"), d = v("Dia");
+  if (!a || !m || !d || !/^\d{4}-\d{2}-\d{2}$/.test(quando)) return null;
+  const [qa, qm, qd] = quando.split("-").map(Number);
+  const idade = qa - a - (qm < m || (qm === m && qd < d) ? 1 : 0);
+  return idade >= 10 && idade <= 99 ? idade : null;
+}
+// assiduidade da ação: % das horas com presença, só nas sessões que já têm presenças registadas
+async function lerAssiduidade(s: Sessao, lista: Pagina, id: string) {
+  const p = await s.clicar(lista, PL + "rptAccoesPorCaracterizacao$" + id + "$LinkButton9", {}, [ESCONDER]);
+  if (!/RelatorioAssiduidade/i.test(p.url)) return null;
+  let previstas = 0, presentes = 0, sessoes = 0;
+  for (const tr of p.doc.querySelectorAll("tr")) {
+    const tds = [...tr.children].filter((e: any) => e.tagName === "TD").map(texto);
+    if (tds.length !== 5 || !/^\d+$/.test(tds[0]) || !/^\d+$/.test(tds[3]) || !/^\d+$/.test(tds[4])) continue;
+    const m = tds[1].match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m(?:in)?)?$/i);
+    const horas = m ? (+(m[1] || 0) + +(m[2] || 0) / 60) : 0, pres = +tds[3], form = +tds[4];
+    if (!horas || !form || !pres) continue; // sessão ainda sem presenças registadas
+    previstas += horas * form; presentes += horas * Math.min(pres, form); sessoes++;
+  }
+  return previstas ? { assiduidade: Math.round((presentes / previstas) * 1000) / 10, assid_sessoes: sessoes } : null;
+}
+
+async function lerAccao(s: Sessao, lista: Pagina, a: any, conhecidos: Map<string, any>, jaTemos: Set<string>) {
+  const id = a.id;
   const p = await s.clicar(lista, PL + "rptAccoesPorCaracterizacao$" + id + "$LinkButton4", {}, [ESCONDER]);
   if (!/GerirProcessos/i.test(p.url) || !new RegExp("idAccao=" + id + "(\\D|$)").test(p.url)) throw new Error("Não consegui abrir os formandos da ação " + id + ".");
   const linhas: { n: string; nome: string; desistente: boolean }[] = [];
@@ -154,6 +182,7 @@ async function lerAccao(s: Sessao, lista: Pagina, id: string, conhecidos: Map<st
     const f = await s.clicar(p, "ctl00$ContentPlaceHolder2$processosAccao$rptProcessos$" + l.n + "$Linkbutton2", {}, [], (u) => jaTemos.has(u.match(/idUtilizador=(\d+)/)?.[1] || ""));
     const m = f.url.match(/idUtilizador=(\d+)/);
     if (!m) continue;
+    const idade = f.doc && a.inicio ? idadeEm(f.doc, a.inicio) : null;
     if (f.doc && !conhecidos.has(m[1])) {
       const cp = valor(f.doc, PP + "codigopostaluc1_txtcp");
       conhecidos.set(m[1], {
@@ -162,7 +191,7 @@ async function lerAccao(s: Sessao, lista: Pagina, id: string, conhecidos: Map<st
         concelho: valor(f.doc, PP + "codigopostaluc1_txtConcelho"), distrito: valor(f.doc, PP + "codigopostaluc1_txtDistrito"),
       });
     }
-    inscricoes.push({ formacao: id, formando: m[1], desistente: l.desistente });
+    inscricoes.push({ formacao: id, formando: m[1], desistente: l.desistente, idade });
   }
   return inscricoes;
 }
@@ -180,8 +209,9 @@ export async function sincronizar(o: { utilizador: string; palavra: string; prec
   for (const a of porLer) {
     if (Date.now() - inicio > LIMITE_MS) return { ...total, continuar_de: a.id, pedidos: s.pedidos };
     const conhecidos = new Map<string, any>();
-    const inscricoes = await lerAccao(s, pagina, a.id, conhecidos, o.jaTemos || new Set());
-    const r = await o.aGuardar({ formacoes: [], formandos: [...conhecidos.values()], inscricoes, substituir: [a.id] });
+    const inscricoes = await lerAccao(s, pagina, a, conhecidos, o.jaTemos || new Set());
+    const assid = /cancel/i.test(a.estado) ? null : await lerAssiduidade(s, pagina, a.id).catch(() => null);
+    const r = await o.aGuardar({ formacoes: assid ? [{ ...a, ...assid }] : [], formandos: [...conhecidos.values()], inscricoes, substituir: [a.id] });
     total.lidas++; somar({ ...r, formacoes_novas: 0 });
   }
   return { ...total, pedidos: s.pedidos };

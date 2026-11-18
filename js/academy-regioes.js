@@ -15,7 +15,9 @@ for (const c of CONCELHOS) { const k = n(c.nome); if (!porNome.has(k)) porNome.s
 // nomes que aparecem escritos de outra forma
 const SINONIMOS = { "gaia": "vila nova de gaia", "feira": "santa maria da feira", "v n gaia": "vila nova de gaia", "vn gaia": "vila nova de gaia", "povoa de varzim": "povoa de varzim",
   "calheta sao jorge": "calheta", "praia vitoria": "praia da vitoria", "vila franca": "vila franca de xira", "famalicao": "vila nova de famalicao", "v n famalicao": "vila nova de famalicao",
-  "lagoa acores": "lagoa", "lagoa algarve": "lagoa", "sao joao madeira": "sao joao da madeira", "oliveira azemeis": "oliveira de azemeis", "ponte lima": "ponte de lima" };
+  "lagoa acores": "lagoa", "lagoa algarve": "lagoa", "sao joao madeira": "sao joao da madeira", "oliveira azemeis": "oliveira de azemeis", "ponte lima": "ponte de lima",
+  "rio tinto": "gondomar", "ermesinde": "valongo", "s mamede de infesta": "matosinhos", "sao mamede de infesta": "matosinhos", "leca da palmeira": "matosinhos", "senhora da hora": "matosinhos",
+  "baguim do monte": "gondomar", "fanzeres": "gondomar", "pacos de brandao": "santa maria da feira" };
 
 const ILHAS_ACORES = /a[cç]ores|s[aã]o miguel|terceira|faial|pico|s[aã]o jorge|graciosa|flores|corvo|santa maria|ponta delgada|angra/i;
 const MADEIRA = /madeira|porto santo|funchal/i;

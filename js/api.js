@@ -530,7 +530,7 @@ export function criarApi() {
         const [formacoes, formandos, inscricoes, config] = await Promise.all([
           todas(() => sb.from("aca_formacoes").select("*").order("inicio", { ascending: false }).order("id")),
           todas(() => sb.from("aca_formandos").select("*").order("nome").order("id")),
-          todas(() => sb.from("aca_inscricoes").select("formacao_id, formando_id, desistente").order("formacao_id").order("formando_id")),
+          todas(() => sb.from("aca_inscricoes").select("formacao_id, formando_id, desistente, idade").order("formacao_id").order("formando_id")),
           sb.from("aca_config").select("*").eq("id", 1).maybeSingle(),
         ]);
         return { formacoes, formandos, inscricoes, config: config.error ? null : config.data };

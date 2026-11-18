@@ -55,6 +55,17 @@ create table if not exists public.aca_formandos (
 create index if not exists aca_formandos_regiao on public.aca_formandos (regiao);
 -- residência corrigida na Central: a sincronização com a Secretaria Online deixa de a substituir
 alter table public.aca_formandos add column if not exists residencia_manual boolean not null default false;
+-- ex-formando que está no Comercial (confirmado na Central) e sugestões já recusadas
+alter table public.aca_formandos add column if not exists cliente_id uuid;
+alter table public.aca_formandos add column if not exists clientes_rejeitados uuid[] not null default '{}';
+do $$ begin
+  if to_regclass('public.crm_clientes') is not null and not exists (select 1 from pg_constraint where conname = 'aca_formandos_cliente_fk') then
+    alter table public.aca_formandos add constraint aca_formandos_cliente_fk foreign key (cliente_id) references public.crm_clientes(id) on delete set null;
+  end if;
+end $$;
+-- assiduidade de cada ação (% das horas, das sessões com presenças registadas) e idade de cada formando no início da ação
+alter table public.aca_formacoes add column if not exists assiduidade numeric(5,1);
+alter table public.aca_formacoes add column if not exists assid_sessoes int;
 
 create table if not exists public.aca_inscricoes (
   formacao_id  uuid not null references public.aca_formacoes(id) on delete cascade,
@@ -64,6 +75,12 @@ create table if not exists public.aca_inscricoes (
   primary key (formacao_id, formando_id)
 );
 create index if not exists aca_inscricoes_formando on public.aca_inscricoes (formando_id);
+alter table public.aca_inscricoes add column if not exists idade smallint;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'aca_inscricoes_idade_ck') then
+    alter table public.aca_inscricoes add constraint aca_inscricoes_idade_ck check (idade is null or idade between 10 and 99);
+  end if;
+end $$;
 
 create table if not exists public.aca_config (
   id              int primary key default 1 check (id = 1),
@@ -102,11 +119,13 @@ declare x jsonb; nf_novas int := 0; nf_atual int := 0; nt_novos int := 0; nt_atu
 begin
   if not (public.pode_academy() or coalesce(auth.role(), '') = 'service_role') then raise exception 'Sem acesso à Academy.'; end if;
   for x in select * from jsonb_array_elements(coalesce(p->'formacoes', '[]')) loop
-    insert into public.aca_formacoes (externo_id, nome, curso, ano, local, inicio, estado, estado_em)
+    insert into public.aca_formacoes (externo_id, nome, curso, ano, local, inicio, estado, estado_em, assiduidade, assid_sessoes)
     values (x->>'externo_id', left(coalesce(nullif(trim(x->>'nome'), ''), 'Ação'), 200), coalesce(x->>'curso', ''), coalesce(x->>'ano', ''),
-            coalesce(x->>'local', ''), nullif(x->>'inicio', '')::date, coalesce(x->>'estado', ''), nullif(x->>'estado_em', '')::date)
+            coalesce(x->>'local', ''), nullif(x->>'inicio', '')::date, coalesce(x->>'estado', ''), nullif(x->>'estado_em', '')::date,
+            case when nullif(x->>'assiduidade', '') is not null then least(greatest((x->>'assiduidade')::numeric, 0), 100) end, nullif(x->>'assid_sessoes', '')::int)
     on conflict (externo_id) do update set nome = excluded.nome, curso = excluded.curso, ano = excluded.ano, local = excluded.local,
-      inicio = excluded.inicio, estado = excluded.estado, estado_em = excluded.estado_em
+      inicio = excluded.inicio, estado = excluded.estado, estado_em = excluded.estado_em,
+      assiduidade = coalesce(excluded.assiduidade, aca_formacoes.assiduidade), assid_sessoes = coalesce(excluded.assid_sessoes, aca_formacoes.assid_sessoes)
     returning (xmax = 0) into novo;
     if novo then nf_novas := nf_novas + 1; else nf_atual := nf_atual + 1; end if;
   end loop;
@@ -132,9 +151,10 @@ begin
     select id into v_f from public.aca_formacoes where externo_id = x->>'formacao';
     select id into v_t from public.aca_formandos where externo_id = x->>'formando';
     if v_f is null or v_t is null then continue; end if;
-    insert into public.aca_inscricoes (formacao_id, formando_id, desistente)
-    values (v_f, v_t, coalesce((x->>'desistente')::boolean, false))
-    on conflict (formacao_id, formando_id) do update set desistente = excluded.desistente;
+    insert into public.aca_inscricoes (formacao_id, formando_id, desistente, idade)
+    values (v_f, v_t, coalesce((x->>'desistente')::boolean, false),
+            case when (x->>'idade') ~ '^\d{1,2}$' and (x->>'idade')::int between 10 and 99 then (x->>'idade')::smallint end)
+    on conflict (formacao_id, formando_id) do update set desistente = excluded.desistente, idade = coalesce(excluded.idade, aca_inscricoes.idade);
     ni := ni + 1;
   end loop;
   -- quem saiu de uma ação na Secretaria Online sai também na Central (os formandos registados à mão ficam)

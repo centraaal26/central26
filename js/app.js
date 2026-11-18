@@ -1696,7 +1696,7 @@ async function ativarPush() {
   } catch (e) { render(); falha(e); }
 }
 
-const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $ });
+const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $, extraCliente: (c) => (podeAcademy(S.eu) ? ACA.blocoCliente(c) : "") });
 const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $, novaTarefa: (d) => abrir({ tipo: "nova", marca: "grupo", freq: "unica", ...d }) });
 const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, abrirTarefa, $ });
 const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, stk: () => (podeStocks(S.eu) ? STK : null), $ });
@@ -1724,7 +1724,7 @@ const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, r
 const PRS = criarProspecao({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo: DEMO,
   abrirCliente: (id) => { if (CRM.estado() !== "pronto") CRM.carregar(); abrir({ tipo: "cliente", id }); } });
 const PRZ = criarPrazos({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
-const ACA = criarAcademy({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $ });
+const ACA = criarAcademy({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $, crm: () => CRM, podeCrm });
 const MK = criarMarketing({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const FIA = criarFiabilidade({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $, eGestor, normalizar, recarregarTabela: (t) => recarregarTabela(t) });

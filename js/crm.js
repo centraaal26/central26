@@ -499,6 +499,7 @@ export function criarCrm(ctx) {
     if (c.nome.includes(MAU)) h += '<div class="aviso">O nome veio do Multixop com acentos estragados («' + MAU + '»). Corrige-o aqui: as próximas importações não o voltam a mudar.</div>';
     h += '<div class="chips"><span class="etapa e-' + c.etapa + '">' + ETAPAS[c.etapa] + "</span>" + (s ? '<span class="rec r-' + e + '"><i></i>' + ESTADOS[e] + " · " + esc(ESTADO_AJUDA[e]) + "</span>" : "") +
       (s?.aContactar ? '<span class="pill-at">A contactar</span>' : "") + "<span>" + esc(TIPOS[c.tipo] || "") + "</span>" + (c.codigo_multixop ? '<span class="mono">Multixop ' + esc(c.codigo_multixop) + "</span>" : "") + "</div>";
+    h += ctx.extraCliente ? ctx.extraCliente(c) : "";
     if (s) h += '<div class="dados">' + dado("Total no período", eur(s.total)) + dado("Faturas", num(s.docs.size)) + dado("Última compra", esc(rotData(s.ultima)), "", "há " + s.dias + " dias") +
       dado("Encomenda a cada", s.ritmo ? s.ritmo + " dias" : "—", "", s.ritmo ? "mediana entre compras" : "precisa de 3 compras") + (s.nc ? dado("Devoluções", eur(-s.nc), "at") : "") + "</div>";
     const pessoas = ativos();

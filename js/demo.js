@@ -1083,7 +1083,7 @@ export function criarDemo() {
 
     // 26 Academy (igual ao script 19), com formandos e formações de exemplo
     aca: (() => {
-      const K = "central26-demo-aca-v1";
+      const K = "central26-demo-aca-v2";
       let d = null;
       const pode = () => { const e = eu(); return !!e && (eGestor(e) || e.departamento_id === "administrativo"); };
       const so = () => { if (!pode()) throw new Error("Sem acesso à Academy."); };
@@ -1099,7 +1099,8 @@ export function criarDemo() {
           const pesos = [8, 7, 5, 3, 4, 4, 3, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1];
           const sorteio = pesos.flatMap((p, i) => Array(p).fill(i));
           const formacoes = [["Ação 1", -700, "Concluída"], ["Ação 2", -560, "Concluída"], ["Ação 3", -420, "Concluída"], ["Ação 4", -280, "Concluída"], ["Ação 5", -140, "Em avaliação"], ["Ação 6", -20, "A decorrer"]]
-            .map(([nome, dd, estado], i) => ({ id: "af-" + uid(), externo_id: null, nome, curso: "Barbeiro · Formação inicial (exemplo)", ano: dia(dd).slice(0, 4), local: "Sede (exemplo)", inicio: dia(dd), fim: null, estado, estado_em: dia(dd + 90), notas: "", criado_em: agora(), atualizado_em: agora(), atualizado_por: null, _n: [7, 9, 8, 10, 8, 9][i] }));
+            .map(([nome, dd, estado], i) => ({ id: "af-" + uid(), externo_id: null, nome, curso: "Barbeiro · Formação inicial (exemplo)", ano: dia(dd).slice(0, 4), local: ["Vila Nova de Gaia", "Gondomar", "Vila Nova de Gaia", "Vila do Conde", "Vila Nova de Gaia", "Gondomar"][i], inicio: dia(dd), fim: null, estado, estado_em: dia(dd + 90), notas: "",
+              assiduidade: [96.4, 92.1, 98.7, 94.3, 97.2, null][i], assid_sessoes: [41, 41, 40, 41, 41, null][i], criado_em: agora(), atualizado_em: agora(), atualizado_por: null, _n: [7, 9, 8, 10, 8, 9][i] }));
           const formandos = [], inscricoes = [];
           let k = 0;
           for (const f of formacoes) {
@@ -1108,7 +1109,7 @@ export function criarDemo() {
               const [conc, cod, reg] = k % 23 === 0 ? ["", "", ""] : L[sorteio[(k * 7 + j * 3) % sorteio.length]];
               const t = { id: "at-" + uid(), externo_id: null, nome: "Formando " + String(k).padStart(2, "0"), pais: "Portugal", cp4: "", localidade: "", concelho: conc, distrito: "", concelho_codigo: cod, regiao: reg, regiao_aprox: false, notas: "", criado_em: agora(), atualizado_em: agora(), atualizado_por: null };
               formandos.push(t);
-              inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: j === 0 && k % 3 === 0, criado_em: agora() });
+              inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: k % 9 === 4, idade: 18 + ((k * 7 + j * 5) % 23), criado_em: agora() });
             }
             delete f._n;
           }
@@ -1121,9 +1122,9 @@ export function criarDemo() {
       const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
       const linha = (l, id) => { const x = l.find((y) => y.id === id); if (!x) throw new Error("Já não existe."); return x; };
       const limpo = (o, campos) => Object.fromEntries(Object.entries(o).filter(([c]) => campos.includes(c)));
-      const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas", "residencia_manual"];
+      const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas", "assiduidade", "assid_sessoes"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas", "residencia_manual", "cliente_id", "clientes_rejeitados"];
       return {
-        async carregar() { so(); ler(); return structuredClone({ formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente }) => ({ formacao_id, formando_id, desistente })), config: d.config }); },
+        async carregar() { so(); ler(); return structuredClone({ formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente, idade }) => ({ formacao_id, formando_id, desistente, idade: idade ?? null })), config: d.config }); },
         async importar(p) {
           so(); ler();
           const r = { formacoes_novas: 0, formacoes_atualizadas: 0, formandos_novos: 0, formandos_atualizados: 0, inscricoes: 0 };
@@ -1141,7 +1142,7 @@ export function criarDemo() {
             const f = d.formacoes.find((y) => y.externo_id === x.formacao), t = d.formandos.find((y) => y.externo_id === x.formando);
             if (!f || !t) continue;
             const ja = d.inscricoes.find((i) => i.formacao_id === f.id && i.formando_id === t.id);
-            if (ja) ja.desistente = !!x.desistente; else d.inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: !!x.desistente, criado_em: agora() });
+            if (ja) { ja.desistente = !!x.desistente; if (x.idade != null) ja.idade = x.idade; } else d.inscricoes.push({ formacao_id: f.id, formando_id: t.id, desistente: !!x.desistente, idade: x.idade ?? null, criado_em: agora() });
             r.inscricoes++;
           }
           d.config.ultima_importacao = agora(); d.config.ultima_fonte = String(p.fonte || "").slice(0, 200);

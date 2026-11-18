@@ -1835,6 +1835,8 @@ html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-b
   .wrap > .aca-kpis .kpi{grid-column:span 2;padding:10px}
   .wrap > .aca-kpis .kpi:nth-child(-n+2){grid-column:span 3}
   .wrap > .aca-kpis .kpi b{font-size:20px}
+  .wrap > .aca-kpis2 .kpi,.wrap > .aca-kpis2 .kpi:nth-child(-n+2){grid-column:span 3}
+  .wrap > .aca-kpis2 .kpi:nth-child(5){grid-column:span 6}
   .aca-comp-l{grid-template-columns:minmax(0,1fr) auto;padding:10px 2px}
   .aca-comp-l .aca-emp{grid-column:1/-1;grid-row:2}
   .aca-td-emp{width:auto;flex:1 1 100%}
@@ -1847,3 +1849,31 @@ html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-b
 @media (prefers-reduced-motion: reduce){.aca-roda{animation-duration:2.4s}}
 .aca-sinc-l{margin-top:4px}
 .aca-sinc-l b.at{color:var(--danger)}
+/* Academy: evolução, distâncias, ex-formandos no Comercial */
+.aca-kpis2{margin-top:-6px}
+.aca-kpis-cli{margin-top:0}
+.aca-ev{display:flex;align-items:flex-end;gap:10px;height:190px;padding-top:4px;overflow-x:auto}
+.aca-ev-c{flex:1 1 0;min-width:46px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}
+.aca-ev-t{font-family:var(--f-mono);font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+.aca-ev-b{width:min(100%,46px);display:flex;flex-direction:column-reverse;gap:2px;border-radius:4px 4px 0 0;overflow:hidden;min-height:2px}
+.aca-ev-b i{display:block;background:var(--zc);flex-basis:0;min-height:2px}
+.aca-ev-x{font-size:11.5px;color:var(--faint);text-align:center;line-height:1.25;white-space:nowrap}
+.aca-chips{display:flex;flex-wrap:wrap;gap:6px}
+.aca-chips span{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px;background:var(--surface)}
+.aca-chips small{color:var(--faint);font-family:var(--f-mono);font-size:11.5px}
+.aca-cli-lista{display:flex;flex-direction:column}
+.aca-cli{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.aca-cli:last-child{border-bottom:0}
+.aca-cli-a{display:flex;flex-direction:column;min-width:0;flex:1 1 180px}
+.aca-cli-a small,.aca-cli-c small{font-size:12.5px;color:var(--faint)}
+.aca-cli-a a{font-weight:600;color:var(--ink);text-underline-offset:3px;text-decoration-color:var(--line-strong)}
+.aca-cli-s{color:var(--faint)}
+.aca-cli-c{display:flex;flex-direction:column;gap:2px;flex:1 1 160px;min-width:0}
+.aca-cli .acts{margin-left:auto}
+.aca-forte,.aca-fraca{align-self:flex-start;font-size:12px;font-weight:600;border-radius:999px;padding:2px 8px}
+.aca-forte{background:var(--ok-bg);color:var(--ok)}
+.aca-fraca{background:var(--warn-bg);color:var(--warn)}
+.aca-cli-b{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--sunken);font-size:14px;margin-top:4px}
+.aca-cli-b svg{color:var(--c-academy);margin-top:2px}
+.aca-cli-b a{font-weight:600;color:var(--ink)}
+@media (max-width:820px){.aca-cli-s{display:none}.aca-cli .acts{margin-left:0}.aca-ev{gap:6px}.aca-ev-c{min-width:38px}}

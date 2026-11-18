@@ -225,6 +225,10 @@ O que passa a existir:
 - **De onde vêm os formandos:** a região de cada formando sai do concelho de residência (com o distrito ou o código postal como último recurso). Percentagem e número de formandos do Norte, do Centro, do Sul, dos Açores, da Madeira e do estrangeiro, as regiões oficiais (NUTS II de 2024), um mapa por concelho e os concelhos com mais formandos.
 - **Comparação entre formações** e a estatística de cada formação no painel dela.
 - **Atualização automática:** quando alguém importa ou acrescenta formandos ou formações, os números mudam logo no ecrã de toda a gente.
+- **Evolução no tempo:** inscrições por semestre, por zona, e o peso de quem vem de fora do Norte em cada ano.
+- **Distância até à formação** (do concelho onde o formando vive ao concelho da formação) e os concelhos perto com poucos formandos, para o Marketing.
+- **Idade** no início de cada formação (a data de nascimento não é guardada), **desistências** por zona e por distância, e **assiduidade** de cada ação (do relatório de assiduidade da Secretaria Online). Aparecem depois de «Ler tudo outra vez».
+- **No Comercial:** a Central sugere que ex-formandos já estão no Comercial (pelo nome da barbearia, email ou Instagram). Depois de confirmados, aparecem na ficha do cliente.
 - **Definições** (direção): em que zona (Norte, Centro ou Sul) conta cada região. Por defeito, o Oeste e Vale do Tejo conta no Centro, e a Grande Lisboa, a Península de Setúbal, o Alentejo e o Algarve contam no Sul.
 
 ### 3o. Seguros e viaturas

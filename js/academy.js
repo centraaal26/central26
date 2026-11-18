@@ -51,6 +51,7 @@ function comRegiao(t) {
 
 export function criarAcademy(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $ } = ctx;
+  const veCrm = () => !!ctx.podeCrm?.(S.eu);
   const A = (S.aca = { estado: "por-carregar", formacoes: {}, formandos: {}, insc: [], config: null, tab: "painel", ultimoParam: undefined, q: "", fZona: "", pag: 1, aImportar: null, importando: false, geo: null, confirmar: false });
   let desligar = null;
   const pode = () => podeAcademy(S.eu);
@@ -71,6 +72,7 @@ export function criarAcademy(ctx) {
     }
     agendarRender();
     if (S.aberto && ["formacao", "formando"].includes(S.aberto.tipo)) renderPainel(true);
+    else if (S.aberto?.tipo === "cliente") renderPainel();
   }
   // Atualização automática: o que alguém muda (ou importa) entra logo no painel de toda a gente
   let tPainel = null;
@@ -104,7 +106,38 @@ export function criarAcademy(ctx) {
     return Object.values(A.formandos).filter((t) => com.has(t.id) || !algum.has(t.id));
   }
 
+  /* --------------------- distância, idade, desistências e assiduidade --------------------- */
+  const FAIXAS_KM = [["No mesmo concelho", -1, 0], ["Até 15 km", 0, 15], ["15 a 30 km", 15, 30], ["30 a 60 km", 30, 60], ["60 a 100 km", 60, 100], ["Mais de 100 km", 100, Infinity]];
+  const faixaKm = (d) => FAIXAS_KM.find(([, de, ate]) => d > de && d <= ate)?.[0];
+  const FAIXAS_IDADE = [["Até 19 anos", 0, 19], ["20 a 24 anos", 20, 24], ["25 a 29 anos", 25, 29], ["30 a 39 anos", 30, 39], ["40 anos ou mais", 40, 999]];
+  const faixaIdade = (v) => FAIXAS_IDADE.find(([, de, ate]) => v >= de && v <= ate)?.[0];
+  const cacheLocal = new Map();
+  const localCodigo = (f) => {
+    if (!f?.local) return "";
+    if (!cacheLocal.has(f.local)) cacheLocal.set(f.local, resolverRegiao({ concelho: f.local, localidade: f.local }).concelho_codigo || "");
+    return cacheLocal.get(f.local);
+  };
+  function kmEntre(a, b) {
+    const r = Math.PI / 180, dLa = (b[1] - a[1]) * r, dLo = (b[0] - a[0]) * r;
+    const x = Math.sin(dLa / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b[1] * r) * Math.sin(dLo / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(x));
+  }
+  const kmConcelhos = (de, para) => { if (!A.centros || !de || !para) return null; if (de === para) return 0; const a = A.centros.get(de), b = A.centros.get(para); return a && b ? Math.round(kmEntre(a, b)) : null; };
+  // em linha reta, do centro do concelho onde o formando vive ao centro do concelho onde foi a formação
+  const distancia = (i) => kmConcelhos(A.formandos[i.formando_id]?.concelho_codigo, localCodigo(A.formacoes[i.formacao_id]));
+  const mediana = (l) => { if (!l.length) return null; const o = [...l].sort((a, b) => a - b), m = o.length >> 1; return o.length % 2 ? o[m] : Math.round((o[m - 1] + o[m]) / 2); };
+  const media = (l) => (l.length ? l.reduce((a, b) => a + b, 0) / l.length : null);
+  const umDec = (v) => (Math.round(v * 10) / 10).toLocaleString("pt-PT", { maximumFractionDigits: 1 });
+  const inscValidas = () => { const v = new Set(formacoesValidas().map((f) => f.id)); return A.insc.filter((i) => v.has(i.formacao_id) && A.formandos[i.formando_id]); };
+  const semestre = (d) => (d ? d.slice(0, 4) + "-" + (+d.slice(5, 7) <= 6 ? 1 : 2) : "");
+  const assidMedia = (fs) => { const l = fs.filter((f) => f.assiduidade != null).map((f) => +f.assiduidade); return l.length ? media(l) : null; };
+
   /* ------------------------------ gráficos ------------------------------ */
+  // barras horizontais simples: [rótulo (HTML), valor, máximo, nota, classe]
+  function barras(linhas, fmt) {
+    return '<div class="barras-h">' + linhas.map(([r, v, t, nota, cls]) => '<div class="bh"><span class="bh-r">' + r + '</span><span class="bh-v">' + fmt(v, t) + (nota ? " <small>" + esc(nota) + "</small>" : "") +
+      '</span><div class="barra-p"><i' + (cls ? ' class="' + cls + '"' : "") + ' style="width:' + (v ? Math.max(1.5, t ? (v / t) * 100 : 0) : 0).toFixed(1) + '%"></i></div></div>').join("") + "</div>";
+  }
   const ponto = (z) => '<i class="aca-pt ' + ZONA_CLASSE[z] + '" aria-hidden="true"></i>';
   function barrasZonas(cont, total) {
     if (!total) return '<p class="muted">Ainda sem formandos.</p>';
@@ -125,6 +158,18 @@ export function criarAcademy(ctx) {
     A.geo = "a-carregar";
     fetch("geo/portugal.json").then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then((g) => {
       const kx = Math.cos(39.5 * Math.PI / 180);
+      // centro de cada concelho (do maior polígono), para as distâncias
+      A.centros = new Map();
+      for (const f of g.concelhos.features) {
+        const pols = f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
+        let melhor = null, area = 0;
+        for (const pol of pols) {
+          const r = pol[0]; let a = 0, cx = 0, cy = 0;
+          for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const k = r[j][0] * r[i][1] - r[i][0] * r[j][1]; a += k; cx += (r[j][0] + r[i][0]) * k; cy += (r[j][1] + r[i][1]) * k; }
+          if (Math.abs(a) > area) { area = Math.abs(a); melhor = [cx / (3 * a), cy / (3 * a)]; }
+        }
+        if (melhor) A.centros.set(f.properties.id, melhor);
+      }
       const caixas = { cont: { cx: -9.52, cy: 42.16, k: 95, dx: 152, dy: 6 }, acores: { cx: -31.3, cy: 39.75, k: 30, dx: 4, dy: 272 }, madeira: { cx: -17.3, cy: 33.15, k: 80, dx: 40, dy: 420 } };
       A.geo = g.concelhos.features.map((f) => {
         const dt = +f.properties.dt, c = dt >= 40 ? caixas.acores : dt >= 30 ? caixas.madeira : caixas.cont;
@@ -142,6 +187,7 @@ export function criarAcademy(ctx) {
         return { codigo: f.properties.id, nome: f.properties.nome, d };
       });
       agendarRender();
+      if (S.aberto && ["formacao", "formando"].includes(S.aberto.tipo)) renderPainel();
     }).catch(() => { A.geo = "erro"; agendarRender(); });
   }
   function mapa(lista) {
@@ -163,12 +209,12 @@ export function criarAcademy(ctx) {
   /* ------------------------------ vistas ------------------------------ */
   function vista(param) {
     if (A.estado === "por-carregar") carregar();
-    if (param !== A.ultimoParam) { A.ultimoParam = param; A.tab = ["formacoes", "formandos", "importar", "definicoes"].includes(param) ? param : "painel"; }
+    if (param !== A.ultimoParam) { A.ultimoParam = param; A.tab = ["formacoes", "formandos", "comercial", "importar", "definicoes"].includes(param) ? param : "painel"; }
     const g = eGestor(S.eu);
     const acao = A.estado !== "pronto" ? "" : A.tab === "formandos" ? '<button class="btn pri" data-acao="aca-formando-novo">' + I.plus + "Novo formando</button>" : A.tab === "formacoes" ? '<button class="btn pri" data-acao="aca-formacao-nova">' + I.plus + "Nova formação</button>" : "";
     let h = '<div class="cab" data-marca="academy"><div><div class="eyebrow">26 Academy</div><h1>Formandos e formações</h1><p class="sub-cab">Todos os formandos e formações da Academy, e de onde vêm os formandos: Norte, Centro, Sul e Regiões Autónomas. Os números atualizam-se sozinhos sempre que entram formandos ou formações novas.</p></div>' +
       (acao ? '<div class="acts">' + acao + "</div>" : "") + "</div>";
-    const tabs = [["painel", "Estatística"], ["formacoes", "Formações"], ["formandos", "Formandos"], ["importar", "Secretaria Online"]].concat(g ? [["definicoes", "Definições"]] : []);
+    const tabs = [["painel", "Estatística"], ["formacoes", "Formações"], ["formandos", "Formandos"]].concat(veCrm() ? [["comercial", "No Comercial"]] : [], [["importar", "Secretaria Online"]], g ? [["definicoes", "Definições"]] : []);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="aca-tab" data-tab="' + k + '" aria-selected="' + (A.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (A.estado === "falta-script") return h + '<div class="vazio"><h3>Falta instalar a Academy na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/19-academy.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
     if (A.estado === "erro") return h + '<div class="aviso erro">Não foi possível abrir a Academy: ' + esc(A.erro || "") + "</div>";
@@ -176,6 +222,7 @@ export function criarAcademy(ctx) {
     if (A.tab === "importar") return h + vistaImportar();
     if (A.tab === "definicoes" && g) return h + vistaDefinicoes();
     if (A.tab === "formacoes") return h + vistaFormacoes();
+    if (A.tab === "comercial") return h + vistaComercial();
     if (!Object.keys(A.formandos).length) return h + '<div class="vazio"><h3>Ainda não há formandos</h3><p>Em «Secretaria Online», lê os dados de lá ou importa o ficheiro. Também podes registar os formandos à mão.</p><div class="acts"><button class="btn pri" data-acao="aca-tab" data-tab="importar">Secretaria Online</button><button class="btn sec" data-acao="aca-formando-novo">' + I.plus + "Novo formando</button></div></div>";
     if (A.tab === "formandos") return h + vistaFormandos();
     return h + vistaPainel();
@@ -193,7 +240,7 @@ export function criarAcademy(ctx) {
     let h = '<div class="resumo-crm aca-kpis">' +
       kpi("Formandos", num(total), repetentes ? pl(repetentes, "fez mais de uma formação", "fizeram mais de uma formação") : "") +
       kpi("Formações realizadas", num(validas.length), [concl ? pl(concl, "concluída", "concluídas") : "", outras ? outras + " a decorrer" : "", aval ? aval + " em avaliação" : ""].filter(Boolean).join(" · ")) +
-      CONTINENTE.map((z) => kpi("Do " + z, pctTxt(cz[z] || 0, total), pl(cz[z] || 0, "formando", "formandos"))).join("") + "</div>";
+      CONTINENTE.map((z) => kpi("Do " + z, pctTxt(cz[z] || 0, total), pl(cz[z] || 0, "formando", "formandos"))).join("") + "</div>" + kpisExtra(validas);
     const ilhas = (cz["Açores"] || 0) + (cz.Madeira || 0);
     h += '<div class="duas aca-duas"><section class="cartao-sec"><h3>De onde vêm os formandos</h3>' + barrasZonas(cz, total);
     const notas = [];
@@ -204,9 +251,100 @@ export function criarAcademy(ctx) {
     h += '<h4 class="aca-h4">Por região (NUTS II)</h4><div class="barras-h">' + REGIOES.filter((r) => regs[r]).sort((a, b) => regs[b] - regs[a] || REGIOES.indexOf(a) - REGIOES.indexOf(b)).map((r) =>
       '<div class="bh"><span class="bh-r">' + esc(r) + (zonas()[r] && zonas()[r] !== r ? ' <small class="muted">· ' + esc(zonas()[r]) + "</small>" : "") + '</span><span class="bh-v">' + num(regs[r]) + " <small>" + pctTxt(regs[r], total) + '</small></span><div class="barra-p"><i class="' + ZONA_CLASSE[zonas()[r]] + '" style="width:' + pct(regs[r], total).toFixed(1) + '%"></i></div></div>').join("") + "</div>";
     h += '</section><section class="cartao-sec"><h3>Por concelho</h3>' + mapa(tf) + topConcelhos(tf) + "</section></div>";
+    h += secoesExtra(validas);
     h += '<section class="cartao-sec aca-comp-sec"><h3>Comparação entre formações</h3><p>O peso de cada zona nos formandos de cada formação (sem as canceladas). Toca numa formação para ver o detalhe.</p>' + legenda(ZONAS.filter((z) => cz[z])) + comparacao(validas) + "</section>" + linhaSinc();
     return h;
   }
+  function kpisExtra(validas) {
+    const insc = inscValidas(), des = insc.filter((i) => i.desistente).length, am = assidMedia(validas), idades = insc.map((i) => i.idade).filter((v) => v != null);
+    carregarGeo();
+    const dist = insc.map(distancia).filter((d) => d != null), comAssid = validas.filter((f) => f.assiduidade != null).length;
+    let h = '<div class="resumo-crm aca-kpis aca-kpis2">' +
+      kpi("Desistências", pctTxt(des, insc.length), num(des) + " de " + pl(insc.length, "inscrição", "inscrições")) +
+      kpi("Assiduidade média", am == null ? "—" : umDec(am) + "%", am == null ? "sem presenças registadas" : "em " + pl(comAssid, "formação", "formações")) +
+      kpi("Idade média", idades.length ? umDec(media(idades)) : "—", idades.length ? "no início da formação" : "lê tudo outra vez na Secretaria Online") +
+      kpi("Distância mediana", dist.length ? num(mediana(dist)) + " km" : "—", "de casa ao local da formação");
+    if (veCrm() && S.crm?.estado === "pronto") {
+      const lig = Object.values(A.formandos).filter((t) => t.cliente_id && S.crm.clientes[t.cliente_id]).length;
+      h += '<button class="kpi" data-acao="aca-tab" data-tab="comercial"><span>No Comercial</span><b>' + num(lig) + "</b><small>ex-formandos ligados a clientes</small></button>";
+    }
+    return h + "</div>";
+  }
+
+  function secoesExtra(validas) {
+    const insc = inscValidas();
+    let h = '<section class="cartao-sec"><h3>Evolução no tempo</h3><p>Inscrições por semestre (pela data de início de cada formação), separadas pela zona de onde vêm os formandos.</p>' + legenda(ZONAS.filter((z) => insc.some((i) => zonaDe(A.formandos[i.formando_id]) === z))) + evolucao(insc) + "</section>";
+    h += '<div class="duas aca-duas"><section class="cartao-sec"><h3>Distância até à formação</h3>' + distancias(insc) + '</section><section class="cartao-sec"><h3>Idade dos formandos</h3>' + idades(insc) + "</section></div>";
+    h += '<div class="duas aca-duas"><section class="cartao-sec"><h3>Desistências</h3>' + desistencias(insc) + '</section><section class="cartao-sec"><h3>Assiduidade por formação</h3>' + assiduidades(validas) + "</section></div>";
+    return h;
+  }
+  function evolucao(insc) {
+    const porSem = {};
+    insc.forEach((i) => { const k = semestre(A.formacoes[i.formacao_id]?.inicio); if (!k) return; const z = zonaDe(A.formandos[i.formando_id]); (porSem[k] ||= {})[z] = (porSem[k][z] || 0) + 1; });
+    const ks = Object.keys(porSem).sort();
+    if (!ks.length) return '<p class="muted">As formações ainda não têm data de início.</p>';
+    const todos = []; let [a, sm] = ks[0].split("-").map(Number); const [aF, sF] = ks[ks.length - 1].split("-").map(Number);
+    while (a < aF || (a === aF && sm <= sF)) { todos.push(a + "-" + sm); if (sm === 2) { a++; sm = 1; } else sm = 2; }
+    const tot = (k) => Object.values(porSem[k] || {}).reduce((x, y) => x + y, 0), max = Math.max(1, ...todos.map(tot));
+    let h = '<div class="aca-ev">' + todos.map((k) => {
+      const c = porSem[k] || {}, t = tot(k), [ano, s2] = k.split("-"), zs = ZONAS.filter((z) => c[z]), rot = (s2 === "1" ? "1.º" : "2.º") + " semestre de " + ano;
+      return '<div class="aca-ev-c"><span class="aca-ev-t">' + (t || "") + '</span><span class="aca-ev-b" style="height:' + ((t / max) * 100).toFixed(1) + '%" role="img" aria-label="' + esc(rot + ": " + pl(t, "inscrição", "inscrições") + (zs.length ? " (" + zs.map((z) => z + " " + c[z]).join(", ") + ")" : "")) + '">' +
+        zs.map((z) => '<i class="' + ZONA_CLASSE[z] + '" style="flex-grow:' + c[z] + '" title="' + esc(rot + " · " + z + ": " + c[z]) + '"></i>').join("") + '</span><span class="aca-ev-x">' + (s2 === "1" ? "1.º sem." : "2.º sem.") + "<br>" + ano + "</span></div>";
+    }).join("") + "</div>";
+    const anos = {};
+    insc.forEach((i) => { const ano = A.formacoes[i.formacao_id]?.inicio?.slice(0, 4), z = zonaDe(A.formandos[i.formando_id]); if (!ano || z === "Sem dados") return; (anos[ano] ||= [0, 0])[0]++; if (z !== "Norte") anos[ano][1]++; });
+    const la = Object.keys(anos).sort();
+    if (la.length > 1) h += '<p class="nota-tab">Peso de quem vem de fora do Norte: ' + la.map((x) => x + ", " + pctTxt(anos[x][1], anos[x][0])).join(" · ") + ".</p>";
+    return h;
+  }
+  function distancias(insc) {
+    if (!A.centros) return '<p class="muted">A calcular as distâncias…</p>';
+    const l = insc.map((i) => ({ i, d: distancia(i) })).filter((x) => x.d != null);
+    if (!l.length) return '<p class="muted">Falta saber o concelho dos formandos ou o local das formações.</p>';
+    const c = contar(l, (x) => faixaKm(x.d)), sem = insc.length - l.length;
+    let h = "<p>Metade dos formandos vive a menos de <b>" + num(mediana(l.map((x) => x.d))) + " km</b> do local da formação (em linha reta, entre os centros dos concelhos).</p>" +
+      barras(FAIXAS_KM.map(([r]) => [esc(r), c[r] || 0, l.length, pl(c[r] || 0, "inscrição", "inscrições")]), (v, t) => pctTxt(v, t));
+    if (sem) h += '<p class="nota-tab">' + pl(sem, "inscrição fica", "inscrições ficam") + " de fora por faltar o concelho do formando ou o local da formação.</p>";
+    // onde há margem para crescer: concelhos perto do local mais usado, com poucos formandos
+    const locais = contar(insc.map((i) => localCodigo(A.formacoes[i.formacao_id])).filter(Boolean), (x) => x), principal = Object.entries(locais).sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (principal) {
+      const porConc = contar(Object.values(A.formandos).filter((t) => t.concelho_codigo), (t) => t.concelho_codigo), nomeP = CONCELHOS.find((x) => x.codigo === principal)?.nome || "";
+      const perto = CONCELHOS.map((x) => ({ x, d: kmConcelhos(principal, x.codigo), v: porConc[x.codigo] || 0 })).filter((o) => o.d != null && o.d > 0 && o.d <= 35 && o.v <= 1).sort((a, b) => a.d - b.d).slice(0, 10);
+      if (perto.length) h += '<h4 class="aca-h4">Onde há margem para crescer</h4><p>Concelhos a menos de 35 km de ' + esc(nomeP) + " com um formando ou nenhum. Bons sítios para o Marketing apostar.</p>" +
+        '<div class="aca-chips">' + perto.map((o) => "<span>" + esc(o.x.nome) + " <small>" + num(o.d) + " km · " + (o.v ? "1 formando" : "nenhum") + "</small></span>").join("") + "</div>";
+    }
+    return h;
+  }
+  function idades(insc) {
+    const l = insc.map((i) => i.idade).filter((v) => v != null);
+    if (!l.length) return "<p>As idades aparecem depois de «Ler tudo outra vez», em Secretaria Online. A Central guarda só a idade no início de cada formação, não a data de nascimento.</p>";
+    const c = contar(l, faixaIdade), max = Math.max(...Object.values(c));
+    return "<p>Idade média de <b>" + umDec(media(l)) + " anos</b> no início da formação (metade tem até " + num(mediana(l)) + ").</p>" +
+      barras(FAIXAS_IDADE.map(([r]) => [esc(r), c[r] || 0, max, pctTxt(c[r] || 0, l.length)]), (v) => num(v)) +
+      (insc.length - l.length ? '<p class="nota-tab">' + pl(insc.length - l.length, "inscrição", "inscrições") + " sem data de nascimento na Secretaria Online.</p>" : "");
+  }
+  function desistencias(insc) {
+    if (!insc.length) return '<p class="muted">Ainda sem inscrições.</p>';
+    const des = insc.filter((i) => i.desistente).length;
+    let h = "<p><b>" + pctTxt(des, insc.length) + "</b> das inscrições acabaram em desistência (" + num(des) + " de " + num(insc.length) + ").</p>";
+    const pz = ZONAS.map((z) => { const l = insc.filter((i) => zonaDe(A.formandos[i.formando_id]) === z); return [z, l.length, l.filter((i) => i.desistente).length]; }).filter(([, t]) => t);
+    h += '<h4 class="aca-h4">Por zona</h4>' + barras(pz.map(([z, t, d]) => [ponto(z) + esc(z), d, t, d + " de " + t, ZONA_CLASSE[z]]), (v, t) => pctTxt(v, t));
+    if (A.centros) {
+      const l = insc.map((i) => ({ i, d: distancia(i) })).filter((x) => x.d != null);
+      const pf = FAIXAS_KM.map(([r]) => { const x = l.filter((o) => faixaKm(o.d) === r); return [r, x.length, x.filter((o) => o.i.desistente).length]; }).filter(([, t]) => t);
+      if (pf.length) h += '<h4 class="aca-h4">Pela distância de casa</h4>' + barras(pf.map(([r, t, d]) => [esc(r), d, t, d + " de " + t]), (v, t) => pctTxt(v, t));
+    }
+    return h + '<p class="nota-tab">Com poucos formandos por grupo, uma ou duas desistências mudam muito a percentagem.</p>';
+  }
+  function assiduidades(validas) {
+    const com = validas.filter((f) => f.assiduidade != null), sem = validas.filter((f) => f.assiduidade == null);
+    if (!com.length) return "<p>A assiduidade aparece depois de «Ler tudo outra vez», em Secretaria Online. Vem do relatório de assiduidade de cada ação.</p>";
+    let h = "<p>Média de <b>" + umDec(assidMedia(validas)) + "%</b> das horas com presença, nas sessões que já têm presenças registadas.</p>" +
+      barras(com.slice().reverse().map((f) => ['<button class="c-link" data-acao="aca-formacao" data-id="' + esc(f.id) + '">' + esc(f.nome) + "</button>", +f.assiduidade, 100, pl(f.assid_sessoes || 0, "sessão", "sessões")]), (v) => umDec(v) + "%");
+    if (sem.length) h += '<p class="nota-tab">Sem presenças registadas na Secretaria Online: ' + esc(sem.map((f) => f.nome).join(", ")) + ".</p>";
+    return h;
+  }
+
   function topConcelhos(tf) {
     const c = contar(tf.filter((t) => t.concelho), (t) => t.concelho), l = Object.entries(c).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt")).slice(0, 8);
     if (!l.length) return "";
@@ -225,11 +363,11 @@ export function criarAcademy(ctx) {
   function vistaFormacoes() {
     const todas = Object.values(A.formacoes).sort((a, b) => ordemFormacao(b, a));
     if (!todas.length) return '<div class="vazio"><h3>Ainda não há formações</h3><p>Lê-as da Secretaria Online (no separador com o mesmo nome) ou cria uma em «Nova formação».</p></div>';
-    return '<div class="tabela-scroll"><table class="crm-tabela aca-tab tab-cartoes"><thead><tr><th>Formação</th><th>Início</th><th>Estado</th><th class="n">Formandos</th><th>Origem dos formandos</th></tr></thead><tbody>' +
+    return '<div class="tabela-scroll"><table class="crm-tabela aca-tab tab-cartoes"><thead><tr><th>Formação</th><th>Início</th><th>Estado</th><th class="n">Formandos</th><th class="n">Assiduidade</th><th>Origem dos formandos</th></tr></thead><tbody>' +
       todas.map((f) => {
         const ins = inscritosDe(f.id), lista = formandosDe(f.id), c = contar(lista, zonaDe), des = ins.filter((i) => i.desistente).length;
         return '<tr data-acao="aca-formacao" data-id="' + esc(f.id) + '"' + (cancelada(f) ? ' class="aca-cancelada"' : "") + "><td><b>" + esc(f.nome) + "</b><small>" + esc([f.curso, f.local].filter(Boolean).join(" · ")) + "</small></td><td>" + esc(dataCurta(f.inicio) || "—") + "</td><td>" + esc(f.estado || "—") +
-          '</td><td class="n mono">' + pl(lista.length, "formando", "formandos") + (des ? "<small>" + pl(des, "desistente", "desistentes") + "</small>" : "") + '</td><td class="aca-td-emp">' + (lista.length ? barraEmpilhada(c, lista.length) : "") + "</td></tr>";
+          '</td><td class="n mono">' + pl(lista.length, "formando", "formandos") + (des ? "<small>" + pl(des, "desistente", "desistentes") + " (" + pctTxt(des, ins.length) + ")</small>" : "") + '</td><td class="n mono">' + (f.assiduidade != null ? umDec(+f.assiduidade) + "%" : "—") + '</td><td class="aca-td-emp">' + (lista.length ? barraEmpilhada(c, lista.length) : "") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
 
@@ -293,6 +431,90 @@ export function criarAcademy(ctx) {
       '</div><p class="nota-tab">Desde 2024, o Oeste, o Médio Tejo e a Lezíria do Tejo formam a região «Oeste e Vale do Tejo», e a antiga Área Metropolitana de Lisboa divide-se em «Grande Lisboa» e «Península de Setúbal». Cada concelho conta na região a que pertence, mesmo nos distritos divididos (por exemplo, Santa Maria da Feira, do distrito de Aveiro, conta no Norte).</p></section>';
   }
 
+  /* ------------------------- ex-formandos no Comercial ------------------------- */
+  const PARTICULAS = new Set(["de", "da", "do", "das", "dos", "e"]);
+  const GENERICOS = new Set(["barbearia", "barbeiro", "barbeiros", "barber", "barbers", "barbershop", "shop", "studio", "estudio", "salao", "cabeleireiro", "cabeleireira", "cabeleireiros", "hair", "the", "club", "lda", "unipessoal", "men", "man", "spa", "beauty", "style", "estilo", "corte", "cortes"]);
+  const tokens = (s) => n(s).replace(/[^a-z0-9 ]+/g, " ").split(" ").filter((x) => x.length > 1 && !PARTICULAS.has(x));
+  const crmPronto = () => veCrm() && S.crm?.estado === "pronto";
+  function abrirCrm() { const c = ctx.crm?.(); if (veCrm() && c && c.estado() === "por-carregar") c.carregar(); }
+  let cacheCli = null;
+  function clientesTok() {
+    const cl = S.crm.clientes, k = Object.keys(cl).length;
+    if (cacheCli && cacheCli.ref === cl && cacheCli.k === k) return cacheCli.l;
+    const l = Object.values(cl).map((c) => ({ c, nome: new Set(tokens(c.nome)), email: new Set(tokens(String(c.email || "").split("@")[0].replace(/[._-]+/g, " "))), ig: n(String(c.instagram || "").replace(/^.*instagram\.com\//i, "")).replace(/[^a-z0-9]/g, ""), conc: n(c.concelho) }));
+    cacheCli = { ref: cl, k, l };
+    return l;
+  }
+  // sugestões de clientes que podem ser este ex-formando (pelo nome da barbearia, pelo email ou pelo Instagram)
+  function sugestoesDe(t) {
+    if (!crmPronto() || t.cliente_id) return [];
+    const tk = tokens(t.nome);
+    if (tk.length < 2) return [];
+    const pri = tk[0], ult = tk[tk.length - 1], rej = new Set(t.clientes_rejeitados || []), conc = n(t.concelho), junto = pri + ult;
+    const out = [];
+    for (const x of clientesTok()) {
+      if (rej.has(x.c.id)) continue;
+      let conf = 0, porque = "";
+      if (x.nome.has(pri) && x.nome.has(ult)) { conf = 3; porque = "o nome da barbearia tem o nome dele"; }
+      else if (x.email.has(pri) && x.email.has(ult)) { conf = 3; porque = "o email tem o nome dele"; }
+      else if (x.ig && junto.length >= 8 && x.ig.includes(junto)) { conf = 3; porque = "o Instagram tem o nome dele"; }
+      else if (!GENERICOS.has(pri) && pri.length >= 4 && conc && x.conc === conc && (x.nome.has(pri) || x.nome.has(ult))) { conf = 1; porque = "nome parecido no mesmo concelho onde vive"; }
+      if (conf) out.push({ c: x.c, conf, porque });
+    }
+    return out.sort((a, b) => b.conf - a.conf || a.c.nome.localeCompare(b.c.nome, "pt")).slice(0, 3);
+  }
+  const etapaCli = (c) => (c.etapa === "cliente" ? "Cliente" : "Lead");
+  const ultimaFormacao = (t) => formacoesDe(t.id).sort((x, y) => ordemFormacao(x.f, y.f)).pop()?.f;
+  const linhaCli = (t, c, extra) => '<div class="aca-cli"><span class="aca-cli-a"><button class="c-link" data-acao="aca-formando" data-id="' + esc(t.id) + '">' + esc(t.nome) + "</button><small>" +
+    esc([ultimaFormacao(t)?.nome, t.concelho].filter(Boolean).join(" · ")) + '</small></span><span class="aca-cli-s" aria-hidden="true">→</span><span class="aca-cli-a"><a href="#cliente-' + esc(c.id) + '">' + esc(c.nome) + "</a><small>" +
+    esc([etapaCli(c), c.concelho].filter(Boolean).join(" · ")) + "</small></span>" + extra + "</div>";
+
+  function vistaComercial() {
+    if (!veCrm()) return '<div class="vazio"><h3>Sem acesso ao Comercial</h3><p>Só quem vê o Comercial pode ligar os ex-formandos aos clientes.</p></div>';
+    abrirCrm();
+    if (!crmPronto()) return '<div class="tabela"><div class="esqueleto"><i style="width:50%"></i></div></div>';
+    const todos = Object.values(A.formandos), lig = todos.filter((t) => t.cliente_id && S.crm.clientes[t.cliente_id]);
+    const sug = todos.filter((t) => !t.cliente_id).map((t) => ({ t, s: sugestoesDe(t) })).filter((x) => x.s.length).sort((a, b) => b.s[0].conf - a.s[0].conf || a.t.nome.localeCompare(b.t.nome, "pt"));
+    const clientes = lig.filter((t) => S.crm.clientes[t.cliente_id].etapa === "cliente").length;
+    let h = '<div class="resumo-crm aca-kpis aca-kpis2 aca-kpis-cli">' + kpi("Ex-formandos no Comercial", num(lig.length), pctTxt(lig.length, todos.length) + " dos formandos") + kpi("Já são clientes", num(clientes), "compram produtos") +
+      kpi("Ainda leads", num(lig.length - clientes), "a trabalhar pelo Comercial") + kpi("Por confirmar", num(sug.length), "sugestões da Central") + "</div>";
+    h += '<section class="cartao-sec"><h3>Por confirmar</h3><p>A Central procura no Comercial barbearias com o nome do ex-formando (no nome, no email ou no Instagram) e, com menos certeza, nomes parecidos no concelho onde ele vive. Confirma só quando tiveres a certeza: a ligação aparece depois na ficha do cliente.</p>';
+    h += sug.length ? '<div class="aca-cli-lista">' + sug.map(({ t, s }) => s.map((x) => linhaCli(t, x.c, '<span class="aca-cli-c"><span class="pill ' + (x.conf >= 3 ? "aca-forte" : "aca-fraca") + '">' + (x.conf >= 3 ? "Provável" : "Possível") + "</span><small>" + esc(x.porque) + '</small></span><span class="acts"><button class="btn sec" data-acao="aca-cli-sim" data-id="' + esc(t.id) + '" data-c="' + esc(x.c.id) + '">É este</button><button class="btn sec" data-acao="aca-cli-nao" data-id="' + esc(t.id) + '" data-c="' + esc(x.c.id) + '">Não é</button></span>')).join("")).join("") + "</div>"
+      : '<p class="muted">Não há sugestões por confirmar. Também podes ligar um ex-formando a um cliente na ficha dele.</p>';
+    h += '</section><section class="cartao-sec"><h3>Ligados <span class="mono muted">' + lig.length + "</span></h3>" +
+      (lig.length ? '<div class="aca-cli-lista">' + lig.sort((a, b) => a.nome.localeCompare(b.nome, "pt")).map((t) => linhaCli(t, S.crm.clientes[t.cliente_id], '<span class="acts"><button class="btn sec" data-acao="aca-cli-tirar" data-id="' + esc(t.id) + '">Desligar</button></span>')).join("") + "</div>" : '<p class="muted">Ainda nenhum ex-formando ligado a um cliente.</p>') + "</section>";
+    return h;
+  }
+  function seccaoComercial(t) {
+    abrirCrm();
+    if (!crmPronto()) return '<section class="p-sec"><h3>No Comercial</h3><div class="esqueleto"><i style="width:50%"></i></div></section>';
+    const c = t.cliente_id && S.crm.clientes[t.cliente_id];
+    let h = '<section class="p-sec"><h3>No Comercial</h3>';
+    if (c) h += '<p class="aca-reg"><a href="#cliente-' + esc(c.id) + '">' + esc(c.nome) + "</a> · " + esc(etapaCli(c)) + (c.concelho ? " · " + esc(c.concelho) : "") + ' <button class="c-link" data-acao="aca-cli-tirar" data-id="' + esc(t.id) + '">Desligar</button></p>';
+    else {
+      const s = sugestoesDe(t);
+      if (s.length) h += '<div class="aca-cli-lista">' + s.map((x) => '<div class="aca-cli"><span class="aca-cli-a"><a href="#cliente-' + esc(x.c.id) + '">' + esc(x.c.nome) + "</a><small>" + esc([etapaCli(x.c), x.c.concelho, x.porque].filter(Boolean).join(" · ")) + '</small></span><span class="acts"><button class="btn sec" data-acao="aca-cli-sim" data-id="' + esc(t.id) + '" data-c="' + esc(x.c.id) + '">É este</button><button class="btn sec" data-acao="aca-cli-nao" data-id="' + esc(t.id) + '" data-c="' + esc(x.c.id) + '">Não é</button></span></div>').join("") + "</div>";
+      else h += '<p class="muted">Não encontrei nenhuma barbearia com o nome dele no Comercial.</p>';
+      h += '<div class="aca-juntar"><label class="sr" for="aca-cli-q">Ligar a um cliente</label><input id="aca-cli-q" list="aca-cli-todos" placeholder="Ligar a um cliente: escreve o nome da barbearia" autocomplete="off"><datalist id="aca-cli-todos">' +
+        Object.values(S.crm.clientes).sort((a, b) => a.nome.localeCompare(b.nome, "pt")).map((x) => '<option value="' + esc(x.nome) + '">' + esc([etapaCli(x), x.concelho].filter(Boolean).join(" · ")) + "</option>").join("") + '</datalist><button class="btn sec" data-acao="aca-cli-ligar" data-id="' + esc(t.id) + '">Ligar</button></div>';
+    }
+    return h + "</section>";
+  }
+  // na ficha do cliente (Comercial): de que formação veio
+  function blocoCliente(c) {
+    if (!pode() || !c) return "";
+    if (A.estado === "por-carregar") { carregar(); return ""; }
+    const l = Object.values(A.formandos).filter((t) => t.cliente_id === c.id);
+    if (!l.length) return "";
+    return '<div class="aca-cli-b">' + (I.capelo || "") + "<span>Ex-formando da 26 Academy: " + l.map((t) => { const f = ultimaFormacao(t); return '<a href="#formando-' + esc(t.id) + '">' + esc(t.nome) + "</a>" + (f ? " (" + esc(f.nome) + (f.inicio ? ", " + f.inicio.slice(0, 4) : "") + ")" : ""); }).join(", ") + "</span></div>";
+  }
+  async function ligarCliente(tid, campos, msg) {
+    const antes = A.formandos[tid]; if (!antes) return;
+    A.formandos[tid] = { ...antes, ...campos }; render(); renderPainel(true);
+    try { const r = await api.aca.atualizarFormando(tid, campos); A.formandos[tid] = comRegiao(r); if (msg) toast(msg); render(); renderPainel(true); }
+    catch (e) { A.formandos[tid] = antes; render(); renderPainel(true); falha(e); }
+  }
+
   /* ------------------------------ painéis ------------------------------ */
   const mold = (label, c) => '<div class="veu" data-acao="fechar"></div><aside class="painel" role="dialog" aria-label="' + esc(label) + '" data-marca="academy"><div class="p-scroll">' + c + "</div></aside>";
   const topo = (rot, apagar) => '<div class="p-topo"><span class="migalha"><i></i>26 Academy / ' + rot + '</span><span class="acts">' + (apagar ? '<button class="ib perigo" data-acao="' + apagar + '">' + I.lixo + "Eliminar</button>" : "") + '<button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + "</button></span></div>";
@@ -316,6 +538,13 @@ export function criarAcademy(ctx) {
       const c = contar(lista.map((x) => x.t), zonaDe), des = ins.filter((i) => i.desistente).length;
       h += '<section class="p-sec"><h3>Origem dos formandos</h3><div class="resumo-crm aca-kpis">' + kpi("Formandos", num(lista.length), des ? pl(des, "desistente", "desistentes") : "") +
         CONTINENTE.map((z) => kpi(z, pctTxt(c[z] || 0, lista.length), pl(c[z] || 0, "formando", "formandos"))).join("") + "</div>" + barrasZonas(c, lista.length) + "</section>";
+      carregarGeo();
+      const insF = ins.filter((i) => A.formandos[i.formando_id]), idF = insF.map((i) => i.idade).filter((v) => v != null), dF = insF.map(distancia).filter((v) => v != null);
+      h += '<section class="p-sec"><h3>Indicadores</h3><div class="resumo-crm aca-kpis">' +
+        kpi("Desistências", insF.length ? pctTxt(des, insF.length) : "—", des + " de " + insF.length) +
+        kpi("Assiduidade", f.assiduidade != null ? umDec(+f.assiduidade) + "%" : "—", f.assiduidade != null ? pl(f.assid_sessoes || 0, "sessão", "sessões") : "sem presenças") +
+        kpi("Idade média", idF.length ? umDec(media(idF)) : "—", idF.length ? "de " + Math.min(...idF) + " a " + Math.max(...idF) + " anos" : "sem dados") +
+        kpi("Distância", dF.length ? num(mediana(dF)) + " km" : "—", dF.length ? "mediana" : "sem dados") + "</div></section>";
       const fora = Object.values(A.formandos).filter((t) => !ins.some((x) => x.formando_id === t.id)).sort((x, y) => x.nome.localeCompare(y.nome, "pt"));
       h += '<section class="p-sec"><h3>Formandos <span class="mono muted">' + lista.length + "</span></h3>" + (lista.length ? '<ul class="aca-lista">' + lista.map(({ i, t }) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formando" data-id="' + esc(t.id) + '">' + esc(t.nome) + "</button><small>" + ponto(zonaDe(t)) + esc([t.concelho, zonaDe(t)].filter(Boolean).join(" · ")) + "</small></span>" +
         '<label class="aca-des"><input type="checkbox" data-aca-desist="' + esc(t.id) + '"' + (i.desistente ? " checked" : "") + "> Desistiu</label>" +
@@ -341,8 +570,10 @@ export function criarAcademy(ctx) {
     if (!novo) h += '<p class="aca-reg">' + ponto(z) + "<b>" + esc(z) + "</b>" + (t.regiao && t.regiao !== z ? " · " + esc(t.regiao) : "") + (t.regiao_aprox ? " · deduzida só pelo distrito ou pelo código postal" : "") + (!t.regiao ? " · completa o concelho para saber a região" : "") + "</p>";
     if (!novo) {
       const fs = formacoesDe(t.id).sort((x, y) => ordemFormacao(y.f, x.f));
-      h += '<section class="p-sec"><h3>Formações</h3>' + (fs.length ? '<ul class="aca-lista">' + fs.map((x) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formacao" data-id="' + esc(x.f.id) + '">' + esc(x.f.nome) + "</button><small>" + esc([dataCurta(x.f.inicio), x.f.estado, x.desistente ? "desistiu" : ""].filter(Boolean).join(" · ")) + "</small></span></li>").join("") + "</ul>" : '<p class="muted">Ainda sem formações. Junta-o a uma formação no painel da formação.</p>') + "</section>";
+      h += '<section class="p-sec"><h3>Formações</h3>' + (fs.length ? '<ul class="aca-lista">' + fs.map((x) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formacao" data-id="' + esc(x.f.id) + '">' + esc(x.f.nome) + "</button><small>" + esc([dataCurta(x.f.inicio), x.f.estado, x.idade != null ? x.idade + " anos" : "", distancia(x) != null ? (distancia(x) ? distancia(x) + " km de casa" : "no concelho onde vive") : "", x.desistente ? "desistiu" : ""].filter(Boolean).join(" · ")) + "</small></span></li>").join("") + "</ul>" : '<p class="muted">Ainda sem formações. Junta-o a uma formação no painel da formação.</p>') + "</section>";
     }
+    carregarGeo();
+    if (!novo && veCrm()) h += seccaoComercial(t);
     h += '<section class="p-sec"><h3>Residência</h3><form class="form" id="form-aca-formando" novalidate>' + (novo ? campo("at-nome", "Nome", t.nome, ' maxlength="200" required autocomplete="off"') : "") +
       '<div class="campos-2">' + campo("aca-conc", "Concelho", t.concelho, ' list="aca-concelhos" maxlength="120" autocomplete="off"') + campo("aca-loc", "Localidade", t.localidade, ' maxlength="120"') +
       campo("aca-cp4", "Código postal", t.cp4, ' inputmode="numeric" maxlength="4" placeholder="4 primeiros dígitos"') + campo("aca-dist", "Distrito ou ilha", t.distrito, ' maxlength="120"') + campo("aca-pais", "País", t.pais || "Portugal", ' maxlength="80"') + "</div>" +
@@ -374,6 +605,14 @@ export function criarAcademy(ctx) {
       case "aca-ver-sem": A.fZona = "Sem dados"; A.q = ""; A.pag = 1; location.hash = "academy-formandos"; return true;
       case "aca-importar-cancelar": A.aImportar = null; render(); return true;
       case "aca-importar": importar(); return true;
+      case "aca-cli-sim": { const c = S.crm?.clientes?.[el.dataset.c]; ligarCliente(id, { cliente_id: el.dataset.c }, c ? "Ligado a " + c.nome : ""); return true; }
+      case "aca-cli-nao": { const t = A.formandos[id]; if (t) ligarCliente(id, { clientes_rejeitados: [...new Set([...(t.clientes_rejeitados || []), el.dataset.c])] }); return true; }
+      case "aca-cli-tirar": ligarCliente(id, { cliente_id: null }, "Desligado do Comercial"); return true;
+      case "aca-cli-ligar": {
+        const q = n($("#aca-cli-q")?.value || ""), c = q && Object.values(S.crm?.clientes || {}).find((x) => n(x.nome) === q);
+        if (!c) { toast("Escolhe uma barbearia da lista do Comercial.", true); return true; }
+        ligarCliente(id, { cliente_id: c.id }, "Ligado a " + c.nome); return true;
+      }
       case "aca-sinc": sincronizar(el.dataset.modo === "completa" ? "completa" : "agora"); return true;
       case "aca-apagar-nao": A.confirmar = false; renderPainel(true); return true;
       case "aca-formacao-apagar": case "aca-formando-apagar": A.confirmar = true; renderPainel(true); return true;
@@ -509,5 +748,5 @@ export function criarAcademy(ctx) {
     return [...ts, ...fs];
   }
 
-  return { vista, painel, clique, escrever, mudar, submeter, carregar, reiniciar, totalFormandos, pesquisar, estado: () => A.estado, zonaDe };
+  return { vista, painel, clique, escrever, mudar, submeter, carregar, reiniciar, totalFormandos, pesquisar, blocoCliente, estado: () => A.estado, zonaDe };
 }

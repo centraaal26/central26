@@ -286,7 +286,8 @@ export function criarAcademy(ctx) {
     const todos = []; let [a, sm] = ks[0].split("-").map(Number); const [aF, sF] = ks[ks.length - 1].split("-").map(Number);
     while (a < aF || (a === aF && sm <= sF)) { todos.push(a + "-" + sm); if (sm === 2) { a++; sm = 1; } else sm = 2; }
     const tot = (k) => Object.values(porSem[k] || {}).reduce((x, y) => x + y, 0), max = Math.max(1, ...todos.map(tot));
-    let h = '<div class="aca-ev">' + todos.map((k) => {
+    // Ordem invertida + row-reverse: no telemóvel, quando não cabe tudo, a barra abre nos semestres mais recentes
+    let h = '<div class="aca-ev">' + todos.slice().reverse().map((k) => {
       const c = porSem[k] || {}, t = tot(k), [ano, s2] = k.split("-"), zs = ZONAS.filter((z) => c[z]), rot = (s2 === "1" ? "1.º" : "2.º") + " semestre de " + ano;
       return '<div class="aca-ev-c"><span class="aca-ev-t">' + (t || "") + '</span><span class="aca-ev-b" style="height:' + ((t / max) * 100).toFixed(1) + '%" role="img" aria-label="' + esc(rot + ": " + pl(t, "inscrição", "inscrições") + (zs.length ? " (" + zs.map((z) => z + " " + c[z]).join(", ") + ")" : "")) + '">' +
         zs.map((z) => '<i class="' + ZONA_CLASSE[z] + '" style="flex-grow:' + c[z] + '" title="' + esc(rot + " · " + z + ": " + c[z]) + '"></i>').join("") + '</span><span class="aca-ev-x">' + (s2 === "1" ? "1.º sem." : "2.º sem.") + "<br>" + ano + "</span></div>";

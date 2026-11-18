@@ -214,8 +214,48 @@ export function criarDemo() {
     crm: (() => {
       const K = "central26-demo-crm-v1";
       let c = null;
-      const ler = () => { if (c) return c; try { c = JSON.parse(localStorage.getItem(K) || "null"); } catch { c = null; } return (c ||= { clientes: [], produtos: [], vendas: [], contactos: [], importacoes: [], seq: 1 }); };
+      const ler = () => { if (c) return c; try { c = JSON.parse(localStorage.getItem(K) || "null"); } catch { c = null; } if (!c) { c = semear(); guardar(); } return c; };
       const guardar = () => { try { localStorage.setItem(K, JSON.stringify(c)); } catch { /* sem espaço: fica só em memória */ } };
+      // Dados de exemplo (inventados) para o Comercial, a Análise e as margens não aparecerem vazios na demonstração
+      function semear() {
+        let r = 26; const rnd = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648), esc = (l) => l[Math.floor(rnd() * l.length)];
+        const LOC = [["4000", "Porto", "Porto"], ["4400", "Vila Nova de Gaia", "Porto"], ["4450", "Matosinhos", "Porto"], ["4470", "Maia", "Porto"], ["4700", "Braga", "Braga"], ["4800", "Guimarães", "Braga"],
+          ["3800", "Aveiro", "Aveiro"], ["4520", "Santa Maria da Feira", "Aveiro"], ["3000", "Coimbra", "Coimbra"], ["2400", "Leiria", "Leiria"], ["1000", "Lisboa", "Lisboa"], ["3500", "Viseu", "Viseu"]];
+        const PRE = ["Barbearia Exemplo", "Barber Studio Exemplo", "Salão Exemplo", "Barbearia Clássica Exemplo"];
+        const PRODS = [["E01", "Cera modeladora 100 ml (exemplo)", 8.9, 3.1], ["E02", "Cera mate 100 ml (exemplo)", 8.9, 3.3], ["E03", "Pó texturizante (exemplo)", 7.5, 2.4], ["E04", "Óleo para barba 30 ml (exemplo)", 9.8, 3.6],
+          ["E05", "After shave 100 ml (exemplo)", 8.4, null], ["E06", "Champô 1000 ml (exemplo)", 16, 6.2], ["E07", "Gola de corte (exemplo)", 4.2, null], ["E08", "Avental de barbeiro (exemplo)", 19.5, 8.5], ["E09", "Lâminas 100 un. (exemplo)", 11, null]];
+        const d = { clientes: [], produtos: PRODS.map(([codigo, descricao]) => ({ codigo, descricao, grupo: "EXEMPLO", linha: "produtos" })), vendas: [], contactos: [], importacoes: [], seq: 1,
+          custos: PRODS.filter((x) => x[3] != null).map(([codigo, , , custo]) => ({ produto_codigo: codigo, custo, atualizado_em: agora() })) };
+        for (let i = 0; i < 38; i++) {
+          const [cp, loc, dist] = esc(LOC);
+          d.clientes.push(novoCliente({ codigo_multixop: String(100 + i), nome: esc(PRE) + " " + (i + 1), nif: "", tipo: "empresa", origem: "multixop", etapa: "cliente",
+            morada: "Rua Exemplo, " + (1 + Math.floor(rnd() * 200)) + ", " + cp + "-" + String(Math.floor(rnd() * 999)).padStart(3, "0") + " " + loc, concelho: loc, distrito: dist,
+            responsavel_id: i % 3 ? "p-wembley" : null }));
+        }
+        const ETAPAS = ["lead", "lead", "lead", "contactado", "contactado", "proposta"];
+        for (let i = 0; i < 24; i++) {
+          const [, loc, dist] = esc(LOC);
+          d.clientes.push(novoCliente({ chave_lead: "exemplo-" + i, nome: "Lead Exemplo " + (i + 1) + " · " + loc, origem: "base_leads", concelho: loc, distrito: dist, etapa: ETAPAS[i % ETAPAS.length],
+            score: [40, 60, 80, 100][i % 4], responsavel_id: i % 2 ? "p-wembley" : null, notas: "Lead de exemplo" }));
+        }
+        // 14 meses de vendas até hoje, com alguns clientes a deixarem de comprar e umas notas de crédito
+        const hoje = new Date(); let doc = 1;
+        for (let m = 13; m >= 0; m--) {
+          const base = new Date(hoje.getFullYear(), hoje.getMonth() - m, 1), dias = m === 0 ? Math.max(1, hoje.getDate() - 1) : 28;
+          const nFat = Math.round(22 + rnd() * 14 + (base.getMonth() === 11 ? 10 : 0));
+          for (let f = 0; f < nFat; f++) {
+            const ci = Math.floor(Math.pow(rnd(), 1.6) * 38); if (ci % 9 === 4 && m < 5) continue; if (ci % 11 === 7 && m < 3) continue;
+            const data = ymd(new Date(base.getFullYear(), base.getMonth(), 1 + Math.floor(rnd() * dias))), nc = rnd() < 0.012, linhas = 1 + Math.floor(rnd() * 3);
+            for (let l = 1; l <= linhas; l++) {
+              const [codigo, descricao, preco] = PRODS[Math.floor(Math.pow(rnd(), 1.4) * PRODS.length)], qtd = [1, 2, 3, 6, 6, 12][Math.floor(rnd() * 6)];
+              d.vendas.push({ documento: (nc ? "NC EX/" : "FT EX/") + doc, linha: l, tipo: nc ? "NC" : "FT", data, cliente_codigo: String(100 + ci), produto_codigo: codigo, descricao, qtd, preco, valor: Math.round(preco * qtd * (nc ? -1 : 1) * 100) / 100 });
+            }
+            doc++;
+          }
+        }
+        d.vendas.sort((a, b) => a.data.localeCompare(b.data));
+        return d;
+      }
       const novoCliente = (o) => ({ id: uid(), codigo_multixop: null, chave_lead: null, nome: "", nome_corrigido: false, nif: "", tipo: "lead", etapa: "lead", origem: "manual", morada: "", codigo_postal: "",
         freguesia: "", concelho: "", distrito: "", telefone: "", email: "", website: "", instagram: "", data_aniversario: null, responsavel_id: null, score: null, notas: "",
         criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, ...o });

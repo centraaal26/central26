@@ -447,20 +447,27 @@ export function criarCrm(ctx) {
 
   function barrasMes(pares) {
     if (!pares.length) return '<p class="muted">Sem vendas no período.</p>';
-    const max = Math.max(...pares.map((x) => x[1]), 1), W = 640, H = 220, pe = 28, topo = 22, larg = (W - 8) / pares.length, bw = Math.min(46, larg * 0.62);
+    // Com mais de um ano de meses, os valores só aparecem no maior e no último (os outros ao passar por cima) e o ano marca a mudança
+    const muitos = pares.length > 13, anos = new Set(pares.map(([m]) => m.slice(0, 4))).size > 1;
+    const max = Math.max(...pares.map((x) => x[1]), 1), W = 640, H = anos ? 234 : 220, pe = anos ? 42 : 28, topo = 22, eixo = muitos ? 44 : 0, larg = (W - 8 - eixo) / pares.length, bw = Math.min(46, larg * 0.62);
     const passo = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : max / Math.pow(10, Math.floor(Math.log10(max))) > 2 ? 1 : 0.5);
     const linhas = []; for (let v = passo; v <= max; v += passo) linhas.push(v);
     const y = (v) => H - pe - (v / max) * (H - pe - topo);
+    const iMax = pares.reduce((b, x, i) => (x[1] > pares[b][1] ? i : b), 0), iUlt = pares.length - 1;
     let s = '<div class="grafico"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Vendas por mês">';
-    s += linhas.map((v) => '<line x1="0" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '" class="g-grelha"/><text x="' + W + '" y="' + (y(v) - 4) + '" class="g-eixo" text-anchor="end">' + (v >= 1000 ? (v / 1000).toLocaleString("pt-PT") + " mil" : v) + "</text>").join("");
+    s += linhas.map((v) => '<line x1="0" x2="' + (W - eixo) + '" y1="' + y(v) + '" y2="' + y(v) + '" class="g-grelha"/><text x="' + W + '" y="' + (y(v) + (eixo ? 4 : -4)) + '" class="g-eixo" text-anchor="end">' + (v >= 1000 ? (v / 1000).toLocaleString("pt-PT") + " mil" : v) + "</text>").join("");
     s += '<line x1="0" x2="' + W + '" y1="' + (H - pe) + '" y2="' + (H - pe) + '" class="g-base"/>';
     pares.forEach(([m, v], i) => {
-      const cx = 4 + larg * i + larg / 2, yy = y(Math.max(v, 0)), alt = Math.max(1, H - pe - yy), r = Math.min(4, alt / 2, bw / 2);
-      s += '<g class="g-barra"><title>' + MES_L[+m.slice(5) - 1] + " " + m.slice(0, 4) + ": " + eur(v) + "</title>" +
+      const cx = 4 + larg * i + larg / 2, yy = y(Math.max(v, 0)), alt = Math.max(1, H - pe - yy), r = Math.min(4, alt / 2, bw / 2), mes = +m.slice(5);
+      const oculto = muitos && i !== iMax && i !== iUlt, rotMes = !muitos || i % 2 === 0 || mes === 1 || i === iUlt;
+      const novoAno = anos && (i === 0 || mes === 1);
+      s += (anos && mes === 1 && i ? '<line x1="' + (cx - larg / 2) + '" x2="' + (cx - larg / 2) + '" y1="' + topo + '" y2="' + (H - 4) + '" class="g-ano"/>' : "") +
+        '<g class="g-barra"><title>' + MES_L[mes - 1] + " " + m.slice(0, 4) + ": " + eur(v) + "</title>" +
         '<rect x="' + (cx - larg / 2) + '" y="' + topo + '" width="' + larg + '" height="' + (H - pe - topo) + '" class="g-alvo"/>' +
-        '<path d="M' + (cx - bw / 2) + "," + (H - pe) + " V" + (yy + r) + " Q" + (cx - bw / 2) + "," + yy + " " + (cx - bw / 2 + r) + "," + yy + " H" + (cx + bw / 2 - r) + " Q" + (cx + bw / 2) + "," + yy + " " + (cx + bw / 2) + "," + (yy + r) + " V" + (H - pe) + ' Z" class="g-marca"/>' +
-        '<text x="' + cx + '" y="' + (yy - 6) + '" class="g-valor" text-anchor="middle">' + (v >= 1000 ? (v / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + " mil" : Math.round(v)) + "</text>" +
-        '<text x="' + cx + '" y="' + (H - 8) + '" class="g-eixo" text-anchor="middle">' + MES[+m.slice(5) - 1] + "</text></g>";
+        '<path d="M' + (cx - bw / 2) + "," + (H - pe) + " V" + (yy + r) + " Q" + (cx - bw / 2) + "," + yy + " " + (cx - bw / 2 + r) + "," + yy + " H" + (cx + bw / 2 - r) + " Q" + (cx + bw / 2) + "," + yy + " " + (cx + bw / 2) + "," + (yy + r) + " V" + (H - pe) + ' Z" class="g-marca" style="--i:' + i + '"/>' +
+        '<text x="' + cx + '" y="' + (yy - 6) + '" class="g-valor' + (oculto ? " g-oculto" : "") + '" text-anchor="middle">' + (v >= 1000 ? (v / 1000).toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + " mil" : Math.round(v)) + "</text>" +
+        (rotMes ? '<text x="' + cx + '" y="' + (H - pe + 18) + '" class="g-eixo" text-anchor="middle">' + MES[mes - 1] + "</text>" : "") +
+        (novoAno ? '<text x="' + (cx - larg / 2 + 2) + '" y="' + (H - 6) + '" class="g-eixo g-ano-t">' + m.slice(0, 4) + "</text>" : "") + "</g>";
     });
     return s + "</svg></div>";
   }

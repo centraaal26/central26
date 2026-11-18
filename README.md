@@ -285,6 +285,7 @@ js/prazos.js                                seguros e viaturas: datas, avisos an
 js/academy.js · js/academy-regioes.js      26 Academy: formandos, formações e estatística por região (concelhos e NUTS II)
 supabase/functions/academy-sincronizar/     leitura automática da Secretaria Online da 26 Academy (só leitura)
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
+js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

@@ -17,6 +17,7 @@ import { criarStocks, podeStocks } from "./stocks.js";
 import { criarPrazos, podePrazos } from "./prazos.js";
 import { criarAcademy, podeAcademy } from "./academy.js";
 import { criarRelatorio } from "./relatorio.js";
+import { darVida } from "./vida.js";
 import { criarProspecao, podeProspecao } from "./prospecao.js";
 import { criarPesquisa } from "./pesquisa.js";
 import { criarAssistente, pedidoPublicacao, pedidoTarefa } from "./assistente.js";
@@ -492,6 +493,7 @@ function ajustarEcra(raiz) {
   });
   const chave = (location.hash || "#inicio").split("-")[0];
   raiz.querySelectorAll(".sub-cab").forEach((p) => p.classList.toggle("aberto", introAberta.has(chave)));
+  if (S.fase === "app") darVida(raiz);
 }
 document.addEventListener("scroll", (e) => { if (e.target?.classList?.contains("tabs")) marcarTabs(e.target); }, true);
 document.addEventListener("click", (e) => {

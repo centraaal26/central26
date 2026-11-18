@@ -478,6 +478,10 @@ h2 .n{font-family:var(--f-mono);font-size:13px;font-weight:400;color:var(--faint
 .g-alvo{fill:transparent}
 .g-barra:hover .g-marca{filter:brightness(1.15)}
 .g-barra:hover .g-valor{fill:var(--ink);font-weight:600}
+.g-oculto{opacity:0;transition:opacity .15s}
+.g-barra:hover .g-oculto,.g-barra:focus-within .g-oculto{opacity:1}
+.g-ano{stroke:var(--line);stroke-dasharray:3 3}
+.g-ano-t{font-weight:600;fill:var(--ink-2,var(--muted))}
 .barras-h{display:flex;flex-direction:column;gap:12px}
 .bh{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13.5px}
 .bh-r{min-width:0;overflow-wrap:anywhere}
@@ -1852,7 +1856,7 @@ html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-b
 /* Academy: evolução, distâncias, ex-formandos no Comercial */
 .aca-kpis2{margin-top:-6px}
 .aca-kpis-cli{margin-top:0}
-.aca-ev{display:flex;align-items:flex-end;gap:10px;height:190px;padding-top:4px;overflow-x:auto}
+.aca-ev{display:flex;flex-direction:row-reverse;align-items:flex-end;gap:10px;height:190px;padding-top:4px;overflow-x:auto}
 .aca-ev-c{flex:1 1 0;min-width:46px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}
 .aca-ev-t{font-family:var(--f-mono);font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums}
 .aca-ev-b{width:min(100%,46px);display:flex;flex-direction:column-reverse;gap:2px;border-radius:4px 4px 0 0;overflow:hidden;min-height:2px}
@@ -1887,3 +1891,55 @@ html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-b
 .stk-sug small{font-size:12px;color:var(--muted)}
 .stk-prev{margin:4px 0 0;font-size:13.5px;color:var(--muted);line-height:1.5}
 .rel-sec .ranking{margin-top:4px}
+
+/* Números e valores das tabelas nunca partem a meio (ex.: o € numa linha à parte) */
+table.ranking td.n{white-space:nowrap}
+@media (max-width:560px){table.ranking td:first-child{min-width:7.5em;overflow-wrap:anywhere}table.ranking th,table.ranking td{padding-inline:6px}}
+
+/* ---------- vida: ilustrações, números e gráficos animados (js/vida.js) ---------- */
+.cab.com-arte{position:relative;isolation:isolate}
+.cab.com-arte:has(.acts){min-height:104px}
+.cab-arte{position:absolute;z-index:-1;right:0;top:-30px;width:156px;height:94px;color:var(--b);opacity:.36;pointer-events:none}
+.cab.com-arte:not(:has(.acts)) .cab-arte{top:-14px;width:190px;height:114px}
+.cab-arte svg{width:100%;height:100%;display:block;overflow:visible}
+.cab-arte .tom{fill:currentColor;stroke:none;opacity:.14}
+.cab-arte.entra{animation:arte-entra .9s cubic-bezier(.2,.7,.2,1) both}
+.cab-arte.entra .tom{animation:aparecer 1s .7s both}
+@keyframes arte-entra{from{opacity:0;transform:translateY(8px) scale(.98)}}
+@keyframes tracar{from{stroke-dashoffset:var(--c)}to{stroke-dashoffset:0}}
+.cab-arte .raios{transform-box:view-box;transform-origin:100px 96px;animation:raios 5s ease-in-out infinite}
+@keyframes raios{50%{transform:scale(1.07);opacity:.6}}
+@media (max-width:820px){.cab.com-arte:has(.acts){min-height:0}.cab-arte,.cab.com-arte:not(:has(.acts)) .cab-arte{width:132px;height:80px;top:-10px;right:-8px;opacity:.26}}
+
+.cresce .g-marca{transform-box:fill-box;transform-origin:50% 100%;animation:crescer-y .7s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 22ms)}
+.cresce .g-valor:not(.g-oculto){animation:aparecer .35s .55s both}
+.cresce .aca-ev-b{transform-origin:50% 100%;animation:crescer-y .7s cubic-bezier(.2,.7,.2,1) both}
+.cresce .aca-ev-c:nth-child(2) .aca-ev-b{animation-delay:.04s}.cresce .aca-ev-c:nth-child(3) .aca-ev-b{animation-delay:.08s}.cresce .aca-ev-c:nth-child(n+4) .aca-ev-b{animation-delay:.12s}
+.cresce .barra-p i,.cresce.barra-prog i,.cresce .barra-prog i{transform-origin:0 50%;animation:crescer-x .8s cubic-bezier(.2,.7,.2,1) both}
+.surge{animation:entrar .28s cubic-bezier(.2,.7,.2,1) both}
+@keyframes crescer-y{from{transform:scaleY(0)}}
+@keyframes crescer-x{from{transform:scaleX(0)}}
+
+/* estados vazios com um desenho (caixa aberta) */
+.vazio::before{content:"";width:64px;height:44px;background:var(--b);opacity:.55;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 44' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 20l24-10 24 10v16L32 42 8 36z'/%3E%3Cpath d='M8 20l24 10 24-10M32 30v12'/%3E%3Cpath d='M8 20L2 12l24-8 6 6M56 20l6-8-24-8-6 6'/%3E%3Cpath d='M50 2l1 3 3 1-3 1-1 3-1-3-3-1 3-1z'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 44' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 20l24-10 24 10v16L32 42 8 36z'/%3E%3Cpath d='M8 20l24 10 24-10M32 30v12'/%3E%3Cpath d='M8 20L2 12l24-8 6 6M56 20l6-8-24-8-6 6'/%3E%3Cpath d='M50 2l1 3 3 1-3 1-1 3-1-3-3-1 3-1z'/%3E%3C/svg%3E") center/contain no-repeat;
+  animation:flutuar 4s ease-in-out infinite}
+@keyframes flutuar{50%{transform:translateY(-3px)}}
+
+/* esqueletos a brilhar enquanto carrega */
+.esqueleto i{background:linear-gradient(90deg,var(--sunken) 0%,var(--hover) 45%,var(--sunken) 90%);background-size:220% 100%;animation:brilho 1.3s ease-in-out infinite}
+@keyframes brilho{from{background-position:120% 0}to{background-position:-120% 0}}
+
+/* entrada: riscas do poste de barbeiro a correr devagar no fundo */
+.entrada{position:relative;overflow:hidden;isolation:isolate}
+.entrada::before{content:"";position:absolute;inset:-60px -200px;z-index:-1;pointer-events:none;
+  background:repeating-linear-gradient(135deg,rgba(211,175,110,.07) 0 22px,transparent 22px 64px);
+  -webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 50%,transparent 25%,#000 80%);mask-image:radial-gradient(ellipse 70% 60% at 50% 50%,transparent 25%,#000 80%);
+  animation:riscas 9s linear infinite}
+@keyframes riscas{to{transform:translateX(90.51px)}}
+.cartao-entrada{animation:entrar .7s cubic-bezier(.2,.7,.2,1) both}
+.logos-entrada img{animation:aparecer .6s both}
+.logos-entrada img:nth-child(2){animation-delay:.1s}.logos-entrada img:nth-child(3){animation-delay:.2s}.logos-entrada img:nth-child(4){animation-delay:.3s}
+
+@media (prefers-reduced-motion:reduce){.surge,.cab-arte,.cab-arte *,.cresce *,.vazio::before,.esqueleto i,.entrada::before,.cartao-entrada,.logos-entrada img{animation:none!important;transition:none!important}}

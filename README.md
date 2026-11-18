@@ -231,6 +231,17 @@ O que passa a existir:
 - **No Comercial:** a Central sugere que ex-formandos já estão no Comercial (pelo nome da barbearia, email ou Instagram). Depois de confirmados, aparecem na ficha do cliente.
 - **Definições** (direção): em que zona (Norte, Centro ou Sul) conta cada região. Por defeito, o Oeste e Vale do Tejo conta no Centro, e a Grande Lisboa, a Península de Setúbal, o Alentejo e o Algarve contam no Sul.
 
+### 3s. Margens, encomendas ao laboratório e relatório mensal
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/20-margens-encomendas-relatorio.sql` → **Run**.
+2. Edge Functions → **Deploy a new function** → **Via Editor** → nome `relatorio-mensal` → cola o código de `supabase/functions/relatorio-mensal/index.ts` → **Deploy**. Na página da função, desliga **Verify JWT**. Usa o mesmo segredo `RESEND_API_KEY` dos avisos por email.
+3. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy** (a cópia passa a incluir os custos).
+4. Na app (direção): **Comercial → Análise → Margens**: escreve o custo de cada produto (sem IVA, por unidade). Em **Stocks**, abre cada produto e liga-o ao produto do Multixop e ao prazo de fabrico.
+
+O que passa a existir:
+- **Margens** no Comercial: margem por produto, margem total e os clientes com mais e menos margem. O custo só a direção o muda.
+- **Encomendar ao laboratório** nos Stocks e no Início: quantos dias de stock faltam, pela venda dos últimos 90 dias, e quanto encomendar para cobrir o fabrico e mais 60 dias (muda-se em Stocks → Avisos).
+- **Relatório mensal** (Mais → Relatório mensal, só a direção): vendas e margem, clientes novos e parados, barbearias, stock, Academy, prazos e tarefas. No dia 1 de cada mês chega por email à direção, com o mês anterior.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -273,6 +284,7 @@ js/stocks.js                                stocks da TwentySix: quantidades, mo
 js/prazos.js                                seguros e viaturas: datas, avisos antes do dia e histórico
 js/academy.js · js/academy-regioes.js      26 Academy: formandos, formações e estatística por região (concelhos e NUTS II)
 supabase/functions/academy-sincronizar/     leitura automática da Secretaria Online da 26 Academy (só leitura)
+js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

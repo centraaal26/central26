@@ -41,6 +41,7 @@ export function criarApi() {
           msg = nome === "enviar-push"
             ? "As notificações no telemóvel ainda não estão ligadas no servidor: falta instalar a função «enviar-push» no Supabase (README, passo 3b). Dentro da app os avisos continuam a funcionar."
             : nome === "academy-sincronizar" ? "Falta publicar a função «academy-sincronizar» no Supabase (README, passo 3r)."
+            : nome === "relatorio-mensal" ? "Falta publicar a função «relatorio-mensal» no Supabase (README, passo 3s)."
             : "Falta correr o script supabase/02-equipa.sql no Supabase (SQL Editor).";
         } else if (r && typeof r.json === "function") { const j = await r.json(); if (j && j.erro) msg = j.erro; }
       } catch { /* mantém a mensagem genérica */ }
@@ -153,7 +154,13 @@ export function criarApi() {
           todas(() => sb.from("crm_contactos").select("*").order("criado_em", { ascending: false })),
           sb.from("crm_importacoes").select("*").order("criado_em", { ascending: false }).limit(20),
         ]);
-        return { clientes, produtos, vendas, contactos, importacoes: ok(importacoes) };
+        // custo de cada produto (script 20): sem o script, as margens ficam simplesmente por mostrar
+        const custos = await sb.from("crm_custos").select("produto_codigo, custo, atualizado_em");
+        return { clientes, produtos, vendas, contactos, importacoes: ok(importacoes), custos: custos.error ? null : custos.data };
+      },
+      async custo(codigo, valor) {
+        if (valor == null) { ok(await sb.from("crm_custos").delete().eq("produto_codigo", codigo)); return null; }
+        return ok(await sb.from("crm_custos").upsert({ produto_codigo: codigo, custo: valor }).select().single());
       },
       async criar(c) { return ok(await sb.from("crm_clientes").insert(c).select().single()); },
       async atualizar(id, campos) { return ok(await sb.from("crm_clientes").update(campos).eq("id", id).select().single()); },
@@ -405,7 +412,7 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -425,8 +432,11 @@ export function criarApi() {
           sb.from("stk_movimentos").select("*").order("criado_em", { ascending: false }).limit(300),
           sb.from("stk_config").select("*").eq("id", 1).maybeSingle(),
         ]);
-        return { produtos, movimentos: ok(movimentos), config: ok(config) };
+        // procura dos últimos 90 dias (script 20), para saber quando encomendar ao laboratório
+        const procura = await sb.rpc("stk_procura", { p_dias: 90 });
+        return { produtos, movimentos: ok(movimentos), config: ok(config), procura: procura.error ? null : procura.data };
       },
+      async catalogoMultixop() { return ok(await sb.rpc("stk_catalogo_multixop")); },
       async movimento(id, tipo, qtd, nota) { return ok(await sb.rpc("stk_movimento", { p_produto: id, p_tipo: tipo, p_qtd: qtd, p_nota: nota || "" })); },
       async ignorar(id) { return ok(await sb.rpc("stk_ignorar", { p_produto: id })); },
       async criar(p) { return ok(await sb.from("stk_produtos").insert(p).select().single()); },
@@ -558,6 +568,11 @@ export function criarApi() {
         canal.subscribe();
         return () => sb.removeChannel(canal);
       },
+    },
+    // relatório mensal da direção (script 20 + função relatorio-mensal)
+    relatorio: {
+      async dados(mes) { return ok(await sb.rpc("relatorio_dados", { p_mes: mes })); },
+      async enviar(mes, soParaMim) { return invocar("relatorio-mensal", { acao: "enviar", mes, so_para_mim: !!soParaMim }); },
     },
     // histórico e reciclagem (script 18)
     hist: {

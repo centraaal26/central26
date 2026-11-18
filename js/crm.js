@@ -112,6 +112,7 @@ export function criarCrm(ctx) {
     C.clientes = Object.fromEntries(d.clientes.map((c) => [c.id, c]));
     C.produtos = Object.fromEntries(d.produtos.map((p) => [p.codigo, p]));
     C.vendas = d.vendas; C.contactos = d.contactos; C.importacoes = d.importacoes;
+    C.custos = d.custos ? Object.fromEntries(d.custos.map((x) => [x.produto_codigo, +x.custo])) : null;
     C.estado = "pronto"; C.versao++;
     if (!primeira) { agendarRender(); if (S.aberto?.tipo === "cliente") renderPainel(); }
   }
@@ -374,6 +375,8 @@ export function criarCrm(ctx) {
     h += '<section class="cartao-sec"><h3>Menos vendidos</h3><p>Produtos com vendas pagas no período, do menor para o maior valor. Os que só saíram como oferta não entram aqui.</p>' + tabelaProd(prods.slice(-10).reverse()) +
       '<details class="nunca"><summary>' + num(nunca.length) + " produtos do catálogo não venderam nada neste período</summary><ul>" + nunca.slice(0, 200).map((x) => "<li>" + esc(x.descricao) + "</li>").join("") + (nunca.length > 200 ? "<li>…</li>" : "") + "</ul></details></section></div>";
 
+    h += secaoMargens(vendas);
+
     // a contactar + aniversários
     const contactar = visiveis().filter((c) => statsDe(c)?.aContactar).sort((a, b) => statsDe(b).dias - statsDe(a).dias);
     const mesAtual = new Date().getMonth(), mesSeg = (mesAtual + 1) % 12;
@@ -397,6 +400,48 @@ export function criarCrm(ctx) {
       "</tbody></table></div></section>";
     h += '<p class="nota-tab">Os gastos fixos (rendas, fornecedores, viaturas) não estão no SAF-T de vendas; vão ficar no módulo do Financeiro.</p>';
     return h;
+  }
+  // Margens: precisam do custo de cada produto (sem IVA, por unidade), que só a direção muda
+  function secaoMargens(vendas) {
+    if (!C.custos) return "";
+    const g = eGestor(S.eu), uni = (v) => (v.tipo === "NC" ? -Math.abs(+v.qtd) : +v.qtd);
+    const porProd = new Map(), porCli = new Map();
+    let vendasCom = 0, custoTot = 0, total = 0;
+    for (const v of vendas) {
+      const k = v.produto_codigo; if (!k) continue;
+      const x = porProd.get(k) || { cod: k, desc: C.produtos[k]?.descricao || v.descricao, q: 0, val: 0 };
+      x.q += uni(v); x.val += +v.valor; porProd.set(k, x); total += +v.valor;
+      const c = C.custos[k];
+      if (c != null) {
+        vendasCom += +v.valor; custoTot += uni(v) * c;
+        const y = porCli.get(v.cliente_codigo) || { cod: v.cliente_codigo, val: 0, custo: 0 };
+        y.val += +v.valor; y.custo += uni(v) * c; porCli.set(v.cliente_codigo, y);
+      }
+    }
+    const prods = [...porProd.values()].filter((x) => x.val > 0 && C.produtos[x.cod]?.linha !== "servicos").sort((a, b) => b.val - a.val);
+    const semCusto = prods.filter((x) => C.custos[x.cod] == null);
+    const margem = vendasCom - custoTot, pctM = vendasCom ? Math.round((margem / vendasCom) * 100) : 0;
+    let h = '<section class="cartao-sec crm-margens"><h3>Margens</h3><p>Vendas menos o custo de cada produto (sem IVA). ' +
+      (g ? "Escreve o custo por unidade na tabela: guarda sozinho e só a direção o pode mudar." : "O custo de cada produto é preenchido pela direção.") + "</p>";
+    h += '<div class="dados">' + dado("Margem bruta", vendasCom ? eur(margem) : "—", "", vendasCom ? pctM + "% sobre as vendas com custo conhecido" : "falta o custo dos produtos") +
+      dado("Vendas com custo conhecido", total ? Math.round((vendasCom / total) * 100) + "%" : "—", "", eur(vendasCom) + " de " + eur(total)) +
+      dado("Produtos sem custo", num(semCusto.length), semCusto.length ? "at" : "", semCusto.length ? "com vendas neste período" : "todos preenchidos") + "</div>";
+    const ver = C.verMargens ? prods : prods.slice(0, 15);
+    h += '<div class="tabela-scroll"><table class="ranking crm-margem-tab"><thead><tr><th>Produto</th><th class="n">Unidades</th><th class="n">Vendas</th><th class="n">Preço médio</th><th class="n">Custo por unidade</th><th class="n">Margem por unidade</th><th class="n">Margem</th></tr></thead><tbody>' +
+      ver.map((x) => {
+        const c = C.custos[x.cod], pm = x.q ? x.val / x.q : 0, mu = c != null ? pm - c : null;
+        return "<tr><td>" + esc(x.desc) + '</td><td class="n">' + num(x.q) + '</td><td class="n">' + eur(x.val) + '</td><td class="n">' + eur(pm, 2) + '</td><td class="n">' +
+          (g ? '<label class="sr" for="crm-custo-' + esc(x.cod) + '">Custo de ' + esc(x.desc) + '</label><input class="crm-custo" id="crm-custo-' + esc(x.cod) + '" data-crm-custo="' + esc(x.cod) + '" inputmode="decimal" value="' + (c != null ? c.toFixed(2).replace(".", ",") : "") + '" placeholder="—">' : c != null ? eur(c, 2) : "—") +
+          '</td><td class="n">' + (mu != null ? eur(mu, 2) : "—") + '</td><td class="n' + (mu != null && mu < 0 ? " at" : "") + '">' + (mu != null && pm ? Math.round((mu / pm) * 100) + "%" : "—") + "</td></tr>";
+      }).join("") + "</tbody></table></div>" +
+      (prods.length > 15 ? '<button class="mostrar-feitas" data-acao="crm-ver-margens">' + I.seta + (C.verMargens ? "Mostrar só os 15 primeiros" : "Ver os " + prods.length + " produtos") + "</button>" : "");
+    const clis = [...porCli.values()].filter((y) => y.val >= 100).map((y) => ({ ...y, m: y.val - y.custo, p: (y.val - y.custo) / y.val }));
+    if (clis.length >= 3) {
+      const nome = (cod) => Object.values(C.clientes).find((c) => c.codigo_multixop === cod)?.nome || cod;
+      const lin = (l) => '<div class="lista-crm">' + l.map((y) => '<div class="lc"><span>' + esc(nome(y.cod)) + "</span><small>" + eur(y.m) + " de margem · " + Math.round(y.p * 100) + "% · vendas " + eur(y.val) + "</small></div>").join("") + "</div>";
+      h += '<div class="duas"><div><h4 class="aca-h4">Clientes que mais margem deixam</h4>' + lin(clis.slice().sort((a, b) => b.m - a.m).slice(0, 8)) + '</div><div><h4 class="aca-h4">Margem mais baixa (com mais de 100 € de vendas)</h4>' + lin(clis.slice().sort((a, b) => a.p - b.p).slice(0, 8)) + "</div></div>";
+    }
+    return h + "</section>";
   }
   const dado = (rot, val, cls = "", nota = "") => '<div class="dado"><span>' + esc(rot) + '</span><b class="' + cls + '">' + val + "</b>" + (nota ? "<small>" + esc(nota) + "</small>" : "") + "</div>";
 
@@ -561,6 +606,7 @@ export function criarCrm(ctx) {
     switch (acao) {
       case "crm-tab": C.tab = el.dataset.tab; render(); return true;
       case "crm-recarregar": carregar(); return true;
+      case "crm-ver-margens": C.verMargens = !C.verMargens; render(); return true;
       case "crm-vista": C.vista = el.dataset.v; C.fEstado = ""; C.pag = 1; if (C.tab !== "clientes") C.tab = "clientes"; render(); return true;
       case "crm-fest": C.fEstado = C.fEstado === el.dataset.v ? "" : el.dataset.v; if (C.fEstado) C.vista = "clientes"; C.pag = 1; render(); return true;
       case "crm-pag": C.pag = +el.dataset.p; render(); document.querySelector(".crm-tabela")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
@@ -599,6 +645,16 @@ export function criarCrm(ctx) {
     const t = e.target, id = S.aberto?.tipo === "cliente" ? S.aberto.id : null;
     const filtros = { "crm-fetapa": "fEtapa", "crm-festado": "fEstado", "crm-fdist": "fDistrito", "crm-fresp": "fResp", "crm-ordem": "ordem", "crm-fundist": "funilDistrito", "crm-funresp": "funilResp", "crm-periodo": "periodo" };
     if (filtros[t.id]) { C[filtros[t.id]] = t.value; C.pag = 1; render(); return true; }
+    if (t.dataset?.crmCusto) {
+      const cod = t.dataset.crmCusto, txt = t.value.trim().replace(/\s|€/g, "").replace(",", "."), v = txt === "" ? null : Number(txt);
+      if (v != null && (!Number.isFinite(v) || v < 0)) { toast("Escreve o custo em euros, por exemplo 3,20.", true); return true; }
+      const antes = C.custos?.[cod];
+      if ((antes ?? null) === v) return true;
+      C.custos = { ...(C.custos || {}) }; if (v == null) delete C.custos[cod]; else C.custos[cod] = v;
+      render();
+      api.crm.custo(cod, v).then(() => toast(v == null ? "Custo apagado" : "Custo guardado: " + eur(v, 2))).catch((err) => { if (antes == null) delete C.custos[cod]; else C.custos[cod] = antes; render(); falha(err); });
+      return true;
+    }
     if (t.id === "crm-ficheiro") { if (t.files?.[0]) lerFicheiro(t.files[0]); t.value = ""; return true; }
     if (!id) return false;
     if (t.id === "cf-etapa") { gravar(id, { etapa: t.value }); return true; }

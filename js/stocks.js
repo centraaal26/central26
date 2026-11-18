@@ -22,6 +22,7 @@ export function criarStocks(ctx) {
       const d = await api.stk.carregar();
       T.produtos = Object.fromEntries(d.produtos.map((p) => [p.id, p]));
       T.movs = d.movimentos; T.config = d.config || { avisar: [], hora_inicio: 8, hora_fim: 21 };
+      T.procura = d.procura ? Object.fromEntries(d.procura.map((x) => [x.produto_id, x])) : null;
       T.estado = "pronto";
       if (!desligar && api.stk.subscrever) desligar = api.stk.subscrever(aoMudar);
     } catch (e) { T.estado = /PGRST20|stk_produtos|Could not find|does not exist/i.test(String(e?.message)) ? "falta-script" : "erro"; T.erro = e.message; }
@@ -50,6 +51,29 @@ export function criarStocks(ctx) {
     if (p.minimo == null) return { cls: "ok", pct: 100 };
     const pct = Math.max(4, Math.min(100, (p.quantidade / Math.max(1, p.minimo * 3)) * 100));
     return { cls: p.quantidade <= p.minimo ? "baixo" : p.quantidade <= p.minimo * 1.5 ? "perto" : "ok", pct };
+  }
+
+  // Quando encomendar ao laboratório: pela procura dos últimos 90 dias (vendas no Multixop do código ligado, ou retiradas)
+  const prazoPadrao = () => T.config?.prazo_fabrico ?? 30, cobertura = () => T.config?.cobertura ?? 60;
+  function previsao(p) {
+    if (!T.procura || p.quantidade == null || !p.ativo) return null;
+    const x = T.procura[p.id]; if (!x) return null;
+    const usadas = p.codigo_multixop ? +x.vendido : +x.saidas, diaria = usadas / (x.dias || 90);
+    const prazo = p.prazo_fabrico_dias ?? prazoPadrao();
+    if (diaria <= 0) return { semProcura: true, prazo, fonte: p.codigo_multixop ? "vendas" : "retiradas" };
+    const dias = Math.floor(p.quantidade / diaria), folga = dias - prazo;
+    return { diaria, porMes: diaria * 30, dias, prazo, folga, fonte: p.codigo_multixop ? "vendas" : "retiradas",
+      nivel: folga <= 14 ? "encomendar" : folga <= 30 ? "breve" : "ok", sugerido: Math.max(0, Math.ceil(diaria * (prazo + cobertura()) - p.quantidade)) };
+  }
+  const quando = (folga) => (folga <= 0 ? "já devia ter sido encomendado" : folga <= 14 ? "encomendar esta semana" : "encomendar até " + new Date(Date.now() + (folga - 14) * 864e5).toLocaleDateString("pt-PT", { day: "numeric", month: "short" }));
+  function seccaoEncomendar(l) {
+    if (!T.procura) return "";
+    const lista = l.map((p) => ({ p, x: previsao(p) })).filter((o) => o.x && !o.x.semProcura && o.x.nivel !== "ok").sort((a, b) => a.x.folga - b.x.folga);
+    if (!lista.length) return "";
+    return '<section class="cartao-sec stk-encomendar"><h3>Encomendar ao laboratório <span class="mono muted">' + lista.length + "</span></h3><p>Pelo que se vendeu nos últimos 90 dias e pelo prazo de fabrico de cada produto. A quantidade sugerida cobre o fabrico e mais " + cobertura() + " dias.</p>" +
+      '<div class="stk-al-lista">' + lista.map(({ p, x }) => '<div class="stk-alerta' + (x.nivel === "breve" ? " ign" : "") + '"><button class="stk-al-t" data-acao="stk-abrir" data-id="' + p.id + '"><b>' + esc(p.nome) + "</b><small>" +
+        "Dá para " + fmt(x.dias) + " dias · fabrico " + fmt(x.prazo) + " dias · " + esc(quando(x.folga)) + "</small></button>" +
+        '<span class="stk-sug"><b class="mono">' + fmt(x.sugerido) + "</b><small>" + esc(p.unidade) + " a encomendar</small></span></div>").join("") + "</div></section>";
   }
 
   async function mover(id, tipo, qtd, nota, silencioso) {
@@ -103,6 +127,7 @@ export function criarStocks(ctx) {
       h += '<section class="cartao-sec stk-alertas"><h3>A repor <span class="mono muted">' + alertas.length + '</span></h3><div class="stk-al-lista">' + ver.map(cartaoAlerta).join("") + "</div>" +
         (alertas.length > 3 ? '<button class="mostrar-feitas" data-acao="stk-ver-alertas">' + I.seta + (T.verAlertas ? "Mostrar só os 3 primeiros" : "Ver todos os " + alertas.length) + "</button>" : "") + "</section>";
     }
+    h += seccaoEncomendar(l);
     const cats = categorias();
     if (!T.cat || !cats.includes(T.cat)) T.cat = cats[0] || "";
     h += '<div class="barra"><div class="ferr ferr-aud"><label class="pesq stk-pesq">' + I.lupa + '<span class="sr">Pesquisar produto</span><input id="stk-q" type="search" placeholder="Procurar produto em todas as categorias…" value="' + esc(T.q) + '"></label></div></div>';
@@ -154,7 +179,10 @@ export function criarStocks(ctx) {
       '<p class="muted">Sem ninguém escolhido, recebe o departamento de Logística (' + esc(logist) + ").</p>" +
       '<div class="stk-pessoas">' + pessoas.map((p) => '<label class="chk-txt stk-pessoa"><input type="checkbox" data-stk-avisar="' + p.id + '"' + (sel.has(p.id) ? " checked" : "") + "> " + av(p.id) + "<span>" + esc(p.nome) + "</span></label>").join("") + "</div></section>" +
       '<section class="cartao-sec"><h3>Horário dos avisos</h3><p>Fora deste horário não são enviados lembretes (por exemplo, à noite).</p><div class="campos-3"><div class="campo"><label for="stk-h-ini">Das</label>' + horas("stk-h-ini", c.hora_inicio, 0, 23) +
-      '</div><div class="campo"><label for="stk-h-fim">Até às</label>' + horas("stk-h-fim", c.hora_fim, 1, 24) + '</div></div><div class="acts"><button class="btn pri" data-acao="stk-guardar-avisos">Guardar</button></div></section>';
+      '</div><div class="campo"><label for="stk-h-fim">Até às</label>' + horas("stk-h-fim", c.hora_fim, 1, 24) + "</div></div>" +
+      (c.prazo_fabrico != null ? '<h4 class="aca-h4">Encomendas ao laboratório</h4><div class="campos-3"><div class="campo"><label for="stk-prazo-pad">Prazo de fabrico habitual (dias)</label><input id="stk-prazo-pad" type="number" min="0" max="365" value="' + c.prazo_fabrico + '"></div>' +
+        '<div class="campo"><label for="stk-cob">Cada encomenda cobre (dias de vendas)</label><input id="stk-cob" type="number" min="7" max="365" value="' + c.cobertura + '"></div></div>' : "") +
+      '<div class="acts"><button class="btn pri" data-acao="stk-guardar-avisos">Guardar</button></div></section>';
   }
 
   /* ---------- Importar ---------- */
@@ -249,10 +277,27 @@ export function criarStocks(ctx) {
     h += '<div class="props"><label for="sk-min">Mínimo (aviso)</label><input id="sk-min" type="number" inputmode="numeric" min="0" step="1" value="' + (p.minimo ?? "") + '" placeholder="Sem aviso">' +
       '<label for="sk-cat">Categoria</label><input id="sk-cat" list="sk-cats" value="' + esc(p.categoria) + '"><datalist id="sk-cats">' + cats.map((c) => '<option value="' + esc(c) + '">').join("") + "</datalist>" +
       '<label for="sk-uni">Unidade</label><input id="sk-uni" value="' + esc(p.unidade) + '" maxlength="12">' +
-      (g ? '<label for="sk-ativo">Estado</label><select id="sk-ativo"><option value="1"' + (p.ativo ? " selected" : "") + '>À venda</option><option value="0"' + (p.ativo ? "" : " selected") + ">Desativado</option></select>" : "") + "</div>";
+      (g ? '<label for="sk-ativo">Estado</label><select id="sk-ativo"><option value="1"' + (p.ativo ? " selected" : "") + '>À venda</option><option value="0"' + (p.ativo ? "" : " selected") + ">Desativado</option></select>" : "") +
+      (T.procura ? '<label for="sk-multixop">Produto no Multixop</label>' + selMultixop(p) +
+        '<label for="sk-prazo">Prazo de fabrico</label><input id="sk-prazo" type="number" inputmode="numeric" min="0" max="365" step="1" value="' + (p.prazo_fabrico_dias ?? "") + '" placeholder="' + prazoPadrao() + ' dias (padrão)">' : "") + "</div>";
+    if (T.procura) {
+      const x = previsao(p);
+      h += '<p class="stk-prev">' + (!x ? "Conta o stock para a Central prever quando encomendar." : x.semProcura ? (x.fonte === "vendas" ? "Sem vendas no Multixop nos últimos 90 dias." : "Sem retiradas nos últimos 90 dias. Liga-o ao produto do Multixop para contar as vendas.") :
+        "Sai cerca de " + fmt(Math.round(x.porMes)) + " " + esc(p.unidade) + " por mês (" + (x.fonte === "vendas" ? "vendas no Multixop" : "retiradas no Stocks") + "). Dá para " + fmt(x.dias) + " dias; com " + fmt(x.prazo) + " dias de fabrico, " + esc(quando(x.folga)) + (x.nivel !== "ok" ? ": sugerimos " + fmt(x.sugerido) + " " + esc(p.unidade).replace(/\.$/, "") + "." : ".")) + "</p>";
+    }
     const mv = T.movs.filter((m) => m.produto_id === p.id).slice(0, 15);
     h += '<section class="p-sec"><h3>Últimos movimentos</h3>' + (mv.length ? '<div class="feed">' + mv.map((m) => linhaMov(m, false).replace('<span class="q">', '<span class="q">' + esc(haQuanto(m.criado_em)) + " · ")).join("") + "</div>" : '<p class="muted">Ainda sem movimentos.</p>') + "</section>";
     return mold(h);
+  }
+  // lista de produtos do Multixop para ligar (carrega uma vez, quando se abre um produto)
+  function selMultixop(p) {
+    if (!T.catMx && !T.aCarregarMx) {
+      T.aCarregarMx = true;
+      api.stk.catalogoMultixop().then((l) => { T.catMx = l || []; }).catch(() => { T.catMx = []; }).finally(() => { T.aCarregarMx = false; renderPainel(); });
+    }
+    const l = T.catMx || [], atual = p.codigo_multixop || "";
+    const ops = l.map((x) => '<option value="' + esc(x.codigo) + '"' + (x.codigo === atual ? " selected" : "") + ">" + esc(x.descricao) + (+x.vendido_ano ? " · " + fmt(+x.vendido_ano) + " vendidos num ano" : "") + "</option>").join("");
+    return '<select id="sk-multixop"><option value="">' + (T.catMx ? "Sem ligação" : "A carregar…") + "</option>" + (atual && !l.some((x) => x.codigo === atual) ? '<option value="' + esc(atual) + '" selected>Código ' + esc(atual) + "</option>" : "") + ops + "</select>";
   }
   function painelNovo() {
     const cats = categorias();
@@ -268,11 +313,14 @@ export function criarStocks(ctx) {
     if (!pode()) return "";
     if (T.estado === "por-carregar") carregar();
     if (T.estado !== "pronto") return "";
-    const al = lista().filter(emAlerta);
-    if (!al.length) return "";
-    return '<section class="cartao-sec stk-alertas" data-marca="twentysix"><h3>Stock a repor <span class="mono muted">' + al.length + '</span> <a class="c-link" href="#stocks" style="font-size:13px;margin-left:8px">Abrir os Stocks</a></h3><div class="stk-al-lista">' + al.slice(0, 4).map(cartaoAlerta).join("") + "</div></section>";
+    const al = lista().filter(emAlerta), enc = aEncomendar();
+    if (!al.length && !enc.length) return "";
+    return '<section class="cartao-sec stk-alertas" data-marca="twentysix"><h3>' + (al.length ? "Stock a repor" : "Encomendar ao laboratório") + ' <span class="mono muted">' + (al.length || enc.length) + '</span> <a class="c-link" href="#stocks" style="font-size:13px;margin-left:8px">Abrir os Stocks</a></h3>' +
+      (al.length ? '<div class="stk-al-lista">' + al.slice(0, 4).map(cartaoAlerta).join("") + "</div>" : "") +
+      (enc.length ? '<p class="nota-tab">' + (al.length ? "A encomendar ao laboratório: " : "") + enc.slice(0, 5).map((p) => esc(p.nome) + " (dá para " + fmt(previsao(p).dias) + " dias)").join(", ") + (enc.length > 5 ? " e mais " + (enc.length - 5) : "") + ".</p>" : "") + "</section>";
   }
   const contagem = () => (T.estado !== "pronto" ? 0 : lista().filter((p) => p.alerta === "alerta").length);
+  const aEncomendar = () => (T.estado !== "pronto" ? [] : lista().filter((p) => previsao(p)?.nivel === "encomendar"));
 
   /* ============================== Ações ============================== */
   function clique(acao, el) {
@@ -299,7 +347,8 @@ export function criarStocks(ctx) {
         const avisar = [...document.querySelectorAll("[data-stk-avisar]")].filter((x) => x.checked).map((x) => x.dataset.stkAvisar);
         const hi = +$("#stk-h-ini").value, hf = +$("#stk-h-fim").value;
         if (hf <= hi) { toast("A hora de fim tem de ser depois da hora de início.", true); return true; }
-        api.stk.guardarConfig({ avisar, hora_inicio: hi, hora_fim: hf }).then((c) => { T.config = c; render(); toast("Avisos guardados"); }).catch(falha);
+        const extra = $("#stk-prazo-pad") ? { prazo_fabrico: Math.min(365, Math.max(0, Math.round(+$("#stk-prazo-pad").value || 0))), cobertura: Math.min(365, Math.max(7, Math.round(+$("#stk-cob").value || 60))) } : {};
+        api.stk.guardarConfig({ avisar, hora_inicio: hi, hora_fim: hf, ...extra }).then((c) => { T.config = c; render(); toast("Avisos guardados"); }).catch(falha);
         return true;
       }
     }
@@ -335,6 +384,8 @@ export function criarStocks(ctx) {
       if (t.id === "sk-cat") { const v = t.value.trim(); if (v) { gravarCampo(id, { categoria: v }); T.cat = v; } return true; }
       if (t.id === "sk-uni") { gravarCampo(id, { unidade: t.value.trim() || "un." }); return true; }
       if (t.id === "sk-ativo") { gravarCampo(id, { ativo: t.value === "1" }); return true; }
+      if (t.id === "sk-multixop") { gravarCampo(id, { codigo_multixop: t.value || null }).then(() => recarregar()); return true; }
+      if (t.id === "sk-prazo") { const v = t.value === "" ? null : Math.min(365, Math.max(0, Math.round(+t.value))); gravarCampo(id, { prazo_fabrico_dias: v }); return true; }
     }
     return false;
   }
@@ -369,5 +420,5 @@ export function criarStocks(ctx) {
     if (!pode() || T.estado !== "pronto") return [];
     return lista().filter((p) => q(p.nome + " " + p.categoria)).slice(0, 6).map((p) => ({ titulo: p.nome, sub: p.categoria + " · " + (p.quantidade == null ? "por contar" : p.quantidade + " " + p.unidade) + (p.alerta !== "ok" ? " · a repor" : ""), href: "#stock-" + p.id }));
   }
-  return { vista, painel, clique, escrever, mudar, submeter, carregar, recarregar, pesquisar, blocoInicio, reiniciar, contagem, estado: () => T.estado };
+  return { vista, painel, clique, escrever, mudar, submeter, carregar, recarregar, pesquisar, blocoInicio, reiniciar, contagem, aEncomendar, estado: () => T.estado };
 }

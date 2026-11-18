@@ -16,6 +16,7 @@ import { criarMarketing, podeMarketing } from "./marketing.js";
 import { criarStocks, podeStocks } from "./stocks.js";
 import { criarPrazos, podePrazos } from "./prazos.js";
 import { criarAcademy, podeAcademy } from "./academy.js";
+import { criarRelatorio } from "./relatorio.js";
 import { criarProspecao, podeProspecao } from "./prospecao.js";
 import { criarPesquisa } from "./pesquisa.js";
 import { criarAssistente, pedidoPublicacao, pedidoTarefa } from "./assistente.js";
@@ -234,7 +235,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
+  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -414,6 +415,7 @@ function lerRota(desenhar = true) {
     else if (r === "stock" && p) { rota = "stock"; param = p; }
     else if (r === "prazos") { rota = "prazos"; param = p || null; }
     else if (r === "academy") { rota = "academy"; param = p || null; }
+    else if (r === "relatorio") { rota = "relatorio"; param = p || null; }
     else if ((r === "formando" || r === "formacao") && p) { rota = r; param = p; }
     else if (r === "prospecao") { rota = "prospecao"; param = p || null; }
     else if (r === "proposta" && p) { rota = "proposta"; param = p; }
@@ -652,6 +654,7 @@ function vistaApp() {
   else if ((S.rota === "stocks" || S.rota === "stock") && podeStocks(S.eu)) corpo = STK.vista(S.rota === "stocks" ? S.param : null);
   else if ((S.rota === "prospecao" || S.rota === "proposta") && podeProspecao(S.eu)) corpo = PRS.vista(S.rota === "prospecao" ? S.param : undefined);
   else if (["prazos", "prazo", "viatura"].includes(S.rota) && (podePrazos(S.eu) || S.rota !== "prazos" || PRZ.estado() === "pronto")) corpo = PRZ.vista(S.rota === "prazos" ? S.param : null);
+  else if (S.rota === "relatorio" && g) corpo = REL.vista(S.param);
   else if (["academy", "formando", "formacao"].includes(S.rota) && podeAcademy(S.eu)) corpo = ACA.vista(S.rota === "academy" ? S.param : S.aca?.ultimoParam ?? null);
   else if (["operacional", "fornecedor", "pedido"].includes(S.rota) && podeOperacional(S.eu)) corpo = OP.vista(S.rota === "operacional" ? S.param : null);
   else if (S.rota === "auditoria") corpo = AUD.vista(/^[A-Z]{2,4}-/.test(S.param || "") ? null : S.param);
@@ -1131,7 +1134,7 @@ function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
   h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"], ["#prospecao", I.alvo, "Prospeção"]] : []),
-    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []), ...(podePrazos(S.eu) ? [["#prazos", I.carro, "Seguros e viaturas"]] : []), ...(podeAcademy(S.eu) ? [["#academy", I.capelo, "26 Academy"]] : []), ["#assistente", I.ia, "Assistente"],
+    ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []), ...(podePrazos(S.eu) ? [["#prazos", I.carro, "Seguros e viaturas"]] : []), ...(podeAcademy(S.eu) ? [["#academy", I.capelo, "26 Academy"]] : []), ...(eGestor(S.eu) ? [["#relatorio", I.grafico, "Relatório mensal"]] : []), ["#assistente", I.ia, "Assistente"],
     ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : []), ["#reciclagem", I.lixo, "Reciclagem"]]
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   if (!S.prefs && api.preferencias) { S.prefs = { aCarregar: true }; api.preferencias.ler(S.eu.id).then((x) => { S.prefs = x; render(); }).catch(() => { S.prefs = { falta: true }; render(); }); }
@@ -1510,7 +1513,7 @@ document.addEventListener("click", async (e) => {
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
     case "sincronizar": api.sincronizar?.(); break;
-    default: FIA.clique(acao, el, e) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
+    default: FIA.clique(acao, el, e) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
@@ -1637,7 +1640,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (FIA.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || PRS.mudar(e)) return;
+  if (FIA.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
   if (t.id === "pf-foto" && t.files?.[0]) { mudarFoto(t.files[0]); t.value = ""; return; }
   if (t.dataset.pref && S.prefs && !S.prefs.falta) {
     const campo = t.dataset.pref, v = t.checked; S.prefs = { ...S.prefs, [campo]: v };
@@ -1714,6 +1717,7 @@ const PQ = criarPesquisa({
     ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística", "encomendas rotas entregas"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix", "stock produtos inventário"]] : []),
     ...(podePrazos(S.eu) ? [["#prazos", I.carro, "Seguros e viaturas", "seguro apólice viaturas carros carrinha revisão inspeção iuc matrícula"]] : []),
     ...(podeAcademy(S.eu) ? [["#academy", I.capelo, "26 Academy", "formandos formações ações cursos estatística regiões norte centro sul"]] : []),
+    ...(eGestor(S.eu) ? [["#relatorio", I.grafico, "Relatório mensal", "relatório mês direção vendas margem resumo email"]] : []),
     ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores", "operacional orçamentos compras"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing", "calendário publicações redes"]] : []),
     ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites", "segurança sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro", "faturação custos"]] : []),
     ...MARCAS.map((m) => ["#marca-" + m.id, I.lista, m.nome, "marca"]),
@@ -1724,6 +1728,7 @@ const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, r
 const PRS = criarProspecao({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $, demo: DEMO,
   abrirCliente: (id) => { if (CRM.estado() !== "pronto") CRM.carregar(); abrir({ tipo: "cliente", id }); } });
 const PRZ = criarPrazos({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
+const REL = criarRelatorio({ S, api, esc, toast, falha, render, agendarRender });
 const ACA = criarAcademy({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $, crm: () => CRM, podeCrm });
 const MK = criarMarketing({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });
 const OP = criarFornecedores({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, $ });

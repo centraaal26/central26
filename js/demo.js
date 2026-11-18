@@ -220,7 +220,13 @@ export function criarDemo() {
         freguesia: "", concelho: "", distrito: "", telefone: "", email: "", website: "", instagram: "", data_aniversario: null, responsavel_id: null, score: null, notas: "",
         criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, ...o });
       return {
-        async carregar() { const d = ler(); return structuredClone({ clientes: d.clientes, produtos: d.produtos, vendas: d.vendas, contactos: d.contactos, importacoes: d.importacoes }); },
+        async carregar() { const d = ler(); return structuredClone({ clientes: d.clientes, produtos: d.produtos, vendas: d.vendas, contactos: d.contactos, importacoes: d.importacoes, custos: d.custos || [] }); },
+        async custo(codigo, valor) {
+          const d = ler(); if (!eGestor(eu())) throw new Error("Só a direção muda o custo dos produtos.");
+          d.custos = (d.custos || []).filter((x) => x.produto_codigo !== codigo);
+          if (valor != null) d.custos.push({ produto_codigo: codigo, custo: valor, atualizado_em: agora() });
+          guardar(); return valor == null ? null : { produto_codigo: codigo, custo: valor };
+        },
         async criar(o) { const d = ler(), r = novoCliente(o); d.clientes.push(r); guardar(); return structuredClone(r); },
         async atualizar(id, campos) {
           const d = ler(), r = d.clientes.find((x) => x.id === id); if (!r) throw new Error("O cliente já não existe.");
@@ -803,7 +809,19 @@ export function criarDemo() {
       };
       const limparAvisos = (id) => { db.notificacoes = db.notificacoes.filter((n) => !(n.link === "#stock-" + id && !n.lida)); gravar(db); };
       return {
-        async carregar() { ler(); if (!pode()) return { produtos: [], movimentos: [], config: null }; return structuredClone({ produtos: d.produtos, movimentos: d.movimentos.slice(0, 300), config: d.config }); },
+        async carregar() {
+          ler(); if (!pode()) return { produtos: [], movimentos: [], config: null };
+          d.config.prazo_fabrico ??= 30; d.config.cobertura ??= 60;
+          const desde = Date.now() - 90 * 864e5, vendas = API.crm ? JSON.parse(localStorage.getItem("central26-demo-crm-v1") || "null")?.vendas || [] : [];
+          const procura = d.produtos.map((p) => ({ produto_id: p.id, dias: 90,
+            vendido: p.codigo_multixop ? vendas.filter((v) => v.produto_codigo === p.codigo_multixop && Date.parse(v.data) > desde).reduce((s, v) => s + (v.tipo === "NC" ? -Math.abs(+v.qtd) : +v.qtd), 0) : 0,
+            saidas: d.movimentos.filter((m) => m.produto_id === p.id && m.tipo === "saida" && Date.parse(m.criado_em) > desde).reduce((s, m) => s + m.quantidade, 0) }));
+          return structuredClone({ produtos: d.produtos, movimentos: d.movimentos.slice(0, 300), config: d.config, procura });
+        },
+        async catalogoMultixop() {
+          let c = null; try { c = JSON.parse(localStorage.getItem("central26-demo-crm-v1") || "null"); } catch { c = null; }
+          return (c?.produtos || []).filter((x) => (x.linha || "produtos") === "produtos").map((x) => ({ codigo: x.codigo, descricao: x.descricao, vendido_ano: 0 }));
+        },
         async movimento(id, tipo, qtd, nota) {
           ler(); if (!pode()) throw new Error("Sem acesso aos stocks.");
           const p = d.produtos.find((x) => x.id === id); if (!p) throw new Error("Produto não encontrado.");
@@ -1171,6 +1189,20 @@ export function criarDemo() {
         subscrever() { return () => {}; },
       };
     })(),
+  };
+  // relatório mensal: números de exemplo
+  API.relatorio = {
+    async dados(mes) {
+      if (!eGestor(eu())) throw new Error("Só a direção vê o relatório mensal.");
+      return { mes, vendas: { mes: 9840, anterior: 8720, ano_passado: 7310, clientes: 38, faturas: 52, notas_credito: 120, ofertas: 6 }, ultima_venda: mes + "-28",
+        margem: { vendas: 9840, vendas_com_custo: 8200, custo: 3120 },
+        produtos: [{ nome: "Produto A", qtd: 210, valor: 2090 }, { nome: "Produto B", qtd: 160, valor: 1600 }, { nome: "Produto C", qtd: 95, valor: 1250 }],
+        clientes_novos: [{ nome: "Barbearia (exemplo) 1", valor: 320 }], clientes_parados: [{ nome: "Barbearia (exemplo) 2", ultima: mes + "-02", valor_ano: 1450 }],
+        barbearias: [{ espaco: "Loja 1 (exemplo)", total: 11200, anterior: 10400 }, { espaco: "Loja 2 (exemplo)", total: 9100, anterior: 9500 }], financeiro_avisos: [], financeiro_importado: true,
+        stock_minimo: [], encomendar: [{ nome: "Produto A", quantidade: 120, dias_restantes: 40, prazo: 30, sugerido: 300 }],
+        academy: { a_decorrer: 2, formandos_novos: 9, formacoes_novas: 1, assiduidade: 96.1 }, prazos: [], tarefas: { em_atraso: 3, concluidas: 41 } };
+    },
+    async enviar() { throw new Error("No modo de demonstração não se enviam emails."); },
   };
   fiabilidadeDemo(API);
   return API;

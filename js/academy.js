@@ -42,6 +42,13 @@ export function prepararImportacao(dados, fonte) {
   return { fonte, formacoes, formandos, inscricoes, resumo: { formacoes: formacoes.length, formandos: formandos.length, inscricoes: inscricoes.length, semRegiao, aprox } };
 }
 
+// A região sai sempre da residência (o que vem da Secretaria Online chega sem ela)
+function comRegiao(t) {
+  if (!t) return t;
+  const r = resolverRegiao(t);
+  return { ...t, concelho: r.concelho || t.concelho || "", concelho_codigo: r.concelho_codigo || "", regiao: r.regiao || "", regiao_aprox: !!r.aprox };
+}
+
 export function criarAcademy(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $ } = ctx;
   const A = (S.aca = { estado: "por-carregar", formacoes: {}, formandos: {}, insc: [], config: null, tab: "painel", ultimoParam: undefined, q: "", fZona: "", pag: 1, aImportar: null, importando: false, geo: null, confirmar: false });
@@ -55,7 +62,7 @@ export function criarAcademy(ctx) {
     try {
       const d = await api.aca.carregar();
       A.formacoes = Object.fromEntries(d.formacoes.map((f) => [f.id, f]));
-      A.formandos = Object.fromEntries(d.formandos.map((f) => [f.id, f]));
+      A.formandos = Object.fromEntries(d.formandos.map((f) => [f.id, comRegiao(f)]));
       A.insc = d.inscricoes; A.config = d.config;
       A.estado = "pronto";
       if (!desligar && api.aca.subscrever) desligar = api.aca.subscrever(aoMudar);
@@ -69,7 +76,7 @@ export function criarAcademy(ctx) {
   let tPainel = null;
   function aoMudar(tabela, ev, novo, antigo) {
     if (tabela === "aca_formacoes") { if (ev === "DELETE") delete A.formacoes[antigo.id]; else A.formacoes[novo.id] = novo; }
-    else if (tabela === "aca_formandos") { if (ev === "DELETE") delete A.formandos[antigo.id]; else A.formandos[novo.id] = novo; }
+    else if (tabela === "aca_formandos") { if (ev === "DELETE") delete A.formandos[antigo.id]; else A.formandos[novo.id] = comRegiao(novo); }
     else if (tabela === "aca_inscricoes") {
       const r = ev === "DELETE" ? antigo : novo;
       if (!r || !r.formacao_id) return;
@@ -161,7 +168,7 @@ export function criarAcademy(ctx) {
     const acao = A.estado !== "pronto" ? "" : A.tab === "formandos" ? '<button class="btn pri" data-acao="aca-formando-novo">' + I.plus + "Novo formando</button>" : A.tab === "formacoes" ? '<button class="btn pri" data-acao="aca-formacao-nova">' + I.plus + "Nova formação</button>" : "";
     let h = '<div class="cab" data-marca="academy"><div><div class="eyebrow">26 Academy</div><h1>Formandos e formações</h1><p class="sub-cab">Todos os formandos e formações da Academy, e de onde vêm os formandos: Norte, Centro, Sul e Regiões Autónomas. Os números atualizam-se sozinhos sempre que entram formandos ou formações novas.</p></div>' +
       (acao ? '<div class="acts">' + acao + "</div>" : "") + "</div>";
-    const tabs = [["painel", "Estatística"], ["formacoes", "Formações"], ["formandos", "Formandos"], ["importar", "Importar"]].concat(g ? [["definicoes", "Definições"]] : []);
+    const tabs = [["painel", "Estatística"], ["formacoes", "Formações"], ["formandos", "Formandos"], ["importar", "Secretaria Online"]].concat(g ? [["definicoes", "Definições"]] : []);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="aca-tab" data-tab="' + k + '" aria-selected="' + (A.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (A.estado === "falta-script") return h + '<div class="vazio"><h3>Falta instalar a Academy na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/19-academy.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
     if (A.estado === "erro") return h + '<div class="aviso erro">Não foi possível abrir a Academy: ' + esc(A.erro || "") + "</div>";
@@ -169,7 +176,7 @@ export function criarAcademy(ctx) {
     if (A.tab === "importar") return h + vistaImportar();
     if (A.tab === "definicoes" && g) return h + vistaDefinicoes();
     if (A.tab === "formacoes") return h + vistaFormacoes();
-    if (!Object.keys(A.formandos).length) return h + '<div class="vazio"><h3>Ainda não há formandos</h3><p>Importa o ficheiro da Secretaria Online em «Importar», ou regista os formandos à mão.</p><div class="acts"><button class="btn pri" data-acao="aca-tab" data-tab="importar">Importar</button><button class="btn sec" data-acao="aca-formando-novo">' + I.plus + "Novo formando</button></div></div>";
+    if (!Object.keys(A.formandos).length) return h + '<div class="vazio"><h3>Ainda não há formandos</h3><p>Em «Secretaria Online», lê os dados de lá ou importa o ficheiro. Também podes registar os formandos à mão.</p><div class="acts"><button class="btn pri" data-acao="aca-tab" data-tab="importar">Secretaria Online</button><button class="btn sec" data-acao="aca-formando-novo">' + I.plus + "Novo formando</button></div></div>";
     if (A.tab === "formandos") return h + vistaFormandos();
     return h + vistaPainel();
   }
@@ -178,14 +185,14 @@ export function criarAcademy(ctx) {
 
   function vistaPainel() {
     const tf = formandosContam(), total = tf.length, validas = formacoesValidas();
-    const concl = validas.filter(concluida).length, outras = validas.length - concl;
+    const concl = validas.filter(concluida).length, aval = validas.filter((f) => /avalia/i.test(f.estado || "")).length, outras = validas.length - concl - aval;
     const idsValidas = new Set(validas.map((f) => f.id)), insc = A.insc.filter((i) => idsValidas.has(i.formacao_id));
     const repetentes = Object.values(contar(insc, (i) => i.formando_id)).filter((v) => v > 1).length;
     const cz = contar(tf, zonaDe), regs = contar(tf.filter((t) => t.regiao), (t) => t.regiao);
     const aprox = tf.filter((t) => t.regiao_aprox).length, sem = cz["Sem dados"] || 0;
     let h = '<div class="resumo-crm aca-kpis">' +
       kpi("Formandos", num(total), repetentes ? pl(repetentes, "fez mais de uma formação", "fizeram mais de uma formação") : "") +
-      kpi("Formações realizadas", num(validas.length), [concl ? pl(concl, "concluída", "concluídas") : "", outras ? outras + " a decorrer" : ""].filter(Boolean).join(" · ")) +
+      kpi("Formações realizadas", num(validas.length), [concl ? pl(concl, "concluída", "concluídas") : "", outras ? outras + " a decorrer" : "", aval ? aval + " em avaliação" : ""].filter(Boolean).join(" · ")) +
       CONTINENTE.map((z) => kpi("Do " + z, pctTxt(cz[z] || 0, total), pl(cz[z] || 0, "formando", "formandos"))).join("") + "</div>";
     const ilhas = (cz["Açores"] || 0) + (cz.Madeira || 0);
     h += '<div class="duas aca-duas"><section class="cartao-sec"><h3>De onde vêm os formandos</h3>' + barrasZonas(cz, total);
@@ -197,7 +204,7 @@ export function criarAcademy(ctx) {
     h += '<h4 class="aca-h4">Por região (NUTS II)</h4><div class="barras-h">' + REGIOES.filter((r) => regs[r]).sort((a, b) => regs[b] - regs[a] || REGIOES.indexOf(a) - REGIOES.indexOf(b)).map((r) =>
       '<div class="bh"><span class="bh-r">' + esc(r) + (zonas()[r] && zonas()[r] !== r ? ' <small class="muted">· ' + esc(zonas()[r]) + "</small>" : "") + '</span><span class="bh-v">' + num(regs[r]) + " <small>" + pctTxt(regs[r], total) + '</small></span><div class="barra-p"><i class="' + ZONA_CLASSE[zonas()[r]] + '" style="width:' + pct(regs[r], total).toFixed(1) + '%"></i></div></div>').join("") + "</div>";
     h += '</section><section class="cartao-sec"><h3>Por concelho</h3>' + mapa(tf) + topConcelhos(tf) + "</section></div>";
-    h += '<section class="cartao-sec aca-comp-sec"><h3>Comparação entre formações</h3><p>O peso de cada zona nos formandos de cada formação (sem as canceladas). Toca numa formação para ver o detalhe.</p>' + legenda(ZONAS.filter((z) => cz[z])) + comparacao(validas) + "</section>";
+    h += '<section class="cartao-sec aca-comp-sec"><h3>Comparação entre formações</h3><p>O peso de cada zona nos formandos de cada formação (sem as canceladas). Toca numa formação para ver o detalhe.</p>' + legenda(ZONAS.filter((z) => cz[z])) + comparacao(validas) + "</section>" + linhaSinc();
     return h;
   }
   function topConcelhos(tf) {
@@ -217,7 +224,7 @@ export function criarAcademy(ctx) {
 
   function vistaFormacoes() {
     const todas = Object.values(A.formacoes).sort((a, b) => ordemFormacao(b, a));
-    if (!todas.length) return '<div class="vazio"><h3>Ainda não há formações</h3><p>Importa-as da Secretaria Online em «Importar» ou cria uma em «Nova formação».</p></div>';
+    if (!todas.length) return '<div class="vazio"><h3>Ainda não há formações</h3><p>Lê-as da Secretaria Online (no separador com o mesmo nome) ou cria uma em «Nova formação».</p></div>';
     return '<div class="tabela-scroll"><table class="crm-tabela aca-tab tab-cartoes"><thead><tr><th>Formação</th><th>Início</th><th>Estado</th><th class="n">Formandos</th><th>Origem dos formandos</th></tr></thead><tbody>' +
       todas.map((f) => {
         const ins = inscritosDe(f.id), lista = formandosDe(f.id), c = contar(lista, zonaDe), des = ins.filter((i) => i.desistente).length;
@@ -245,9 +252,24 @@ export function criarAcademy(ctx) {
     return h + paginador(pg, "aca-pag", "formandos");
   }
 
+  const quando = (ts) => { const d = new Date(ts), hoje = new Date().toDateString() === d.toDateString(); return (hoje ? "hoje" : d.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })) + " às " + d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }); };
+  function linhaSinc() {
+    const c = A.config;
+    if (!c?.sinc_em) return "";
+    return '<p class="nota-tab aca-sinc-l">' + (c.sinc_ok === false ? '<b class="at">A ligação à Secretaria Online falhou ' + esc(quando(c.sinc_em)) + ".</b> " : "Dados da Secretaria Online lidos " + esc(quando(c.sinc_em)) + ". ") +
+      '<a href="#academy-importar">Ver a ligação</a></p>';
+  }
   function vistaImportar() {
-    const a = A.aImportar;
-    let h = '<section class="cartao-sec"><h3>Importar da Secretaria Online</h3><p>Carrega o ficheiro .json com as ações e os formandos tirado da Secretaria Online da 26 Academy. Quem já existir é atualizado pelo número da Secretaria Online, sem duplicar; os formandos registados à mão não são tocados.</p>' +
+    const a = A.aImportar, c = A.config || {}, s = A.sinc;
+    let h = '<section class="cartao-sec"><h3>Ligação à Secretaria Online</h3><p>A Central lê sozinha a Secretaria Online duas vezes por dia (de manhã e ao fim da tarde): as ações novas, as que estão a decorrer ou em avaliação e as que mudaram de estado, com os formandos de cada uma e a residência dos formandos novos. Só lê: nunca altera nada na Secretaria Online.</p>';
+    if (c.sinc_em) h += c.sinc_ok === false ? '<div class="aviso erro">Última tentativa ' + esc(quando(c.sinc_em)) + ": " + esc(c.sinc_msg || "falhou.") + "</div>"
+      : '<p class="aca-sinc-ok"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Última leitura ' + esc(quando(c.sinc_em)) + (c.sinc_msg ? " · " + esc(c.sinc_msg) : "") + "</span></p>";
+    else h += "<p>Ainda não houve nenhuma leitura automática.</p>";
+    if (s?.aCorrer) h += '<p class="aca-sinc-ok"><span class="aca-roda" aria-hidden="true"></span><span>' + esc(s.msg) + "</span></p>";
+    h += '<div class="acts"><button class="btn pri" data-acao="aca-sinc" data-modo="agora"' + (s?.aCorrer ? " disabled" : "") + ">Ler agora</button>" +
+      '<button class="btn sec" data-acao="aca-sinc" data-modo="completa"' + (s?.aCorrer ? " disabled" : "") + ">Ler tudo outra vez</button></div>" +
+      '<p class="nota-tab">«Ler tudo outra vez» volta a ler todas as ações e as fichas de todos os formandos (demora alguns minutos). Se corrigires aqui a residência de um formando, a correção fica, mesmo que na Secretaria Online esteja diferente.</p></section>';
+    h += '<section class="cartao-sec"><h3>Importar um ficheiro</h3><p>Carrega o ficheiro .json com as ações e os formandos tirado da Secretaria Online da 26 Academy. Quem já existir é atualizado pelo número da Secretaria Online, sem duplicar; os formandos registados à mão não são tocados.</p>' +
       '<p>Só entram o nome, a residência (país, código postal, localidade, concelho e distrito) e as inscrições em cada ação. A região de cada formando é calculada a partir do concelho.</p>' +
       '<div class="acts"><label class="btn sec">' + I.plus + 'Escolher ficheiro<input type="file" id="aca-ficheiro" accept=".json,application/json" hidden></label></div>';
     if (A.config?.ultima_importacao) h += '<p class="nota-tab">Última importação: ' + esc(new Date(A.config.ultima_importacao).toLocaleString("pt-PT", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })) + (A.config.ultima_fonte ? " · " + esc(A.config.ultima_fonte) : "") + "</p>";
@@ -352,6 +374,7 @@ export function criarAcademy(ctx) {
       case "aca-ver-sem": A.fZona = "Sem dados"; A.q = ""; A.pag = 1; location.hash = "academy-formandos"; return true;
       case "aca-importar-cancelar": A.aImportar = null; render(); return true;
       case "aca-importar": importar(); return true;
+      case "aca-sinc": sincronizar(el.dataset.modo === "completa" ? "completa" : "agora"); return true;
       case "aca-apagar-nao": A.confirmar = false; renderPainel(true); return true;
       case "aca-formacao-apagar": case "aca-formando-apagar": A.confirmar = true; renderPainel(true); return true;
       case "aca-formacao-apagar-sim": case "aca-formando-apagar-sim": {
@@ -421,8 +444,11 @@ export function criarAcademy(ctx) {
         const nome = $("#at-nome").value.trim();
         if (!nome) { toast("Escreve o nome do formando.", true); $("#at-nome").focus(); return true; }
         const d = { nome, ...residenciaDoForm() };
-        if (S.aberto.id) { const r = await api.aca.atualizarFormando(S.aberto.id, d); A.formandos[r.id] = r; toast(r.regiao ? "Guardado · " + zonaDe(r) : "Guardado. O concelho não foi reconhecido, por isso a região fica por saber."); renderPainel(true); }
-        else { const r = await api.aca.criarFormando(d); A.formandos[r.id] = r; abrir({ tipo: "formando", id: r.id }); toast(r.regiao ? "Formando criado · " + zonaDe(r) : "Formando criado"); }
+        // a residência corrigida aqui deixa de ser substituída pela da Secretaria Online
+        const antes = S.aberto.id ? A.formandos[S.aberto.id] : null;
+        if (antes && ["pais", "cp4", "concelho", "localidade", "distrito"].some((c) => (antes[c] || "") !== (d[c] || ""))) d.residencia_manual = true;
+        if (S.aberto.id) { const r = await api.aca.atualizarFormando(S.aberto.id, d); A.formandos[r.id] = comRegiao(r); toast(r.regiao ? "Guardado · " + zonaDe(r) : "Guardado. O concelho não foi reconhecido, por isso a região fica por saber."); renderPainel(true); }
+        else { const r = await api.aca.criarFormando(d); A.formandos[r.id] = comRegiao(r); abrir({ tipo: "formando", id: r.id }); toast(r.regiao ? "Formando criado · " + zonaDe(r) : "Formando criado"); }
         render();
       } catch (e) { falha(e); }
       return true;
@@ -448,6 +474,24 @@ export function criarAcademy(ctx) {
       A.importando = false;
       location.hash = "academy";
     } catch (e) { A.importando = false; render(); falha(e); }
+  }
+
+  async function sincronizar(modo) {
+    if (A.sinc?.aCorrer) return;
+    A.sinc = { aCorrer: true, msg: "A ler a Secretaria Online… pode demorar um ou dois minutos." }; render();
+    const t = { lidas: 0, accoes: 0, formandos_novos: 0, inscricoes_removidas: 0 };
+    try {
+      let cont, voltas = 0;
+      do {
+        const r = await api.aca.sincronizar(modo, cont);
+        t.lidas += r.lidas || 0; t.accoes = r.accoes || t.accoes; t.formandos_novos += r.formandos_novos || 0; t.inscricoes_removidas += r.inscricoes_removidas || 0;
+        cont = r.continuar_de;
+        if (cont) { A.sinc.msg = "A ler a Secretaria Online… " + pl(t.lidas, "ação lida", "ações lidas") + " até agora."; render(); }
+      } while (cont && ++voltas < 12);
+      toast("Secretaria Online lida: " + pl(t.lidas, "ação", "ações") + " de " + t.accoes + (t.formandos_novos ? ", " + pl(t.formandos_novos, "formando novo", "formandos novos") : ", sem formandos novos") + ".", { ms: 6000 });
+    } catch (e) { falha(e); }
+    A.sinc = null;
+    await carregar();
   }
 
   function reiniciar() {

@@ -1114,14 +1114,14 @@ export function criarDemo() {
           }
           // um formando que fez duas formações
           inscricoes.push({ formacao_id: formacoes[4].id, formando_id: formandos[3].id, desistente: false, criado_em: agora() });
-          d = { formacoes, formandos, inscricoes, config: { id: 1, zonas: { Norte: "Norte", Centro: "Centro", "Oeste e Vale do Tejo": "Centro", "Grande Lisboa": "Sul", "Península de Setúbal": "Sul", Alentejo: "Sul", Algarve: "Sul", "Açores": "Açores", Madeira: "Madeira", Estrangeiro: "Estrangeiro" }, ultima_importacao: null, ultima_fonte: "" } };
+          d = { formacoes, formandos, inscricoes, config: { id: 1, zonas: { Norte: "Norte", Centro: "Centro", "Oeste e Vale do Tejo": "Centro", "Grande Lisboa": "Sul", "Península de Setúbal": "Sul", Alentejo: "Sul", Algarve: "Sul", "Açores": "Açores", Madeira: "Madeira", Estrangeiro: "Estrangeiro" }, ultima_importacao: null, ultima_fonte: "", sinc_ativa: true, sinc_em: null, sinc_ok: null, sinc_msg: "" } };
         }
         return d;
       };
       const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
       const linha = (l, id) => { const x = l.find((y) => y.id === id); if (!x) throw new Error("Já não existe."); return x; };
       const limpo = (o, campos) => Object.fromEntries(Object.entries(o).filter(([c]) => campos.includes(c)));
-      const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas"];
+      const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas", "residencia_manual"];
       return {
         async carregar() { so(); ler(); return structuredClone({ formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente }) => ({ formacao_id, formando_id, desistente })), config: d.config }); },
         async importar(p) {
@@ -1134,7 +1134,7 @@ export function criarDemo() {
           }
           for (const x of p.formandos || []) {
             const ja = d.formandos.find((y) => y.externo_id && y.externo_id === x.externo_id);
-            if (ja) { Object.assign(ja, limpo(x, CT), { atualizado_em: agora() }); r.formandos_atualizados++; }
+            if (ja) { Object.assign(ja, limpo(x, ja.residencia_manual ? ["nome"] : CT), { atualizado_em: agora() }); r.formandos_atualizados++; }
             else { d.formandos.push({ id: "at-" + uid(), externo_id: x.externo_id, notas: "", ...limpo(x, CT), criado_em: agora(), atualizado_em: agora(), atualizado_por: euId }); r.formandos_novos++; }
           }
           for (const x of p.inscricoes || []) {
@@ -1161,7 +1161,12 @@ export function criarDemo() {
         },
         async desinscrever(formacao_id, formando_id) { so(); ler(); d.inscricoes = d.inscricoes.filter((x) => !(x.formacao_id === formacao_id && x.formando_id === formando_id)); guardar(); },
         async marcarDesistente(formacao_id, formando_id, v) { so(); ler(); const i = d.inscricoes.find((x) => x.formacao_id === formacao_id && x.formando_id === formando_id); if (i) i.desistente = !!v; guardar(); },
-        async guardarConfig(c) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda esta divisão."); Object.assign(d.config, limpo(c, ["zonas"])); guardar(); return structuredClone(d.config); },
+        async guardarConfig(c) { ler(); if (!eGestor(eu())) throw new Error("Só a direção muda esta divisão."); Object.assign(d.config, limpo(c, ["zonas", "sinc_ativa"])); guardar(); return structuredClone(d.config); },
+        async sincronizar() {
+          so(); ler(); await new Promise((r) => setTimeout(r, 900));
+          Object.assign(d.config, { sinc_em: agora(), sinc_ok: true, sinc_msg: "Demonstração: no modo real, a Central lê aqui as ações e os formandos da Secretaria Online." }); guardar();
+          return { accoes: d.formacoes.length, lidas: 0, formandos_novos: 0, formandos_atualizados: 0, inscricoes: 0, inscricoes_removidas: 0 };
+        },
         subscrever() { return () => {}; },
       };
     })(),

@@ -40,6 +40,7 @@ export function criarApi() {
         if (r && r.status === 404) {
           msg = nome === "enviar-push"
             ? "As notificações no telemóvel ainda não estão ligadas no servidor: falta instalar a função «enviar-push» no Supabase (README, passo 3b). Dentro da app os avisos continuam a funcionar."
+            : nome === "academy-sincronizar" ? "Falta publicar a função «academy-sincronizar» no Supabase (README, passo 3r)."
             : "Falta correr o script supabase/02-equipa.sql no Supabase (SQL Editor).";
         } else if (r && typeof r.json === "function") { const j = await r.json(); if (j && j.erro) msg = j.erro; }
       } catch { /* mantém a mensagem genérica */ }
@@ -549,6 +550,8 @@ export function criarApi() {
         ok(await sb.from("aca_inscricoes").update({ desistente }).eq("formacao_id", formacao_id).eq("formando_id", formando_id));
       },
       async guardarConfig(campos) { return ok(await sb.from("aca_config").update(campos).eq("id", 1).select().single()); },
+      // ligação à Secretaria Online: "agora" (o que mudou) ou "completa" (tudo); continua onde ficou se o tempo não chegar
+      async sincronizar(acao, continuar_de) { return invocar("academy-sincronizar", { acao, continuar_de: continuar_de || undefined }); },
       subscrever(cb) {
         let canal = sb.channel("central26-aca");
         for (const t of ["aca_formacoes", "aca_formandos", "aca_inscricoes", "aca_config"]) canal = canal.on("postgres_changes", { event: "*", schema: "public", table: t }, (p) => cb(t, p.eventType, p.new, p.old));

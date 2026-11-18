@@ -53,6 +53,8 @@ create table if not exists public.aca_formandos (
   atualizado_por  uuid references public.perfis(id) on delete set null
 );
 create index if not exists aca_formandos_regiao on public.aca_formandos (regiao);
+-- residência corrigida na Central: a sincronização com a Secretaria Online deixa de a substituir
+alter table public.aca_formandos add column if not exists residencia_manual boolean not null default false;
 
 create table if not exists public.aca_inscricoes (
   formacao_id  uuid not null references public.aca_formacoes(id) on delete cascade,
@@ -70,6 +72,12 @@ create table if not exists public.aca_config (
   ultima_fonte    text not null default ''
 );
 insert into public.aca_config (id) values (1) on conflict do nothing;
+-- ligação automática à Secretaria Online (função academy-sincronizar)
+alter table public.aca_config add column if not exists sinc_ativa boolean not null default true;
+alter table public.aca_config add column if not exists sinc_em timestamptz;
+alter table public.aca_config add column if not exists sinc_ok boolean;
+alter table public.aca_config add column if not exists sinc_msg text not null default '';
+alter table public.aca_config add column if not exists sinc_continuar_de text;
 
 create or replace function public.aca_carimbo() returns trigger
 language plpgsql as $$
@@ -83,14 +91,16 @@ create trigger aca_formandos_carimbo before update on public.aca_formandos for e
 -- 2. Importação (da Secretaria Online): junta pelo n.º externo, sem duplicar
 -- p = { fonte, formacoes: [{externo_id, nome, curso, ano, local, inicio, estado, estado_em}],
 --       formandos: [{externo_id, nome, pais, cp4, localidade, concelho, distrito, concelho_codigo, regiao, regiao_aprox}],
---       inscricoes: [{formacao, formando, desistente}] }   (formacao/formando = n.º externo)
+--       inscricoes: [{formacao, formando, desistente}],      (formacao/formando = n.º externo)
+--       substituir: [n.º externo das ações cujas inscrições vêm completas: quem lá não estiver sai dessa ação] }
+-- Também a usa a função academy-sincronizar (com a chave de serviço).
 -- ---------------------------------------------------------------------
 create or replace function public.aca_importar(p jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare x jsonb; nf_novas int := 0; nf_atual int := 0; nt_novos int := 0; nt_atual int := 0; ni int := 0; novo boolean;
-  v_f uuid; v_t uuid;
+declare x jsonb; nf_novas int := 0; nf_atual int := 0; nt_novos int := 0; nt_atual int := 0; ni int := 0; nr int := 0; n int; novo boolean;
+  v_f uuid; v_t uuid; v_ext text;
 begin
-  if not public.pode_academy() then raise exception 'Sem acesso à Academy.'; end if;
+  if not (public.pode_academy() or coalesce(auth.role(), '') = 'service_role') then raise exception 'Sem acesso à Academy.'; end if;
   for x in select * from jsonb_array_elements(coalesce(p->'formacoes', '[]')) loop
     insert into public.aca_formacoes (externo_id, nome, curso, ano, local, inicio, estado, estado_em)
     values (x->>'externo_id', left(coalesce(nullif(trim(x->>'nome'), ''), 'Ação'), 200), coalesce(x->>'curso', ''), coalesce(x->>'ano', ''),
@@ -106,9 +116,15 @@ begin
             case when coalesce(x->>'cp4', '') ~ '^\d{4}$' then x->>'cp4' else '' end,
             left(coalesce(x->>'localidade', ''), 120), left(coalesce(x->>'concelho', ''), 120), left(coalesce(x->>'distrito', ''), 120),
             coalesce(x->>'concelho_codigo', ''), coalesce(x->>'regiao', ''), coalesce((x->>'regiao_aprox')::boolean, false))
-    on conflict (externo_id) do update set nome = excluded.nome, pais = excluded.pais, cp4 = excluded.cp4, localidade = excluded.localidade,
-      concelho = excluded.concelho, distrito = excluded.distrito, concelho_codigo = excluded.concelho_codigo, regiao = excluded.regiao,
-      regiao_aprox = excluded.regiao_aprox
+    on conflict (externo_id) do update set nome = excluded.nome,
+      pais            = case when aca_formandos.residencia_manual then aca_formandos.pais else excluded.pais end,
+      cp4             = case when aca_formandos.residencia_manual then aca_formandos.cp4 else excluded.cp4 end,
+      localidade      = case when aca_formandos.residencia_manual then aca_formandos.localidade else excluded.localidade end,
+      concelho        = case when aca_formandos.residencia_manual then aca_formandos.concelho else excluded.concelho end,
+      distrito        = case when aca_formandos.residencia_manual then aca_formandos.distrito else excluded.distrito end,
+      concelho_codigo = case when aca_formandos.residencia_manual then aca_formandos.concelho_codigo else excluded.concelho_codigo end,
+      regiao          = case when aca_formandos.residencia_manual then aca_formandos.regiao else excluded.regiao end,
+      regiao_aprox    = case when aca_formandos.residencia_manual then aca_formandos.regiao_aprox else excluded.regiao_aprox end
     returning (xmax = 0) into novo;
     if novo then nt_novos := nt_novos + 1; else nt_atual := nt_atual + 1; end if;
   end loop;
@@ -121,9 +137,16 @@ begin
     on conflict (formacao_id, formando_id) do update set desistente = excluded.desistente;
     ni := ni + 1;
   end loop;
+  -- quem saiu de uma ação na Secretaria Online sai também na Central (os formandos registados à mão ficam)
+  for v_ext in select jsonb_array_elements_text(coalesce(p->'substituir', '[]')) loop
+    delete from public.aca_inscricoes i using public.aca_formacoes f, public.aca_formandos t
+     where i.formacao_id = f.id and f.externo_id = v_ext and t.id = i.formando_id and t.externo_id is not null
+       and not exists (select 1 from jsonb_array_elements(coalesce(p->'inscricoes', '[]')) y where y->>'formacao' = v_ext and y->>'formando' = t.externo_id);
+    get diagnostics n = row_count; nr := nr + n;
+  end loop;
   update public.aca_config set ultima_importacao = now(), ultima_fonte = left(coalesce(p->>'fonte', ''), 200) where id = 1;
   return jsonb_build_object('formacoes_novas', nf_novas, 'formacoes_atualizadas', nf_atual, 'formandos_novos', nt_novos,
-                            'formandos_atualizados', nt_atual, 'inscricoes', ni);
+                            'formandos_atualizados', nt_atual, 'inscricoes', ni, 'inscricoes_removidas', nr);
 end $$;
 
 -- ---------------------------------------------------------------------
@@ -181,4 +204,35 @@ begin
     execute format('drop trigger if exists historico_registar on public.%I', t);
     execute format('create trigger historico_registar after update or delete on public.%I for each row execute function public.historico_registar()', t);
   end loop;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- 5. Ligação automática à Secretaria Online (função academy-sincronizar)
+--    Lê às 7h e às 19h (hora de Lisboa no inverno). Cada leitura pode ficar a meio por falta de tempo:
+--    as chamadas seguintes (de 15 em 15 minutos) continuam onde ficou e, se já estiver feita, não fazem nada.
+-- ---------------------------------------------------------------------
+create or replace function public.aca_sinc_tique() returns boolean
+language plpgsql security definer set search_path = public as $$
+declare v_url text; v_seg text;
+begin
+  select valor into v_url from public.configuracao where chave = 'url_funcoes';
+  select valor into v_seg from public.configuracao_privada where chave = 'segredo_webhook';
+  if v_url is null then return false; end if;
+  perform net.http_post(url := v_url || '/academy-sincronizar',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-segredo', v_seg),
+    body := jsonb_build_object('acao', 'tique'), timeout_milliseconds := 150000);
+  return true;
+exception when others then
+  raise warning 'Falha ao pedir a sincronização da Academy: %', sqlerrm;
+  return false;
+end $$;
+revoke all on function public.aca_sinc_tique() from public, anon, authenticated;
+
+do $$
+begin
+  create extension if not exists pg_cron;
+  perform cron.unschedule(jobid) from cron.job where jobname = 'central26-academy';
+  perform cron.schedule('central26-academy', '5,20,35,50 7,19 * * *', 'select public.aca_sinc_tique()');
+exception when others then
+  raise notice 'pg_cron indisponível: a ligação automática à Secretaria Online fica desligada (%).', sqlerrm;
 end $$;

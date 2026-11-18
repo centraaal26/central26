@@ -210,9 +210,13 @@ O que passa a existir:
 - **Cópia automática** todos os domingos às 3h, guardada num armazenamento privado do Supabase (ficam as 12 últimas). Se falhar, a direção recebe um aviso. Continua a ser boa ideia descarregar uma cópia de vez em quando para fora do Supabase.
 
 ### 3r. 26 Academy: formandos, formações e estatística regional
-1. SQL Editor → **New query** → cola o conteúdo de `supabase/19-academy.sql` → **Run**.
-2. Edge Functions → `copia-seguranca` → cola outra vez o código de `supabase/functions/copia-seguranca/index.ts` → **Deploy** (a cópia automática passa a incluir a Academy).
-3. Na app: **26 Academy → Importar** → escolhe o ficheiro `.json` tirado da Secretaria Online → **Importar**. Pode ser importado outra vez sempre que houver ações novas: quem já existe é atualizado pelo número da Secretaria Online, sem duplicar.
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/19-academy.sql` → **Run** (pode ser corrido outra vez).
+2. Edge Functions → **Secrets** → acrescenta `FORINSIA_UTILIZADOR` e `FORINSIA_PALAVRA_PASSE` com o utilizador e a palavra-passe da Secretaria Online. Quando a palavra-passe mudar na Secretaria Online, muda-a também aqui.
+3. Edge Functions → **Deploy a new function** → **Via Editor** → nome `academy-sincronizar` → apaga o exemplo, cola o código de `supabase/functions/academy-sincronizar/index.ts` → **Deploy**. Na página da função, desliga **Verify JWT**.
+4. Edge Functions → `copia-seguranca` → cola outra vez o código de `supabase/functions/copia-seguranca/index.ts` → **Deploy** (a cópia automática passa a incluir a Academy).
+5. Na app: **26 Academy → Secretaria Online → Ler tudo outra vez**. A primeira leitura demora alguns minutos (a app vai pedindo o resto sozinha). Em alternativa, importa o ficheiro `.json` na mesma página.
+
+Depois disto, a Central lê a Secretaria Online sozinha às 7h e às 19h (hora de inverno; 8h e 20h no verão): ações novas, as que estão a decorrer ou em avaliação e as que mudaram de estado, com os formandos de cada uma. Só lê, nunca altera nada lá. Se a leitura falhar (por exemplo, por a palavra-passe ter mudado), a direção recebe um aviso.
 
 Quem vê: a direção e o Administrativo e Operacional. Os dados dos formandos nunca vão para o GitHub: entram só pela importação na app.
 
@@ -264,6 +268,7 @@ js/marketing.js                             calendário de publicações, ideias
 js/stocks.js                                stocks da TwentySix: quantidades, movimentos e avisos de reposição
 js/prazos.js                                seguros e viaturas: datas, avisos antes do dia e histórico
 js/academy.js · js/academy-regioes.js      26 Academy: formandos, formações e estatística por região (concelhos e NUTS II)
+supabase/functions/academy-sincronizar/     leitura automática da Secretaria Online da 26 Academy (só leitura)
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

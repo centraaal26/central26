@@ -1840,3 +1840,10 @@ html.ios-curto .toast{bottom:calc(20px + var(--tabbar-h) + env(safe-area-inset-b
   .aca-td-emp{width:auto;flex:1 1 100%}
   .aca-lista li{flex-wrap:wrap}
 }
+.aca-sinc-ok{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;color:var(--ink)}
+.aca-sinc-ok .i{color:var(--ok);flex:none}
+.aca-roda{width:14px;height:14px;border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--b);animation:aca-roda .8s linear infinite;flex:none}
+@keyframes aca-roda{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.aca-roda{animation-duration:2.4s}}
+.aca-sinc-l{margin-top:4px}
+.aca-sinc-l b.at{color:var(--danger)}

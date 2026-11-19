@@ -263,6 +263,17 @@ O que passa a existir:
 - Na Academy (só a direção vê): receita de cada formação (preço × formandos que não desistiram) e o valor de cada formando.
 - No **Financeiro → Resultados**, a receita da Academia passa a vir destes preços, dividida em partes iguais pelos meses de cada formação. Um valor escrito à mão nos Resultados continua a ter prioridade.
 
+### 3v. Caixa, simulador, previsão de tesouraria e desempenho dos barbeiros
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/23-caixa-simulador-previsao.sql` → **Run**.
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy** (a cópia passa a incluir as faltas de caixa).
+3. Na app (direção): **Financeiro → Importar** → volta a importar as folhas mensais (para entrarem as faltas de caixa e os preços).
+
+O que passa a existir no Financeiro:
+- **Caixa**: faltas e sobras escritas na folha Faturação, por loja e por mês, com aviso quando uma loja passa o limite escolhido.
+- **Simulador**: muda preços (corte, barba, combo), o desconto por serviço, as comissões e os serviços perdidos, e vê o efeito por mês e por ano, por loja e por barbeiro, e quantos serviços se podem perder sem a empresa ganhar menos.
+- **Previsão**: saldo previsto no fim deste mês e dos 3 seguintes, pela média dos últimos meses e pelos prazos com valor (seguros, inspeções…), com aviso abaixo do mínimo.
+- **Barbeiros**: desempenho do mês (valor por serviço, cabelo/barba/combo, comparação com os meses anteriores, avisos de quedas) e resumos para cada barbeiro (copiar para WhatsApp ou imprimir/guardar em PDF).
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -308,6 +319,7 @@ supabase/functions/academy-sincronizar/     leitura automática da Secretaria On
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
 js/resultados.js                            Financeiro: resultados por área, loja e barbeiro, divisão dos custos gerais e exportação para Excel
+js/ferramentas.js                           Financeiro: caixa, simulador de preços e comissões, previsão de tesouraria, desempenho e resumos dos barbeiros
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

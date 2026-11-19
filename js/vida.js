@@ -155,7 +155,8 @@ const NUMEROS = ".kpi > b, .dado > b, .dep-tile > b, .stk-qtd > b";
 const GRAFICOS = ".grafico, .aca-ev, .rk-barra, .bh, .sem-prog, .barra-prog";
 
 export function darVida(raiz) {
-  if (!raiz) return;
+  // só a página principal: painéis e avisos também passam por aqui e não podem baralhar o que já foi animado
+  if (!raiz || !raiz.querySelector(".wrap")) return;
   const rota = (location.hash || "#inicio").slice(1) || "inicio", base = rota.split("-")[0];
   const nova = rota !== rotaVista;
   if (nova) { rotaVista = rota; vistos = new Set(); }

@@ -3,6 +3,7 @@
 import { MES, MES_L, ymd, normalizar, haQuanto, eGestor } from "./dados.js";
 import { carregarXlsx } from "./xlsx.js";
 import { criarResultados, DESTINOS } from "./resultados.js";
+import { criarFerramentas } from "./ferramentas.js";
 
 const n = (s) => normalizar(s).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : typeof v === "string" && /^-?\d+([.,]\d+)?$/.test(v.trim()) ? +v.replace(",", ".") : 0);
@@ -127,7 +128,7 @@ export function lerLivro(XLSX, wb, ficheiro) {
         const tot = c.tot >= 0 && num(r[c.tot]) ? num(r[c.tot]) : rec, extras = Math.max(0, tot - rec);
         let pc = val(r, c.pc); if (pc > 1) pc /= 100;
         const nota = extras > 0.009 ? r.slice(c.rec + 1).map(txt).filter((s) => s && !ESPACOS[n(s)] && !/responsabilidade/i.test(s) && !/^\d/.test(s)).join(" · ") : "";
-        const k = loja + "|" + n(nome), x = mapa.get(k) || { loja, barbeiro: nome.replace(/(^|\s)\S/g, (m) => m.toUpperCase()).replace(/\B\S/g, (m) => m.toLowerCase()), dias: "", cabelos: 0, barbas: 0, combos: 0, outro: 0, valor_total: 0, liquido: 0, comissao: pc, a_receber: 0, extras: 0, nota: "", total: 0 };
+        const k = loja + "|" + n(nome), x = mapa.get(k) || { loja, barbeiro: nome.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" "), dias: "", cabelos: 0, barbas: 0, combos: 0, outro: 0, valor_total: 0, liquido: 0, comissao: pc, a_receber: 0, extras: 0, nota: "", total: 0 };
         x.dias = String(r[c.dias] ?? x.dias ?? "").trim(); x.cabelos += val(r, c.cab); x.barbas += val(r, c.bar); x.combos += val(r, c.com); x.outro += val(r, c.outro);
         x.valor_total += vt; x.liquido += c.liq >= 0 ? val(r, c.liq) : vt; x.a_receber += rec; x.extras += extras; x.total += tot; if (nota) x.nota = [x.nota, nota].filter(Boolean).join(" · ");
         mapa.set(k, x);
@@ -143,6 +144,26 @@ export function lerLivro(XLSX, wb, ficheiro) {
         if (ESPACOS[n(nome)] && v > 0 && v < 5000 && !responsaveis.some((x) => x.loja === ESPACOS[n(nome)])) responsaveis.push({ loja: ESPACOS[n(nome)], valor: +v.toFixed(2) });
       }
       break;
+    }
+  }
+  // faltas e sobras de caixa escritas ao lado de cada dia («FALTA 13€», «24€ A MAIS») e tabela de preços dos serviços
+  const caixa = [], precos = {};
+  if (fr) {
+    const lojaAcima = (i) => { for (let r = i; r >= 0; r--) { const x = txt((fr[r] || [])[2]); if (x && ESPACOS[n(x)]) return ESPACOS[n(x)]; } return ""; };
+    fr.forEach((r, i) => (r || []).forEach((v, j) => {
+      const s = txt(v); if (!s || !/falt|a mais|sobra/i.test(s)) return;
+      let dia = ""; for (let k = j - 1; k >= 0; k--) { const m = txt(r[k]).match(/^(\d{1,2})\/(\d{1,2})$/); if (m) { dia = m[1].padStart(2, "0") + "/" + m[2].padStart(2, "0"); break; } }
+      const t = s.replace(/^\d{1,2}\/\d{1,2}\s*[–-]\s*/, ""), mv = t.match(/(\d+(?:[.,]\d+)?)\s*€?/);
+      const resto = t.replace(mv ? mv[0] : "", "").replace(/faltam?|a mais|sobras?|€/gi, "").trim();
+      let tipo = /falt/i.test(t) ? "falta" : "sobra", valor = mv ? +mv[1].replace(",", ".") : null;
+      if (/[a-zà-ú]/i.test(resto)) { tipo = "nota"; valor = null; }
+      caixa.push({ loja: lojaAcima(i) || "Sem loja", dia, tipo, valor, texto: s.replace(/\s+/g, " ").slice(0, 120) });
+    }));
+    const ip = fr.findIndex((r) => ["cabelo", "barba", "combo"].every((k) => (r || []).some((v) => n(v) === k)));
+    if (ip >= 0) {
+      const h = fr[ip].map((v) => n(v)), prox = fr[ip + 1] || [];
+      for (const k of ["cabelo", "barba", "combo"]) { const v = num(prox[h.indexOf(k)]); if (v > 0 && v < 500) precos[k] = v; }
+      const d = num(fr[ip][h.indexOf("combo") + 1]); precos.desconto = d > 0 && d < 5 ? d : 0.5;
     }
   }
   // outro pessoal (folha RH): quanto recebe cada pessoa e como se divide pelas áreas. As faturas e a base da comissão não são guardadas.
@@ -191,7 +212,7 @@ export function lerLivro(XLSX, wb, ficheiro) {
   const faturas = fat.map((f) => [f.espaco, f.total, f.numerario, f.mb, f.ft, f.vencimentos].join("|")).sort().join("\n");
   const pessoas = barbeiros.map((x) => [x.loja, x.barbeiro, x.valor_total, x.total].join("|")).concat(responsaveis.map((x) => x.loja + "|" + x.valor), pessoal.map((x) => x.pessoa + "|" + x.valor)).sort().join("\n");
   if (fat.length && !barbeiros.length) avisos.push({ tipo: "vazio", texto: "A folha Faturação não tem o quadro dos barbeiros (serviços e comissões)." });
-  return { mes, ficheiro, linhas, faturacao: fat, barbeiros, responsaveis, pessoal, avisos, assinatura: hash(custos + "#" + faturas + "#" + pessoas), assinatura_custos: linhas.length ? hash(custos) : "", contagem: { nBarb, nPart, nHair, nForm } };
+  return { mes, ficheiro, linhas, faturacao: fat, barbeiros, responsaveis, pessoal, caixa, precos, avisos, assinatura: hash(custos + "#" + faturas + "#" + pessoas), assinatura_custos: linhas.length ? hash(custos) : "", contagem: { nBarb, nPart, nHair, nForm } };
 }
 
 export const podeFinanceiro = (eu) => eGestor(eu);
@@ -199,7 +220,7 @@ export const podeFinanceiro = (eu) => eGestor(eu);
 export function criarFinanceiro(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, $ } = ctx;
   const F = (S.fin = { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, tab: "resumo", ano: null, mesSel: null, importacao: null, aImportar: false, q: "",
-    extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, resAno: null, resMes: "" });
+    extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, caixa: null, prazos: [], sim: null, resAno: null, resMes: "" });
 
   async function carregar() {
     if (F.estado === "a-carregar") return;
@@ -214,7 +235,8 @@ export function criarFinanceiro(ctx) {
       const x = d.extra;
       F.extra = !!x;
       if (x) Object.assign(F, { barbeiros: x.barbeiros.map((b) => ({ ...b, ...Object.fromEntries(["cabelos", "barbas", "combos", "outro", "valor_total", "liquido", "comissao", "a_receber", "extras", "total"].map((k) => [k, +b[k]])) })),
-        responsaveis: x.responsaveis, pessoal: x.pessoal, ajustes: x.ajustes.map((a) => ({ ...a, valor: +a.valor })), config: x.config, vendas: x.vendas.map((v) => ({ ...v, valor: +v.valor })), receitaAcad: x.receitaAcad ? x.receitaAcad.map((r) => ({ ...r, valor: +r.valor })) : null });
+        responsaveis: x.responsaveis, pessoal: x.pessoal, ajustes: x.ajustes.map((a) => ({ ...a, valor: +a.valor })), config: x.config, vendas: x.vendas.map((v) => ({ ...v, valor: +v.valor })), receitaAcad: x.receitaAcad ? x.receitaAcad.map((r) => ({ ...r, valor: +r.valor })) : null,
+        caixa: x.caixa ? x.caixa.map((c) => ({ ...c, valor: c.valor == null ? null : +c.valor })) : null, prazos: x.prazos || [] });
       F.estado = "pronto";
     } catch (e) { F.estado = /PGRST20|fin_meses|Could not find/i.test(String(e?.message)) ? "falta-script" : "erro"; F.erro = e.message; }
     agendarRender();
@@ -246,14 +268,15 @@ export function criarFinanceiro(ctx) {
   const anos = () => [...new Set(mesesCom().map((m) => m.slice(0, 4)))].sort();
   const rotulo = (k) => { const l = F.linhas.find((x) => x.chave === k); return l ? rotuloRubrica(k, l.rubrica) : k; };
   const RES = criarResultados(ctx, F, { custo, copias, mesesCom, nomeMes, rotulo });
+  const FER = criarFerramentas(ctx, F, { custo, copias, mesesCom }, RES);
 
   /* ============================== Vistas ============================== */
   function vista(param) {
     if (F.estado === "por-carregar") carregar();
-    if (param !== F.ultimoParam) { F.ultimoParam = param; if (["resumo", "resultados", "barbeiros", "barbearias", "despesas", "importar"].includes(param)) F.tab = param; }
+    if (param !== F.ultimoParam) { F.ultimoParam = param; if (["resumo", "resultados", "previsao", "barbeiros", "simulador", "caixa", "barbearias", "despesas", "importar"].includes(param)) F.tab = param; }
     let h = '<div class="cab"><div><div class="eyebrow neutro">Ondina &amp; Maia, Lda. · só a direção vê esta página</div><h1>Financeiro</h1><p class="sub-cab">Faturação das barbearias e custos de cada mês, a partir das folhas mensais.</p></div>' +
       (F.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="fin-tab" data-tab="importar">' + I.plus + "Importar folhas</button></div>" : "") + "</div>";
-    const tabs = [["resumo", "Resumo"], ["resultados", "Resultados"], ["barbeiros", "Barbeiros"], ["barbearias", "Barbearias"], ["despesas", "Despesas"], ["importar", "Importar"]];
+    const tabs = [["resumo", "Resumo"], ["resultados", "Resultados"], ["previsao", "Previsão"], ["barbeiros", "Barbeiros"], ["simulador", "Simulador"], ["caixa", "Caixa"], ["barbearias", "Barbearias"], ["despesas", "Despesas"], ["importar", "Importar"]];
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="fin-tab" data-tab="' + k + '" aria-selected="' + (F.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (F.estado === "falta-script") return h + '<div class="vazio"><h3>Falta instalar o Financeiro na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/09-financeiro.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
     if (F.estado === "erro") return h + '<div class="aviso erro">Não foi possível abrir o Financeiro: ' + esc(F.erro || "") + "</div>";
@@ -262,7 +285,10 @@ export function criarFinanceiro(ctx) {
     if (!F.meses.length) return h + '<div class="vazio"><h3>Ainda não há meses importados</h3><p>Importa as folhas mensais da Ondina &amp; Maia (podes escolher vários ficheiros de uma vez). A app lê a faturação das barbearias e os custos, e assinala os meses em falta ou copiados.</p><div class="acts"><button class="btn pri" data-acao="fin-tab" data-tab="importar">Importar folhas</button></div></div>';
     if (!F.ano || !anos().includes(F.ano)) F.ano = anos()[anos().length - 1];
     if (F.tab === "resultados") return h + RES.vistaResultados();
-    if (F.tab === "barbeiros") return h + RES.vistaBarbeiros();
+    if (F.tab === "barbeiros") return h + RES.vistaBarbeiros(FER.meioBarbeiros);
+    if (F.tab === "previsao") return h + FER.vistaPrevisao();
+    if (F.tab === "simulador") return h + FER.vistaSimulador();
+    if (F.tab === "caixa") return h + FER.vistaCaixa();
     if (F.tab === "barbearias") return h + vistaBarbearias();
     if (F.tab === "despesas") return h + vistaDespesas();
     return h + vistaResumo();
@@ -444,7 +470,7 @@ export function criarFinanceiro(ctx) {
     const l = (F.importacao?.lista || []).filter((x) => x.mes && !x.repetido); if (!l.length) return;
     F.aImportar = true; render();
     try {
-      await api.fin.importar({ meses: l.map((x) => ({ mes: x.mes, ficheiro: x.ficheiro, assinatura: x.assinatura, assinatura_custos: x.assinatura_custos, avisos: x.avisos, linhas: x.linhas, faturacao: x.faturacao, barbeiros: x.barbeiros || [], responsaveis: x.responsaveis || [], pessoal: x.pessoal || [] })) });
+      await api.fin.importar({ meses: l.map((x) => ({ mes: x.mes, ficheiro: x.ficheiro, assinatura: x.assinatura, assinatura_custos: x.assinatura_custos, avisos: x.avisos, linhas: x.linhas, faturacao: x.faturacao, barbeiros: x.barbeiros || [], responsaveis: x.responsaveis || [], pessoal: x.pessoal || [], caixa: x.caixa || [], precos: x.precos || {} })) });
       F.aImportar = false; F.importacao = null; F.estado = "por-carregar"; await carregar(); F.tab = "resumo"; F.ano = l[l.length - 1].mes.slice(0, 4);
       if (S.rota === "financeiro" && S.param) location.hash = "financeiro"; else render();
       toast(l.length === 1 ? "1 mês importado" : l.length + " meses importados");
@@ -453,7 +479,7 @@ export function criarFinanceiro(ctx) {
 
   /* ============================== Ações ============================== */
   function clique(acao, el) {
-    if (RES.clique(acao, el)) return true;
+    if (RES.clique(acao, el) || FER.clique(acao, el)) return true;
     switch (acao) {
       case "fin-tab": F.tab = el.dataset.tab; if (S.rota === "financeiro" && S.param) location.hash = "financeiro"; else render(); return true;
       case "fin-importar": importar(); return true;
@@ -471,7 +497,7 @@ export function criarFinanceiro(ctx) {
   }
   function mudar(e) {
     const t = e.target;
-    if (RES.mudar(e)) return true;
+    if (RES.mudar(e) || FER.mudar(e)) return true;
     if (t.id === "fin-ano") { F.ano = t.value; render(); return true; }
     if (t.id === "fin-mes") { F.mesSel = t.value; render(); return true; }
     if (t.id === "fin-ficheiros" && t.files?.length) { lerFicheiros([...t.files]); t.value = ""; return true; }
@@ -483,6 +509,6 @@ export function criarFinanceiro(ctx) {
     }
     return false;
   }
-  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, importacao: null, tab: "resumo", mesSel: null, extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, resAno: null, resMes: "" }); }
+  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, importacao: null, tab: "resumo", mesSel: null, extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, caixa: null, prazos: [], sim: null, resAno: null, resMes: "" }); }
   return { vista, clique, escrever, mudar, reiniciar, carregar };
 }

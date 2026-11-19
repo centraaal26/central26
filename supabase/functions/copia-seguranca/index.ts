@@ -26,7 +26,7 @@ const TABELAS: Record<string, string> = {
   prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
   tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
   op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
-  fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
+  fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
   aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", crm_custos: "produto_codigo",
 };
 const MANTER = 12;

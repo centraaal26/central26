@@ -116,11 +116,11 @@ export function criarResultados(ctx, F, u) {
     if (F.resMes && !doAno.includes(F.resMes)) F.resMes = "";
     return { meses: F.resMes ? [F.resMes] : doAno, doAno, nome: F.resMes ? MES_L[+F.resMes.slice(5) - 1].replace(/^./, (x) => x.toUpperCase()) + " de " + F.resMes.slice(0, 4) : "Ano de " + F.resAno + " (" + doAno.length + (doAno.length === 1 ? " mês" : " meses") + ")" };
   }
-  function barra(p, extra = "") {
+  function barra(p, extra = "", exportar = true) {
     return '<div class="barra"><div class="periodo"><b>' + esc(p.nome) + "</b><span>" + extra + "</span></div><div class=\"ferr\">" +
       '<label class="sr" for="res-ano">Ano</label><select id="res-ano" class="sel">' + anos().map((a) => "<option" + (a === F.resAno ? " selected" : "") + ">" + a + "</option>").join("") + "</select>" +
       '<label class="sr" for="res-mes">Mês</label><select id="res-mes" class="sel"><option value="">Ano inteiro</option>' + p.doAno.map((m) => '<option value="' + m + '"' + (m === F.resMes ? " selected" : "") + ">" + esc(MES_L[+m.slice(5) - 1].replace(/^./, (x) => x.toUpperCase())) + "</option>").join("") + "</select>" +
-      '<button class="btn sec" data-acao="res-exportar">Exportar Excel</button></div></div>';
+      (exportar ? '<button class="btn sec" data-acao="res-exportar">Exportar Excel</button>' : "") + "</div></div>";
   }
   const faltaScript = () => '<div class="vazio"><h3>Falta instalar os resultados na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/21-resultados.sql</b> do GitHub e carrega em Run. Depois volta a importar as folhas mensais para entrarem os barbeiros e o pessoal.</p></div>';
   const listaMeses = (l) => l.map((m) => MES[+m.slice(5) - 1]).join(", ");
@@ -191,7 +191,7 @@ export function criarResultados(ctx, F, u) {
     }
     return [...m.values()];
   }
-  function vistaBarbeiros() {
+  function vistaBarbeiros(meio) {
     if (!F.extra) return faltaScript();
     const p = periodo(), L = juntarBarbeiros(p.meses);
     let h = barra(p, "Serviços, faturação e pagamento de cada barbeiro, da folha Faturação. «Fica para a empresa» = faturado − total pago ao barbeiro (o desconto de 0,50 € por serviço, para ajuda ao IVA, fica na empresa).");
@@ -204,6 +204,7 @@ export function criarResultados(ctx, F, u) {
       '<div class="kpi"><span>Faturado pelos barbeiros</span><b>' + eur(t.fat) + "</b><small>" + (t.serv ? (t.fat / t.serv).toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " € por serviço" : "") + "</small></div>" +
       '<div class="kpi"><span>Pago aos barbeiros</span><b>' + eur(t.pago) + "</b><small>comissões e extras" + (resp.length ? " · mais " + eur(resp.reduce((s, r) => s + Number(r.valor), 0)) + " aos responsáveis" : "") + "</small></div>" +
       '<div class="kpi"><span>Fica para a empresa</span><b>' + eur(t.fat - t.pago) + "</b><small>" + (t.fat ? pct((t.fat - t.pago) / t.fat) + " do faturado" : "") + "</small></div></div>";
+    if (meio) h += meio(p, L);
     const lojas = [...new Set(L.map((x) => x.loja))].sort((a, b) => L.filter((x) => x.loja === b).reduce((s, x) => s + x.valor_total, 0) - L.filter((x) => x.loja === a).reduce((s, x) => s + x.valor_total, 0));
     for (const lj of lojas) {
       const B = L.filter((x) => x.loja === lj).sort((a, b) => b.valor_total - a.valor_total), rv = resp.filter((r) => r.loja === lj).reduce((s, r) => s + Number(r.valor), 0);
@@ -278,5 +279,5 @@ export function criarResultados(ctx, F, u) {
     }
     return false;
   }
-  return { vistaResultados, vistaBarbeiros, clique, mudar, destino, editavel, calcular };
+  return { vistaResultados, vistaBarbeiros, clique, mudar, destino, editavel, calcular, periodo, barra, juntarBarbeiros, receitaAcademia, faltaScript, NAO_LOJA };
 }

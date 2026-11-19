@@ -364,6 +364,11 @@ export function criarApi() {
           ]);
           extra = { barbeiros, responsaveis, pessoal, ajustes, config, vendas, receitaAcad: null };
           const ra = await sb.rpc("fin_receita_academia"); if (!ra.error) extra.receitaAcad = ra.data;
+          // faltas de caixa (script 23) e prazos com valor (seguros e viaturas) para a previsão de tesouraria
+          const cx = await todas(() => sb.from("fin_caixa").select("mes,loja,dia,tipo,valor,texto").order("mes").order("id")).catch(() => null);
+          extra.caixa = cx;
+          const pz = await sb.from("prz_prazos").select("titulo,data,valor,repetir,estado").eq("estado", "ativo").not("valor", "is", null);
+          extra.prazos = pz.error ? [] : pz.data;
         } catch (e) { if (!/fin_barbeiros|fin_vendas_mes|PGRST20|Could not find|does not exist/i.test(String(e?.message))) throw e; }
         return { meses, linhas, faturacao, rubricas, extra };
       },
@@ -372,6 +377,7 @@ export function criarApi() {
         return ok(await sb.from("fin_ajustes").upsert({ mes, tipo, valor, atualizado_em: new Date().toISOString() }).select().single());
       },
       async config(reparticao) { return ok(await sb.from("fin_config").upsert({ id: 1, reparticao, atualizado_em: new Date().toISOString() }).select().single()); },
+      async configurar(campos) { return ok(await sb.from("fin_config").upsert({ id: 1, ...campos, atualizado_em: new Date().toISOString() }).select().single()); },
       async imputacao(chave, imputacao) { return ok(await sb.from("fin_rubricas").upsert({ chave, imputacao, atualizado_em: new Date().toISOString() }).select().single()); },
       async importar(p) { return ok(await sb.rpc("fin_importar", { p })); },
       async rubrica(chave, categoria) { return ok(await sb.from("fin_rubricas").upsert({ chave, categoria, atualizado_em: new Date().toISOString() }).select().single()); },
@@ -431,7 +437,7 @@ export function criarApi() {
         log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
-        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
+        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
         aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;

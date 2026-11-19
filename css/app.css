@@ -1976,3 +1976,37 @@ table.ranking td.n{white-space:nowrap}
 .aca-preco input{width:8em;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-family:var(--f-mono);text-align:right}
 .aca-rec-nota{margin-block:0 10px}
 .p-sec .aca-kpis .kpi b{white-space:nowrap}
+
+/* ---------- Financeiro: caixa, simulador, previsão e desempenho (js/ferramentas.js) ---------- */
+.cx-alerta{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:600;color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.cx-tipo{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--sunken);color:var(--muted)}
+.cx-tipo.t-falta{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.cx-tipo.t-sobra{color:var(--ok,#2f7d4f);background:color-mix(in srgb,var(--ok,#2f7d4f) 12%,transparent)}
+.cx-sum{cursor:pointer;font-weight:600}
+.fin-tab td.pos{color:var(--ok,#2f7d4f)}
+.sim-campos label small{font-size:11.5px}
+.sim-kpis small.sim-mais,.res-serv.sim-mais,small.sim-mais{color:var(--ok,#2f7d4f)}
+.sim-kpis small.sim-menos,.res-serv.sim-menos,small.sim-menos{color:var(--danger)}
+.sim-eq{font-size:14px}
+.res-aj-in.sim-pc{width:4.6em}
+.tes-campos .tes-chk span{min-height:34px;color:var(--ink)}
+.tes-campos .tes-chk input{width:18px;height:18px;accent-color:var(--b)}
+.tes-bar-h{width:28%}
+.tes-bar-c{min-width:120px}
+.tes-bar{display:block;height:10px;width:calc(var(--p) * 100%);min-width:2px;background:var(--b);border-radius:0 3px 3px 0;transform-origin:0 50%;animation:crescer-x .8s cubic-bezier(.2,.7,.2,1) both}
+.tes-bar.baixo{background:var(--danger)}
+.tes-tab tr.tes-mau td{background:color-mix(in srgb,var(--danger) 7%,transparent)}
+.crm-tabela.fin-tab.tes-mini{min-width:0;width:100%}
+.tes-h4{margin:14px 0 6px;font-size:13px;color:var(--muted);font-weight:600}
+.tes-prazos{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13.5px}
+.des-cards .kpi b{font-family:var(--f-body);font-size:15px}
+.crm-tabela.des-tab{min-width:820px}
+.mix{display:flex;width:110px;height:8px;border-radius:4px;overflow:hidden;background:var(--sunken);gap:1px}
+.mix i{display:block;height:100%;width:calc(var(--p) * 100%)}
+.m-c{background:var(--b)}.m-b{background:color-mix(in srgb,var(--b) 45%,var(--muted))}.m-k{background:color-mix(in srgb,var(--b) 35%,var(--card))}
+i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px}
+.spark{width:72px;height:22px;display:block}
+.spark polyline{fill:none;stroke:var(--b);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+.res-lista{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}
+.res-lista li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.btn.mini{padding:5px 10px;font-size:12.5px}

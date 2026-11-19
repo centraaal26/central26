@@ -254,6 +254,15 @@ O que passa a existir:
 - **Barbeiros**: serviços (cabelos, barbas e combos), faturado, comissão, extras, total pago e quanto fica para a empresa, por barbeiro e por loja, e a evolução mês a mês.
 - Só a direção vê. As faturas das comissões da folha RH não são guardadas, só o total de cada pessoa.
 
+### 3u. Preço das formações e receita da Academia
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/22-precos-formacao.sql` → **Run**.
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy** (a cópia passa a incluir os preços).
+3. Na app (direção): **Academy → Formações** → abre cada formação e escreve o **preço por formando**. O botão «Usar … nas outras formações do curso» põe o mesmo preço nas formações do mesmo curso que ainda não têm.
+
+O que passa a existir:
+- Na Academy (só a direção vê): receita de cada formação (preço × formandos que não desistiram) e o valor de cada formando.
+- No **Financeiro → Resultados**, a receita da Academia passa a vir destes preços, dividida em partes iguais pelos meses de cada formação. Um valor escrito à mão nos Resultados continua a ter prioridade.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

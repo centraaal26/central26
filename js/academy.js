@@ -52,7 +52,7 @@ function comRegiao(t) {
 export function criarAcademy(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, $ } = ctx;
   const veCrm = () => !!ctx.podeCrm?.(S.eu);
-  const A = (S.aca = { estado: "por-carregar", formacoes: {}, formandos: {}, insc: [], config: null, tab: "painel", ultimoParam: undefined, q: "", fZona: "", pag: 1, aImportar: null, importando: false, geo: null, confirmar: false });
+  const A = (S.aca = { estado: "por-carregar", formacoes: {}, formandos: {}, insc: [], config: null, precos: null, tab: "painel", ultimoParam: undefined, q: "", fZona: "", pag: 1, aImportar: null, importando: false, geo: null, confirmar: false });
   let desligar = null;
   const pode = () => podeAcademy(S.eu);
 
@@ -65,6 +65,7 @@ export function criarAcademy(ctx) {
       A.formacoes = Object.fromEntries(d.formacoes.map((f) => [f.id, f]));
       A.formandos = Object.fromEntries(d.formandos.map((f) => [f.id, comRegiao(f)]));
       A.insc = d.inscricoes; A.config = d.config;
+      A.precos = d.precos && eGestor(S.eu) ? Object.fromEntries(d.precos.map((p) => [p.formacao_id, +p.preco])) : null;
       A.estado = "pronto";
       if (!desligar && api.aca.subscrever) desligar = api.aca.subscrever(aoMudar);
     } catch (e) {
@@ -97,6 +98,12 @@ export function criarAcademy(ctx) {
   const formacoesValidas = () => Object.values(A.formacoes).filter((f) => !cancelada(f)).sort(ordemFormacao);
   const inscritosDe = (fid) => A.insc.filter((i) => i.formacao_id === fid);
   const formandosDe = (fid) => inscritosDe(fid).map((i) => A.formandos[i.formando_id]).filter(Boolean);
+  // preço por formando (só a direção vê; os desistentes não contam para a receita)
+  const eur = (v) => Math.round(Number(v) || 0).toLocaleString("pt-PT") + " €";
+  const precoDe = (fid) => (A.precos && A.precos[fid] != null ? A.precos[fid] : null);
+  const ativosDe = (fid) => inscritosDe(fid).filter((i) => !i.desistente && A.formandos[i.formando_id]).length;
+  const receitaDe = (fid) => (precoDe(fid) == null ? null : precoDe(fid) * ativosDe(fid));
+  const lerEur = (v) => { const t = String(v ?? "").trim().replace(/\s|€/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."); return t === "" ? null : isFinite(+t) && +t >= 0 ? +t : NaN; };
   const formacoesDe = (tid) => A.insc.filter((i) => i.formando_id === tid).map((i) => ({ ...i, f: A.formacoes[i.formacao_id] })).filter((x) => x.f);
   function contar(lista, chave) { const c = {}; lista.forEach((x) => { const k = chave(x); c[k] = (c[k] || 0) + 1; }); return c; }
   // Para a estatística contam os formandos de formações não canceladas (e os registados à mão ainda sem formação)
@@ -364,11 +371,15 @@ export function criarAcademy(ctx) {
   function vistaFormacoes() {
     const todas = Object.values(A.formacoes).sort((a, b) => ordemFormacao(b, a));
     if (!todas.length) return '<div class="vazio"><h3>Ainda não há formações</h3><p>Lê-as da Secretaria Online (no separador com o mesmo nome) ou cria uma em «Nova formação».</p></div>';
-    return '<div class="tabela-scroll"><table class="crm-tabela aca-tab tab-cartoes"><thead><tr><th>Formação</th><th>Início</th><th>Estado</th><th class="n">Formandos</th><th class="n">Assiduidade</th><th>Origem dos formandos</th></tr></thead><tbody>' +
+    const comPreco = A.precos !== null, semPreco = todas.filter((f) => !cancelada(f) && precoDe(f.id) == null).length, rec = todas.filter((f) => !cancelada(f)).reduce((s, f) => s + (receitaDe(f.id) || 0), 0);
+    return (comPreco ? '<p class="nota-tab aca-rec-nota">Receita das formações com preço: <b>' + eur(rec) + "</b>" + (semPreco ? " · " + pl(semPreco, "formação sem preço", "formações sem preço") + " (abre a formação para o escrever)" : "") + ". Só a direção vê os preços.</p>" : "") +
+      '<div class="tabela-scroll"><table class="crm-tabela aca-tab tab-cartoes"><thead><tr><th>Formação</th><th>Início</th><th>Estado</th><th class="n">Formandos</th>' + (comPreco ? '<th class="n">Receita</th>' : "") + '<th class="n">Assiduidade</th><th>Origem dos formandos</th></tr></thead><tbody>' +
       todas.map((f) => {
         const ins = inscritosDe(f.id), lista = formandosDe(f.id), c = contar(lista, zonaDe), des = ins.filter((i) => i.desistente).length;
         return '<tr data-acao="aca-formacao" data-id="' + esc(f.id) + '"' + (cancelada(f) ? ' class="aca-cancelada"' : "") + "><td><b>" + esc(f.nome) + "</b><small>" + esc([f.curso, f.local].filter(Boolean).join(" · ")) + "</small></td><td>" + esc(dataCurta(f.inicio) || "—") + "</td><td>" + esc(f.estado || "—") +
-          '</td><td class="n mono">' + pl(lista.length, "formando", "formandos") + (des ? "<small>" + pl(des, "desistente", "desistentes") + " (" + pctTxt(des, ins.length) + ")</small>" : "") + '</td><td class="n mono">' + (f.assiduidade != null ? umDec(+f.assiduidade) + "%" : "—") + '</td><td class="aca-td-emp">' + (lista.length ? barraEmpilhada(c, lista.length) : "") + "</td></tr>";
+          '</td><td class="n mono">' + pl(lista.length, "formando", "formandos") + (des ? "<small>" + pl(des, "desistente", "desistentes") + " (" + pctTxt(des, ins.length) + ")</small>" : "") + "</td>" +
+          (comPreco ? '<td class="n mono">' + (precoDe(f.id) == null ? '<span class="muted">—</span><small>sem preço</small>' : eur(receitaDe(f.id)) + "<small>" + eur(precoDe(f.id)) + " por formando</small>") + "</td>" : "") +
+          '<td class="n mono">' + (f.assiduidade != null ? umDec(+f.assiduidade) + "%" : "—") + '</td><td class="aca-td-emp">' + (lista.length ? barraEmpilhada(c, lista.length) : "") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
 
@@ -546,6 +557,13 @@ export function criarAcademy(ctx) {
         kpi("Assiduidade", f.assiduidade != null ? umDec(+f.assiduidade) + "%" : "—", f.assiduidade != null ? pl(f.assid_sessoes || 0, "sessão", "sessões") : "sem presenças") +
         kpi("Idade média", idF.length ? umDec(media(idF)) : "—", idF.length ? "de " + Math.min(...idF) + " a " + Math.max(...idF) + " anos" : "sem dados") +
         kpi("Distância", dF.length ? num(mediana(dF)) + " km" : "—", dF.length ? "mediana" : "sem dados") + "</div></section>";
+      if (A.precos !== null) {
+        const p = precoDe(f.id), at = ativosDe(f.id), irmas = Object.values(A.formacoes).filter((x) => x.id !== f.id && x.curso && x.curso === f.curso && precoDe(x.id) == null && !cancelada(x));
+        h += '<section class="p-sec"><h3>Preço e receita</h3><div class="aca-preco"><label for="aca-preco">Preço por formando</label><span><input id="aca-preco" data-aca-preco="' + esc(f.id) + '" inputmode="decimal" placeholder="Ex.: 2990" value="' + (p == null ? "" : esc(String(p).replace(".", ","))) + '"> €</span></div>' +
+          (p == null ? '<p class="nota-tab">Sem preço, esta formação não entra na receita da Academia.</p>' : '<div class="resumo-crm aca-kpis">' + kpi("Receita", eur(p * at), pl(at, "formando conta", "formandos contam")) + kpi("Desistentes", num(des), des ? "não contam para a receita" : "") + "</div>" +
+            '<p class="nota-tab">No Financeiro, a receita divide-se em partes iguais pelos meses da formação' + (f.inicio ? " (de " + esc(dataCurta(f.inicio)) + (f.fim && f.fim > f.inicio ? " a " + esc(dataCurta(f.fim)) : "") + ")" : "") + ", a não ser que escrevas outro valor nos Resultados.</p>") +
+          (p != null && irmas.length ? '<div class="acts"><button class="btn sec" data-acao="aca-preco-curso" data-id="' + esc(f.id) + '">Usar ' + eur(p) + " nas " + pl(irmas.length, "outra formação", "outras formações") + " de «" + esc(f.curso) + "» sem preço</button></div>" : "") + "</section>";
+      }
       const fora = Object.values(A.formandos).filter((t) => !ins.some((x) => x.formando_id === t.id)).sort((x, y) => x.nome.localeCompare(y.nome, "pt"));
       h += '<section class="p-sec"><h3>Formandos <span class="mono muted">' + lista.length + "</span></h3>" + (lista.length ? '<ul class="aca-lista">' + lista.map(({ i, t }) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formando" data-id="' + esc(t.id) + '">' + esc(t.nome) + "</button><small>" + ponto(zonaDe(t)) + esc([t.concelho, zonaDe(t)].filter(Boolean).join(" · ")) + "</small></span>" +
         '<label class="aca-des"><input type="checkbox" data-aca-desist="' + esc(t.id) + '"' + (i.desistente ? " checked" : "") + "> Desistiu</label>" +
@@ -571,7 +589,8 @@ export function criarAcademy(ctx) {
     if (!novo) h += '<p class="aca-reg">' + ponto(z) + "<b>" + esc(z) + "</b>" + (t.regiao && t.regiao !== z ? " · " + esc(t.regiao) : "") + (t.regiao_aprox ? " · deduzida só pelo distrito ou pelo código postal" : "") + (!t.regiao ? " · completa o concelho para saber a região" : "") + "</p>";
     if (!novo) {
       const fs = formacoesDe(t.id).sort((x, y) => ordemFormacao(y.f, x.f));
-      h += '<section class="p-sec"><h3>Formações</h3>' + (fs.length ? '<ul class="aca-lista">' + fs.map((x) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formacao" data-id="' + esc(x.f.id) + '">' + esc(x.f.nome) + "</button><small>" + esc([dataCurta(x.f.inicio), x.f.estado, x.idade != null ? x.idade + " anos" : "", distancia(x) != null ? (distancia(x) ? distancia(x) + " km de casa" : "no concelho onde vive") : "", x.desistente ? "desistiu" : ""].filter(Boolean).join(" · ")) + "</small></span></li>").join("") + "</ul>" : '<p class="muted">Ainda sem formações. Junta-o a uma formação no painel da formação.</p>') + "</section>";
+      const recT = A.precos !== null ? fs.reduce((s2, x) => s2 + (!x.desistente && precoDe(x.f.id) != null ? precoDe(x.f.id) : 0), 0) : null;
+      h += '<section class="p-sec"><h3>Formações' + (recT ? ' <span class="mono muted">' + eur(recT) + "</span>" : "") + "</h3>" + (fs.length ? '<ul class="aca-lista">' + fs.map((x) => '<li><span class="aca-l-n"><button class="c-link" data-acao="aca-formacao" data-id="' + esc(x.f.id) + '">' + esc(x.f.nome) + "</button><small>" + esc([dataCurta(x.f.inicio), x.f.estado, x.idade != null ? x.idade + " anos" : "", distancia(x) != null ? (distancia(x) ? distancia(x) + " km de casa" : "no concelho onde vive") : "", x.desistente ? "desistiu" : "", A.precos !== null && precoDe(x.f.id) != null ? (x.desistente ? "não conta para a receita" : eur(precoDe(x.f.id))) : ""].filter(Boolean).join(" · ")) + "</small></span></li>").join("") + "</ul>" : '<p class="muted">Ainda sem formações. Junta-o a uma formação no painel da formação.</p>') + "</section>";
     }
     carregarGeo();
     if (!novo && veCrm()) h += seccaoComercial(t);
@@ -614,6 +633,13 @@ export function criarAcademy(ctx) {
         if (!c) { toast("Escolhe uma barbearia da lista do Comercial.", true); return true; }
         ligarCliente(id, { cliente_id: c.id }, "Ligado a " + c.nome); return true;
       }
+      case "aca-preco-curso": {
+        const f = A.formacoes[id], p = precoDe(id); if (!f || p == null) return true;
+        const irmas = Object.values(A.formacoes).filter((x) => x.id !== f.id && x.curso === f.curso && precoDe(x.id) == null && !cancelada(x));
+        irmas.forEach((x) => (A.precos[x.id] = p)); renderPainel(true); render();
+        Promise.all(irmas.map((x) => api.aca.preco(x.id, p))).then(() => toast("Preço posto em " + pl(irmas.length, "formação", "formações"))).catch((e) => { irmas.forEach((x) => delete A.precos[x.id]); renderPainel(true); render(); falha(e); });
+        return true;
+      }
       case "aca-sinc": sincronizar(el.dataset.modo === "completa" ? "completa" : "agora"); return true;
       case "aca-apagar-nao": A.confirmar = false; renderPainel(true); return true;
       case "aca-formacao-apagar": case "aca-formando-apagar": A.confirmar = true; renderPainel(true); return true;
@@ -652,6 +678,14 @@ export function criarAcademy(ctx) {
   }
   function mudar(e) {
     const t = e.target;
+    if (t.dataset.acaPreco) {
+      const fid = t.dataset.acaPreco, v = lerEur(t.value), antes = precoDe(fid);
+      if (Number.isNaN(v)) { toast("Escreve o preço em euros (ex.: 2990).", true); return true; }
+      if (v == null) delete A.precos[fid]; else A.precos[fid] = v;
+      renderPainel(true); render();
+      api.aca.preco(fid, v).then(() => toast(v == null ? "Preço retirado" : "Preço guardado")).catch((e) => { if (antes == null) delete A.precos[fid]; else A.precos[fid] = antes; renderPainel(true); render(); falha(e); });
+      return true;
+    }
     if (t.id === "aca-fzona") { A.fZona = t.value; A.pag = 1; render(); return true; }
     if (t.id === "aca-ficheiro") { lerFicheiro(t.files?.[0]); t.value = ""; return true; }
     if (t.dataset?.acaZona) {

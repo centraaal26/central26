@@ -362,7 +362,8 @@ export function criarApi() {
             ok(await sb.from("fin_config").select("*").eq("id", 1).maybeSingle()),
             ok(await sb.rpc("fin_vendas_mes")),
           ]);
-          extra = { barbeiros, responsaveis, pessoal, ajustes, config, vendas };
+          extra = { barbeiros, responsaveis, pessoal, ajustes, config, vendas, receitaAcad: null };
+          const ra = await sb.rpc("fin_receita_academia"); if (!ra.error) extra.receitaAcad = ra.data;
         } catch (e) { if (!/fin_barbeiros|fin_vendas_mes|PGRST20|Could not find|does not exist/i.test(String(e?.message))) throw e; }
         return { meses, linhas, faturacao, rubricas, extra };
       },
@@ -431,7 +432,7 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", crm_custos: "produto_codigo" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -562,7 +563,13 @@ export function criarApi() {
           todas(() => sb.from("aca_inscricoes").select("formacao_id, formando_id, desistente, idade").order("formacao_id").order("formando_id")),
           sb.from("aca_config").select("*").eq("id", 1).maybeSingle(),
         ]);
-        return { formacoes, formandos, inscricoes, config: config.error ? null : config.data };
+        // preços das formações (script 22, só a direção): sem o script ou sem permissão, fica sem preços
+        const pr = await sb.from("aca_precos").select("formacao_id, preco");
+        return { formacoes, formandos, inscricoes, config: config.error ? null : config.data, precos: pr.error ? null : pr.data };
+      },
+      async preco(formacao_id, preco) {
+        if (preco == null) { ok(await sb.from("aca_precos").delete().eq("formacao_id", formacao_id)); return null; }
+        return ok(await sb.from("aca_precos").upsert({ formacao_id, preco, atualizado_em: new Date().toISOString() }).select().single());
       },
       async importar(p) { return ok(await sb.rpc("aca_importar", { p })); },
       async criarFormacao(f) { return ok(await sb.from("aca_formacoes").insert(f).select().single()); },

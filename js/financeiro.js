@@ -199,7 +199,7 @@ export const podeFinanceiro = (eu) => eGestor(eu);
 export function criarFinanceiro(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, $ } = ctx;
   const F = (S.fin = { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, tab: "resumo", ano: null, mesSel: null, importacao: null, aImportar: false, q: "",
-    extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], resAno: null, resMes: "" });
+    extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, resAno: null, resMes: "" });
 
   async function carregar() {
     if (F.estado === "a-carregar") return;
@@ -214,7 +214,7 @@ export function criarFinanceiro(ctx) {
       const x = d.extra;
       F.extra = !!x;
       if (x) Object.assign(F, { barbeiros: x.barbeiros.map((b) => ({ ...b, ...Object.fromEntries(["cabelos", "barbas", "combos", "outro", "valor_total", "liquido", "comissao", "a_receber", "extras", "total"].map((k) => [k, +b[k]])) })),
-        responsaveis: x.responsaveis, pessoal: x.pessoal, ajustes: x.ajustes.map((a) => ({ ...a, valor: +a.valor })), config: x.config, vendas: x.vendas.map((v) => ({ ...v, valor: +v.valor })) });
+        responsaveis: x.responsaveis, pessoal: x.pessoal, ajustes: x.ajustes.map((a) => ({ ...a, valor: +a.valor })), config: x.config, vendas: x.vendas.map((v) => ({ ...v, valor: +v.valor })), receitaAcad: x.receitaAcad ? x.receitaAcad.map((r) => ({ ...r, valor: +r.valor })) : null });
       F.estado = "pronto";
     } catch (e) { F.estado = /PGRST20|fin_meses|Could not find/i.test(String(e?.message)) ? "falta-script" : "erro"; F.erro = e.message; }
     agendarRender();
@@ -483,6 +483,6 @@ export function criarFinanceiro(ctx) {
     }
     return false;
   }
-  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, importacao: null, tab: "resumo", mesSel: null, extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], resAno: null, resMes: "" }); }
+  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, importacao: null, tab: "resumo", mesSel: null, extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], receitaAcad: null, resAno: null, resMes: "" }); }
   return { vista, clique, escrever, mudar, reiniciar, carregar };
 }

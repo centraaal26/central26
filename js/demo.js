@@ -709,10 +709,22 @@ export function criarDemo() {
           });
           x.pessoal.push({ mes: m.mes, pessoa: "Pessoa 1 (exemplo)", valor: 1100, pesos: { barbearias: 0.4, academia: 0.3, produtos: 0.3, tech: 0 } },
             { mes: m.mes, pessoa: "Pessoa 2 (exemplo)", valor: 950, pesos: { produtos: 1 } });
-          x.ajustes.push({ mes: m.mes, tipo: "receita_academia", valor: 2400 + k * 300 }, { mes: m.mes, tipo: "autoconsumo", valor: 380 });
+          x.ajustes.push({ mes: m.mes, tipo: "autoconsumo", valor: 380 });
           k++;
         }
         return x;
+      }
+      // Receita da Academia: preço × formandos que não desistiram, repartida pelos meses da formação (como fin_receita_academia)
+      async function receitaAcademia() {
+        const a = await API.aca.carregar(), r = new Map();
+        for (const p of a.precos || []) {
+          const f = a.formacoes.find((x) => x.id === p.formacao_id); if (!f?.inicio || /cancel/i.test(f.estado || "")) continue;
+          const ativos = a.inscricoes.filter((x) => x.formacao_id === f.id && !x.desistente).length;
+          const ini = new Date(f.inicio.slice(0, 7) + "-01"), fim = new Date(((f.fim && f.fim > f.inicio) ? f.fim : f.inicio).slice(0, 7) + "-01");
+          const meses = []; for (let x = new Date(ini); x <= fim; x.setMonth(x.getMonth() + 1)) meses.push(x.toISOString().slice(0, 7));
+          for (const m of meses) { const o = r.get(m) || { mes: m, valor: 0, formandos: 0, formacoes: 0 }; o.valor += (p.preco * ativos) / meses.length; o.formandos += ativos; o.formacoes++; r.set(m, o); }
+        }
+        return [...r.values()].map((o) => ({ ...o, valor: Math.round(o.valor * 100) / 100 }));
       }
       // Vendas por mês a partir do Comercial de exemplo (as mesmas contas que a função fin_vendas_mes faz na base de dados)
       async function vendasMes() {
@@ -725,7 +737,7 @@ export function criarDemo() {
           if (!pode()) throw new Error("Só a direção tem acesso ao Financeiro.");
           const x = completar(ler()); guardar();
           const { barbeiros, responsaveis, pessoal, ajustes, config, ...resto } = structuredClone(x);
-          return { ...resto, extra: { barbeiros, responsaveis, pessoal, ajustes, config, vendas: await vendasMes() } };
+          return { ...resto, extra: { barbeiros, responsaveis, pessoal, ajustes, config, vendas: await vendasMes(), receitaAcad: await receitaAcademia() } };
         },
         async ajuste(mes, tipo, valor) {
           if (!pode()) throw new Error("Só a direção altera o Financeiro.");
@@ -1229,7 +1241,11 @@ export function criarDemo() {
       const limpo = (o, campos) => Object.fromEntries(Object.entries(o).filter(([c]) => campos.includes(c)));
       const CF = ["nome", "curso", "ano", "local", "inicio", "fim", "estado", "estado_em", "notas", "assiduidade", "assid_sessoes"], CT = ["nome", "pais", "cp4", "localidade", "concelho", "distrito", "concelho_codigo", "regiao", "regiao_aprox", "notas", "residencia_manual", "cliente_id", "clientes_rejeitados"];
       return {
-        async carregar() { so(); ler(); return structuredClone({ formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente, idade }) => ({ formacao_id, formando_id, desistente, idade: idade ?? null })), config: d.config }); },
+        async carregar() { so(); ler(); if (!d.precos) d.precos = d.formacoes.filter((f) => /^Ação [1-5]$/.test(f.nome)).map((f, n) => ({ formacao_id: f.id, preco: [2490, 2690, 2790, 2990, 2990][n] ?? 2990 })); return structuredClone({ precos: eGestor(eu()) ? d.precos : null, formacoes: d.formacoes, formandos: d.formandos, inscricoes: d.inscricoes.map(({ formacao_id, formando_id, desistente, idade }) => ({ formacao_id, formando_id, desistente, idade: idade ?? null })), config: d.config }); },
+        async preco(formacao_id, preco) {
+          if (!eGestor(eu())) throw new Error("Só a direção define o preço das formações.");
+          ler(); d.precos = (d.precos || []).filter((x) => x.formacao_id !== formacao_id); if (preco != null) d.precos.push({ formacao_id, preco }); guardar(); return preco == null ? null : { formacao_id, preco };
+        },
         async importar(p) {
           so(); ler();
           const r = { formacoes_novas: 0, formacoes_atualizadas: 0, formandos_novos: 0, formandos_atualizados: 0, inscricoes: 0 };

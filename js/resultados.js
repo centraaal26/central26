@@ -34,6 +34,10 @@ export function criarResultados(ctx, F, u) {
   // ---------- contas ----------
   const regra = () => F.config?.reparticao || { metodo: "faturacao", pesos: { barbearias: 60, produtos: 25, academia: 10, tech: 5 } };
   const ajuste = (mes, tipo) => Number(F.ajustes.find((a) => a.mes === mes && a.tipo === tipo)?.valor || 0);
+  const temAjuste = (mes, tipo) => F.ajustes.some((a) => a.mes === mes && a.tipo === tipo);
+  // receita da Academia: o valor escrito à mão; se não houver, o calculado pelos preços das formações (Academy)
+  const autoAcad = (mes) => F.receitaAcad?.find((r) => r.mes === mes) || null;
+  const receitaAcademia = (mes) => (temAjuste(mes, "receita_academia") ? ajuste(mes, "receita_academia") : autoAcad(mes)?.valor || 0);
   const dividir = (valor, pesos) => { const t = Object.values(pesos).reduce((s, v) => s + Math.max(0, v), 0); return Object.fromEntries(Object.entries(pesos).map(([k, v]) => [k, t > 0 ? (valor * Math.max(0, v)) / t : 0])); };
 
   function calcular(meses) {
@@ -57,7 +61,7 @@ export function criarResultados(ctx, F, u) {
       if (temVendas && !V.length) avisos.semVendas.push(m);
       const vTech = V.filter((v) => v.linha === "tech").reduce((s, v) => s + Number(v.valor), 0), vProd = V.filter((v) => v.linha !== "tech").reduce((s, v) => s + Number(v.valor), 0);
       areas.produtos.vendas += vProd; areas.tech.vendas += vTech;
-      const receitaAcad = ajuste(m, "receita_academia"); areas.academia.vendas += receitaAcad;
+      const receitaAcad = receitaAcademia(m); areas.academia.vendas += receitaAcad;
       // produtos gastos nas barbearias (a preço de custo): rendimento dos Produtos, custo das barbearias
       const auto = ajuste(m, "autoconsumo");
       areas.produtos.autoconsumo += auto; areas.barbearias.mercadorias += auto; repartirLojas(auto, "mercadorias");
@@ -166,9 +170,11 @@ export function criarResultados(ctx, F, u) {
       (Object.keys(r.geralRub).length ? '<details class="fin-leves"><summary>Ver os custos gerais deste período</summary><div class="tabela-scroll"><table class="crm-tabela fin-tab"><tbody>' +
         Object.entries(r.geralRub).sort((a, b) => b[1] - a[1]).map(([k, v]) => "<tr><td>" + esc(u.rotulo(k)) + '</td><td class="n">' + eur(v) + "</td></tr>").join("") + "</tbody></table></div></details>" : "") + "</section>";
     // valores escritos à mão
-    h += '<section class="cartao-sec"><h3>Valores que não estão nas folhas</h3><p>A receita da Academia não é faturada e os produtos gastos nas barbearias não aparecem nas folhas. Escreve-os aqui, mês a mês (sem IVA; os produtos a preço de custo).</p>' +
+    h += '<section class="cartao-sec"><h3>Valores que não estão nas folhas</h3><p>Os produtos gastos nas barbearias não aparecem nas folhas: escreve-os aqui, mês a mês, a preço de custo. A receita da Academia vem ' + (F.receitaAcad ? "do preço de cada formação (Academy → Formações), dividida pelos meses da formação" : "do que escreveres aqui (quando correres o script 22, passa a vir do preço de cada formação na Academy)") + "; se escreveres um valor, é esse que conta.</p>" +
       '<div class="tabela-scroll"><table class="crm-tabela fin-tab res-aj"><thead><tr><th>Mês</th><th class="n">Receita da Academia</th><th class="n">Produtos gastos nas barbearias</th></tr></thead><tbody>' +
-      p.doAno.map((m) => "<tr><td>" + esc(nomeMes(m)) + "</td>" + ["receita_academia", "autoconsumo"].map((tp) => '<td class="n"><label class="sr" for="res-aj-' + tp + "-" + m + '">' + (tp === "autoconsumo" ? "Produtos gastos" : "Receita da Academia") + " em " + esc(nomeMes(m)) + '</label><input class="res-aj-in" id="res-aj-' + tp + "-" + m + '" data-aj-mes="' + m + '" data-aj-tipo="' + tp + '" inputmode="decimal" placeholder="0" value="' + esc(dec(F.ajustes.find((a) => a.mes === m && a.tipo === tp)?.valor ?? "")) + '"> €</td>').join("") + "</tr>").join("") +
+      p.doAno.map((m) => "<tr><td>" + esc(nomeMes(m)) + "</td>" + ["receita_academia", "autoconsumo"].map((tp) => { const au = tp === "receita_academia" ? autoAcad(m) : null, manual = temAjuste(m, tp);
+        return '<td class="n"><label class="sr" for="res-aj-' + tp + "-" + m + '">' + (tp === "autoconsumo" ? "Produtos gastos" : "Receita da Academia") + " em " + esc(nomeMes(m)) + '</label><input class="res-aj-in" id="res-aj-' + tp + "-" + m + '" data-aj-mes="' + m + '" data-aj-tipo="' + tp + '" inputmode="decimal" placeholder="' + (au ? esc(dec(au.valor)) : "0") + '" value="' + esc(dec(F.ajustes.find((a) => a.mes === m && a.tipo === tp)?.valor ?? "")) + '"> €' +
+          (tp === "receita_academia" ? '<small class="res-serv">' + (manual ? "escrito à mão" + (au ? " (pelos preços: " + eur(au.valor) + ")" : "") : au ? "pelos preços: " + au.formacoes + (au.formacoes === 1 ? " formação" : " formações") : "sem formações com preço") + "</small>" : "") + "</td>"; }).join("") + "</tr>").join("") +
       "</tbody></table></div></section>";
     if (Object.keys(r.fora).length) h += '<section class="cartao-sec"><h3>Não entram nas contas</h3><p class="nota-tab">' + Object.entries(r.fora).map(([k, v]) => esc(u.rotulo(k)) + " " + eur(v)).join(" · ") + '. Para mudar, escolhe outro destino em Despesas.</p></section>';
     return h;

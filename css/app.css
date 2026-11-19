@@ -1970,3 +1970,9 @@ table.ranking td.n{white-space:nowrap}
 .form-linha label{font-size:13.5px;color:var(--muted)}
 .crm-tabela.fin-tab.res-fim{min-width:0;width:100%;max-width:420px}
 .form-linha .sel{width:auto;max-width:100%}
+.aca-preco{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-block:4px 10px}
+.aca-preco label{font-size:13.5px;color:var(--muted)}
+.aca-preco span{display:flex;align-items:center;gap:6px}
+.aca-preco input{width:8em;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-family:var(--f-mono);text-align:right}
+.aca-rec-nota{margin-block:0 10px}
+.p-sec .aca-kpis .kpi b{white-space:nowrap}

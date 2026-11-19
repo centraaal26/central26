@@ -60,8 +60,11 @@ export function lerLivro(XLSX, wb, ficheiro) {
   const nf = n(ficheiro).replace(/ /g, "");
   let k = MESES_N.findIndex((m) => nf.includes(m) || (m === "marco" && /mar(c|_)?o/.test(nf)));
   if (k < 0 && /maro/.test(nf)) k = 2;
-  const ano = (String(ficheiro).match(/[_\- ](\d{2})(?=[_.\- ]|$)/) || [])[1];
-  const y = ano ? 2000 + +ano : new Date().getFullYear();
+  // ano: «JULHO '25», «JULHO ’25», «JULHO 25», «JULHO_25», «JULHO 2025» (o apóstrofo tem prioridade sobre números soltos como «(1)»)
+  const base = String(ficheiro).replace(/\.xlsx?$/i, "");
+  const mA = base.match(/['’´`‘](\d{2})(?!\d)/) || base.match(/(?:^|\D)(20\d{2})(?!\d)/) || base.match(/(?:^|[^\d(])(\d{2})(?![\d)])/);
+  const y = mA ? (mA[1].length === 4 ? +mA[1] : 2000 + +mA[1]) : new Date().getFullYear();
+  if (!mA) avisos.push({ tipo: "ano", texto: "O nome do ficheiro não tem o ano: assumi " + y + ". Se não for, muda o nome (ex.: «JULHO '25»)." });
   const linhas = [];
   function blocos(rows, areaPadrao, areaDe, grupoDe) {
     if (!rows) return 0;

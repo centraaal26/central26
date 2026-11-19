@@ -2,6 +2,7 @@
 // Só a direção vê. Os valores entram pela importação na app; a folha RH (vencimentos individuais) não é lida.
 import { MES, MES_L, ymd, normalizar, haQuanto, eGestor } from "./dados.js";
 import { carregarXlsx } from "./xlsx.js";
+import { criarResultados, DESTINOS } from "./resultados.js";
 
 const n = (s) => normalizar(s).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 const num = (v) => (typeof v === "number" && isFinite(v) ? v : typeof v === "string" && /^-?\d+([.,]\d+)?$/.test(v.trim()) ? +v.replace(",", ".") : 0);
@@ -103,6 +104,68 @@ export function lerLivro(XLSX, wb, ficheiro) {
     }
     for (const r of fr) for (const v of r || []) { const m = txt(v).match(/^(\d{2})\/(\d{2})$/); if (m && +m[1] <= 31) datas[+m[2]] = (datas[+m[2]] || 0) + 1; }
   }
+  // barbeiros (bloco à direita da folha Faturação): serviços, comissão, extras e total pago a cada um
+  const barbeiros = [], responsaveis = [];
+  if (fr) {
+    const hb = fr.findIndex((r) => (r || []).some((v) => n(v) === "barbeiro"));
+    if (hb >= 0) {
+      const h = fr[hb].map((v) => n(v)), cb = h.indexOf("barbeiro");
+      const col = (re, de = cb) => h.findIndex((v, j) => j > de && re.test(v));
+      const c = { dias: col(/^dias$/), cab: col(/^cabelos?$/), bar: col(/^barbas?$/), com: col(/^combos?$/), outro: col(/^outro valor$/), vt: col(/^valor total$/), liq: col(/^v s\b/), pc: col(/^comiss/), rec: col(/^a receber$/) };
+      c.tot = c.rec >= 0 ? col(/^total$/, c.rec) : -1;
+      const val = (r, j) => (j >= 0 ? num(r[j]) : 0);
+      let loja = "";
+      const mapa = new Map();
+      for (let i = hb + 1; i < fr.length; i++) {
+        const r = fr[i] || [], l = txt(r[cb - 1]);
+        if (l && ESPACOS[n(l)]) loja = ESPACOS[n(l)];
+        const nome = txt(r[cb]).replace(/\s+/g, " "), vt = val(r, c.vt), rec = val(r, c.rec);
+        if (!nome || !loja || /^total/i.test(nome) || (!vt && !rec)) continue;
+        const tot = c.tot >= 0 && num(r[c.tot]) ? num(r[c.tot]) : rec, extras = Math.max(0, tot - rec);
+        let pc = val(r, c.pc); if (pc > 1) pc /= 100;
+        const nota = extras > 0.009 ? r.slice(c.rec + 1).map(txt).filter((s) => s && !ESPACOS[n(s)] && !/responsabilidade/i.test(s) && !/^\d/.test(s)).join(" · ") : "";
+        const k = loja + "|" + n(nome), x = mapa.get(k) || { loja, barbeiro: nome.replace(/(^|\s)\S/g, (m) => m.toUpperCase()).replace(/\B\S/g, (m) => m.toLowerCase()), dias: "", cabelos: 0, barbas: 0, combos: 0, outro: 0, valor_total: 0, liquido: 0, comissao: pc, a_receber: 0, extras: 0, nota: "", total: 0 };
+        x.dias = String(r[c.dias] ?? x.dias ?? "").trim(); x.cabelos += val(r, c.cab); x.barbas += val(r, c.bar); x.combos += val(r, c.com); x.outro += val(r, c.outro);
+        x.valor_total += vt; x.liquido += c.liq >= 0 ? val(r, c.liq) : vt; x.a_receber += rec; x.extras += extras; x.total += tot; if (nota) x.nota = [x.nota, nota].filter(Boolean).join(" · ");
+        mapa.set(k, x);
+      }
+      for (const x of mapa.values()) barbeiros.push(Object.fromEntries(Object.entries(x).map(([kk, v]) => [kk, typeof v === "number" ? +v.toFixed(kk === "comissao" ? 4 : 2) : v])));
+    }
+    // quanto recebe o responsável de cada loja (tabela «valor responsabilidade»)
+    for (let i = 0; i < fr.length; i++) {
+      const j = (fr[i] || []).findIndex((v) => n(v).startsWith("valor responsabilidade")); if (j < 0) continue;
+      for (let r = i + 1; r < Math.min(fr.length, i + 10); r++) {
+        const nome = txt((fr[r] || [])[j]); if (!nome) break;
+        const v = num((fr[r] || [])[j + 1]);
+        if (ESPACOS[n(nome)] && v > 0 && v < 5000 && !responsaveis.some((x) => x.loja === ESPACOS[n(nome)])) responsaveis.push({ loja: ESPACOS[n(nome)], valor: +v.toFixed(2) });
+      }
+      break;
+    }
+  }
+  // outro pessoal (folha RH): quanto recebe cada pessoa e como se divide pelas áreas. As faturas e a base da comissão não são guardadas.
+  const pessoal = [], rh = folha(/^rh$/);
+  if (rh) {
+    const AREA_RH = { barbearias: "barbearias", barbearia: "barbearias", academia: "academia", formacao: "academia", produtos: "produtos", tech: "tech" };
+    const nums = (r) => (r || []).slice(2, 6).filter((v) => typeof v === "number" && isFinite(v));
+    for (let i = 0; i < rh.length; i++) {
+      const r = rh[i] || [], a = txt(r[0]);
+      if (!a || AREA_RH[n(a)] || /^\d/.test(a)) continue;
+      const pesos = {};
+      for (let k = i + 1; k < Math.min(rh.length, i + 8); k++) { const ar = AREA_RH[n((rh[k] || [])[0])]; if (ar) pesos[ar] = num(rh[k][1]); else if (txt((rh[k] || [])[0]) && k > i + 1) break; }
+      if (!Object.keys(pesos).length) continue;
+      const jt = [r, rh[i - 1] || []].map((x) => x.findIndex((v, j) => j > 0 && j < 10 && n(v) === "total")).find((j) => j > 0) ?? -1;
+      const valor = jt > 0 ? num((rh[i + 1] || [])[jt]) : (nums(r).length ? nums(r) : nums(rh[i + 1])).reduce((s, v) => s + v, 0);
+      if (valor > 0) pessoal.push({ pessoa: a.replace(/\s+/g, " ").toLowerCase().replace(/(^|\s)\S/g, (m) => m.toUpperCase()), valor: +valor.toFixed(2), pesos });
+    }
+    // comissões de vendas («PAGAMENTO …»): só o total do mês, imputado aos produtos
+    let quem = "", tot = 0;
+    for (const r of rh) (r || []).forEach((v, j) => {
+      if (j < 10) return;
+      const t = n(v); if (/^pagamento /.test(t) && !quem) quem = t.slice(10).replace(/(^|\s)\S/g, (m) => m.toUpperCase());
+      if (t === "total" && typeof r[j + 1] === "number") tot += r[j + 1];
+    });
+    if (quem && tot > 0) pessoal.push({ pessoa: quem + " (comissões de vendas)", valor: +tot.toFixed(2), pesos: { produtos: 1 } });
+  }
   const mesDatas = Object.entries(datas).sort((a, b) => b[1] - a[1])[0];
   if (k < 0 && mesDatas) k = +mesDatas[0] - 1;
   const mes = k >= 0 ? y + "-" + String(k + 1).padStart(2, "0") : null;
@@ -123,14 +186,17 @@ export function lerLivro(XLSX, wb, ficheiro) {
   else if (!fat.some((f) => f.vencimentos)) avisos.push({ tipo: "vazio", texto: "A folha Faturação não tem a coluna dos vencimentos (pagamentos aos barbeiros) preenchida." });
   const custos = linhas.map((l) => [l.area, l.grupo, chaveRubrica(l.rubrica), l.base, l.iva, l.sem].join("|")).sort().join("\n");
   const faturas = fat.map((f) => [f.espaco, f.total, f.numerario, f.mb, f.ft, f.vencimentos].join("|")).sort().join("\n");
-  return { mes, ficheiro, linhas, faturacao: fat, avisos, assinatura: hash(custos + "#" + faturas), assinatura_custos: linhas.length ? hash(custos) : "", contagem: { nBarb, nPart, nHair, nForm } };
+  const pessoas = barbeiros.map((x) => [x.loja, x.barbeiro, x.valor_total, x.total].join("|")).concat(responsaveis.map((x) => x.loja + "|" + x.valor), pessoal.map((x) => x.pessoa + "|" + x.valor)).sort().join("\n");
+  if (fat.length && !barbeiros.length) avisos.push({ tipo: "vazio", texto: "A folha Faturação não tem o quadro dos barbeiros (serviços e comissões)." });
+  return { mes, ficheiro, linhas, faturacao: fat, barbeiros, responsaveis, pessoal, avisos, assinatura: hash(custos + "#" + faturas + "#" + pessoas), assinatura_custos: linhas.length ? hash(custos) : "", contagem: { nBarb, nPart, nHair, nForm } };
 }
 
 export const podeFinanceiro = (eu) => eGestor(eu);
 
 export function criarFinanceiro(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, $ } = ctx;
-  const F = (S.fin = { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, tab: "resumo", ano: null, mesSel: null, importacao: null, aImportar: false, q: "" });
+  const F = (S.fin = { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, tab: "resumo", ano: null, mesSel: null, importacao: null, aImportar: false, q: "",
+    extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], resAno: null, resMes: "" });
 
   async function carregar() {
     if (F.estado === "a-carregar") return;
@@ -140,7 +206,12 @@ export function criarFinanceiro(ctx) {
       const d = await api.fin.carregar();
       F.meses = d.meses; F.linhas = d.linhas.map((l) => ({ ...l, base: +l.base, iva: +l.iva, sem: +l.sem, chave: chaveRubrica(l.rubrica) }));
       F.faturacao = d.faturacao.map((f) => ({ ...f, total: +f.total, numerario: +f.numerario, mb: +f.mb, ft: +f.ft, vencimentos: +f.vencimentos }));
-      F.rubricas = Object.fromEntries(d.rubricas.map((r) => [r.chave, r.categoria]));
+      F.rubricas = Object.fromEntries(d.rubricas.filter((r) => r.categoria).map((r) => [r.chave, r.categoria]));
+      F.imput = Object.fromEntries(d.rubricas.filter((r) => r.imputacao).map((r) => [r.chave, r.imputacao]));
+      const x = d.extra;
+      F.extra = !!x;
+      if (x) Object.assign(F, { barbeiros: x.barbeiros.map((b) => ({ ...b, ...Object.fromEntries(["cabelos", "barbas", "combos", "outro", "valor_total", "liquido", "comissao", "a_receber", "extras", "total"].map((k) => [k, +b[k]])) })),
+        responsaveis: x.responsaveis, pessoal: x.pessoal, ajustes: x.ajustes.map((a) => ({ ...a, valor: +a.valor })), config: x.config, vendas: x.vendas.map((v) => ({ ...v, valor: +v.valor })) });
       F.estado = "pronto";
     } catch (e) { F.estado = /PGRST20|fin_meses|Could not find/i.test(String(e?.message)) ? "falta-script" : "erro"; F.erro = e.message; }
     agendarRender();
@@ -170,14 +241,16 @@ export function criarFinanceiro(ctx) {
     };
   }
   const anos = () => [...new Set(mesesCom().map((m) => m.slice(0, 4)))].sort();
+  const rotulo = (k) => { const l = F.linhas.find((x) => x.chave === k); return l ? rotuloRubrica(k, l.rubrica) : k; };
+  const RES = criarResultados(ctx, F, { custo, copias, mesesCom, nomeMes, rotulo });
 
   /* ============================== Vistas ============================== */
   function vista(param) {
     if (F.estado === "por-carregar") carregar();
-    if (param !== F.ultimoParam) { F.ultimoParam = param; if (["resumo", "barbearias", "despesas", "importar"].includes(param)) F.tab = param; }
+    if (param !== F.ultimoParam) { F.ultimoParam = param; if (["resumo", "resultados", "barbeiros", "barbearias", "despesas", "importar"].includes(param)) F.tab = param; }
     let h = '<div class="cab"><div><div class="eyebrow neutro">Ondina &amp; Maia, Lda. · só a direção vê esta página</div><h1>Financeiro</h1><p class="sub-cab">Faturação das barbearias e custos de cada mês, a partir das folhas mensais.</p></div>' +
       (F.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="fin-tab" data-tab="importar">' + I.plus + "Importar folhas</button></div>" : "") + "</div>";
-    const tabs = [["resumo", "Resumo"], ["barbearias", "Barbearias"], ["despesas", "Despesas"], ["importar", "Importar"]];
+    const tabs = [["resumo", "Resumo"], ["resultados", "Resultados"], ["barbeiros", "Barbeiros"], ["barbearias", "Barbearias"], ["despesas", "Despesas"], ["importar", "Importar"]];
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="fin-tab" data-tab="' + k + '" aria-selected="' + (F.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (F.estado === "falta-script") return h + '<div class="vazio"><h3>Falta instalar o Financeiro na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/09-financeiro.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
     if (F.estado === "erro") return h + '<div class="aviso erro">Não foi possível abrir o Financeiro: ' + esc(F.erro || "") + "</div>";
@@ -185,6 +258,8 @@ export function criarFinanceiro(ctx) {
     if (F.tab === "importar") return h + vistaImportar();
     if (!F.meses.length) return h + '<div class="vazio"><h3>Ainda não há meses importados</h3><p>Importa as folhas mensais da Ondina &amp; Maia (podes escolher vários ficheiros de uma vez). A app lê a faturação das barbearias e os custos, e assinala os meses em falta ou copiados.</p><div class="acts"><button class="btn pri" data-acao="fin-tab" data-tab="importar">Importar folhas</button></div></div>';
     if (!F.ano || !anos().includes(F.ano)) F.ano = anos()[anos().length - 1];
+    if (F.tab === "resultados") return h + RES.vistaResultados();
+    if (F.tab === "barbeiros") return h + RES.vistaBarbeiros();
     if (F.tab === "barbearias") return h + vistaBarbearias();
     if (F.tab === "despesas") return h + vistaDespesas();
     return h + vistaResumo();
@@ -297,13 +372,15 @@ export function criarFinanceiro(ctx) {
     const cats = CATEGORIAS_FIN.filter((c) => lista.some((x) => x.cat === c));
     let h = '<div class="barra"><div class="periodo"><b>Despesas partilhadas, impostos, Hairshopping, Tech e Formação</b><span>Valores sem IVA. A média usa só os meses com custos fiáveis' + (Object.keys(cp).length ? " (sem " + Object.keys(cp).map((m) => MES[+m.slice(5) - 1]).join(", ") + ")" : "") + ". A categoria de cada rubrica pode ser mudada.</span></div>" +
       '<div class="ferr"><label class="pesq">' + I.lupa + '<span class="sr">Pesquisar</span><input id="fin-q" type="search" placeholder="Rubrica ou categoria…" value="' + esc(F.q) + '"></label></div></div>';
-    h += '<section class="cartao-sec"><div class="tabela-scroll"><table class="crm-tabela fin-tab desp"><thead><tr><th>Rubrica</th><th>Categoria</th>' + meses.map((m) => '<th class="n' + (cp[m] ? " duvida" : "") + '"' + (cp[m] ? ' title="Custos iguais aos de ' + esc(MES_L[+cp[m].slice(5) - 1]) + '"' : "") + ">" + esc(curtoMes(m)) + (cp[m] ? " *" : "") + "</th>").join("") + '<th class="n">Média</th></tr></thead><tbody>';
+    h += '<section class="cartao-sec"><div class="tabela-scroll"><table class="crm-tabela fin-tab desp"><thead><tr><th>Rubrica</th><th>Categoria</th>' + (F.extra ? "<th>Vai para</th>" : "") + meses.map((m) => '<th class="n' + (cp[m] ? " duvida" : "") + '"' + (cp[m] ? ' title="Custos iguais aos de ' + esc(MES_L[+cp[m].slice(5) - 1]) + '"' : "") + ">" + esc(curtoMes(m)) + (cp[m] ? " *" : "") + "</th>").join("") + '<th class="n">Média</th></tr></thead><tbody>';
     for (const c of cats) {
       const it = lista.filter((x) => x.cat === c).sort((a, b) => media(b) - media(a));
-      h += '<tr class="grupo"><td colspan="2">' + esc(c) + "</td>" + meses.map((m) => '<td class="n">' + eur(it.reduce((s, x) => s + (x.v[m] || 0), 0)) + "</td>").join("") + '<td class="n">' + eur(it.reduce((s, x) => s + media(x), 0)) + "</td></tr>";
+      h += '<tr class="grupo"><td colspan="' + (F.extra ? 3 : 2) + '">' + esc(c) + "</td>" + meses.map((m) => '<td class="n">' + eur(it.reduce((s, x) => s + (x.v[m] || 0), 0)) + "</td>").join("") + '<td class="n">' + eur(it.reduce((s, x) => s + media(x), 0)) + "</td></tr>";
       h += it.map((x) => { const md = media(x);
         return "<tr><td>" + esc(x.rot) + (x.area !== "partilhadas" && x.area !== "impostos" ? ' <small class="muted">· ' + esc({ hairshopping: "Hairshopping", tech: "Tech", formacao: "Formação" }[x.area]) + "</small>" : "") + "</td>" +
           '<td><label class="sr" for="fin-cat-' + esc(x.area + "-" + x.chave) + '">Categoria</label><select class="sel mini" id="fin-cat-' + esc(x.area + "-" + x.chave) + '" data-rubrica="' + esc(x.chave) + '">' + CATEGORIAS_FIN.map((k) => "<option" + (k === x.cat ? " selected" : "") + ">" + esc(k) + "</option>").join("") + "</select></td>" +
+          (F.extra ? "<td>" + (RES.editavel(x) ? '<label class="sr" for="fin-dest-' + esc(x.area + "-" + x.chave) + '">Vai para</label><select class="sel mini" id="fin-dest-' + esc(x.area + "-" + x.chave) + '" data-destino="' + esc(x.chave) + '">' +
+            DESTINOS.map(([k, r]) => '<option value="' + k + '"' + ((F.imput[x.chave] || (RES.destino(x) === "geral" ? "" : RES.destino(x))) === k ? " selected" : "") + ">" + esc(r) + "</option>").join("") + "</select>" : '<small class="muted">' + esc(({ produtos: "Produtos", academia: "Academia", tech: "26 Tech" })[RES.destino(x)] || "") + "</small>") + "</td>" : "") +
           meses.map((m) => { const v = x.v[m] || 0, alto = md && v > md * 1.5 && v - md > 100 && !cp[m]; return '<td class="n' + (alto ? " alto" : "") + (cp[m] ? " duvida" : "") + '"' + (alto ? ' title="Muito acima da média"' : "") + ">" + (v ? eur(v) : "—") + "</td>"; }).join("") +
           '<td class="n"><b>' + eur(md) + "</b></td></tr>"; }).join("");
     }
@@ -315,7 +392,7 @@ export function criarFinanceiro(ctx) {
   function vistaImportar() {
     const imp = F.importacao;
     let h = '<section class="cartao-sec"><h3>Importar as folhas mensais</h3><p>Escolhe um ou vários ficheiros (por exemplo, «Ondina &amp; Maia - JULHO 26.xlsx»). O mês é lido do nome do ficheiro e confirmado pelas datas da folha Faturação.</p>' +
-      "<p>Um mês que já existe é substituído pela versão nova. Ficheiros repetidos são ignorados. A folha RH, com os vencimentos de cada pessoa, não é lida: só entra o total pago aos barbeiros de cada espaço.</p>" +
+      "<p>Um mês que já existe é substituído pela versão nova. Ficheiros repetidos são ignorados. Da folha Faturação entra o quadro dos barbeiros (serviços, comissão, extras) e o valor dos responsáveis de loja; da folha RH entra só o total de cada pessoa e a divisão pelas áreas (as faturas da comissão não são guardadas).</p>" +
       '<div class="acts"><label class="btn pri" for="fin-ficheiros">' + I.plus + 'Escolher ficheiros</label><input id="fin-ficheiros" type="file" accept=".xlsx,.xls" multiple hidden></div></section>';
     if (imp?.aLer) h += '<div class="aviso">A ler ' + imp.aLer + " ficheiros…</div>";
     if (imp?.lista) {
@@ -364,7 +441,7 @@ export function criarFinanceiro(ctx) {
     const l = (F.importacao?.lista || []).filter((x) => x.mes && !x.repetido); if (!l.length) return;
     F.aImportar = true; render();
     try {
-      await api.fin.importar({ meses: l.map((x) => ({ mes: x.mes, ficheiro: x.ficheiro, assinatura: x.assinatura, assinatura_custos: x.assinatura_custos, avisos: x.avisos, linhas: x.linhas, faturacao: x.faturacao })) });
+      await api.fin.importar({ meses: l.map((x) => ({ mes: x.mes, ficheiro: x.ficheiro, assinatura: x.assinatura, assinatura_custos: x.assinatura_custos, avisos: x.avisos, linhas: x.linhas, faturacao: x.faturacao, barbeiros: x.barbeiros || [], responsaveis: x.responsaveis || [], pessoal: x.pessoal || [] })) });
       F.aImportar = false; F.importacao = null; F.estado = "por-carregar"; await carregar(); F.tab = "resumo"; F.ano = l[l.length - 1].mes.slice(0, 4);
       if (S.rota === "financeiro" && S.param) location.hash = "financeiro"; else render();
       toast(l.length === 1 ? "1 mês importado" : l.length + " meses importados");
@@ -373,6 +450,7 @@ export function criarFinanceiro(ctx) {
 
   /* ============================== Ações ============================== */
   function clique(acao, el) {
+    if (RES.clique(acao, el)) return true;
     switch (acao) {
       case "fin-tab": F.tab = el.dataset.tab; if (S.rota === "financeiro" && S.param) location.hash = "financeiro"; else render(); return true;
       case "fin-importar": importar(); return true;
@@ -390,6 +468,7 @@ export function criarFinanceiro(ctx) {
   }
   function mudar(e) {
     const t = e.target;
+    if (RES.mudar(e)) return true;
     if (t.id === "fin-ano") { F.ano = t.value; render(); return true; }
     if (t.id === "fin-mes") { F.mesSel = t.value; render(); return true; }
     if (t.id === "fin-ficheiros" && t.files?.length) { lerFicheiros([...t.files]); t.value = ""; return true; }
@@ -401,6 +480,6 @@ export function criarFinanceiro(ctx) {
     }
     return false;
   }
-  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, importacao: null, tab: "resumo", mesSel: null }); }
+  function reiniciar() { Object.assign(F, { estado: "por-carregar", meses: [], linhas: [], faturacao: [], rubricas: {}, imput: {}, importacao: null, tab: "resumo", mesSel: null, extra: false, barbeiros: [], responsaveis: [], pessoal: [], ajustes: [], config: null, vendas: [], resAno: null, resMes: "" }); }
   return { vista, clique, escrever, mudar, reiniciar, carregar };
 }

@@ -242,6 +242,18 @@ O que passa a existir:
 - **Encomendar ao laboratório** nos Stocks e no Início: quantos dias de stock faltam, pela venda dos últimos 90 dias, e quanto encomendar para cobrir o fabrico e mais 60 dias (muda-se em Stocks → Avisos).
 - **Relatório mensal** (Mais → Relatório mensal, só a direção): vendas e margem, clientes novos e parados, barbearias, stock, Academy, prazos e tarefas. No dia 1 de cada mês chega por email à direção, com o mês anterior.
 
+### 3t. Resultados por área e por barbeiro (Financeiro)
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/21-resultados.sql` → **Run**.
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy** (a cópia passa a incluir os barbeiros, o pessoal e as regras).
+3. Na app (direção): **Financeiro → Importar** → escolhe outra vez todas as folhas mensais da Ondina & Maia. A app passa a ler o quadro dos barbeiros e os responsáveis de loja (folha Faturação) e o pessoal com a divisão pelas áreas (folha RH).
+4. **Financeiro → Despesas**: na coluna **Vai para**, escolhe para onde vai cada despesa partilhada (por exemplo, as compras ao laboratório para os Produtos; empréstimos e IVA como «Não é custo»).
+5. **Financeiro → Resultados**: escreve, mês a mês, a receita da Academia e os produtos gastos nas barbearias (a preço de custo), e escolhe como se dividem os custos gerais.
+
+O que passa a existir:
+- **Resultados**: rendimentos, gastos e resultado das Barbearias, Produtos, Academia e 26 Tech, e das barbearias loja a loja, por mês ou no ano, com o IRC no total. Botão **Exportar Excel** para o contabilista.
+- **Barbeiros**: serviços (cabelos, barbas e combos), faturado, comissão, extras, total pago e quanto fica para a empresa, por barbeiro e por loja, e a evolução mês a mês.
+- Só a direção vê. As faturas das comissões da folha RH não são guardadas, só o total de cada pessoa.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -286,6 +298,7 @@ js/academy.js · js/academy-regioes.js      26 Academy: formandos, formações e
 supabase/functions/academy-sincronizar/     leitura automática da Secretaria Online da 26 Academy (só leitura)
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
+js/resultados.js                            Financeiro: resultados por área, loja e barbeiro, divisão dos custos gerais e exportação para Excel
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção
 supabase/functions/prospecao/index.ts       agente de prospeção (pesquisa semanal, propostas com IA, envio de emails)

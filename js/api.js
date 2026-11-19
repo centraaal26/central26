@@ -351,8 +351,27 @@ export function criarApi() {
           todas(() => sb.from("fin_faturacao").select("*").order("mes")),
           ok(await sb.from("fin_rubricas").select("*")),
         ]);
-        return { meses, linhas, faturacao, rubricas };
+        // Resultados por área e por barbeiro (script 21): se ainda não foi corrido, o resto do Financeiro funciona na mesma
+        let extra = null;
+        try {
+          const [barbeiros, responsaveis, pessoal, ajustes, config, vendas] = await Promise.all([
+            todas(() => sb.from("fin_barbeiros").select("*").order("mes").order("loja").order("barbeiro")),
+            ok(await sb.from("fin_responsaveis").select("*")),
+            ok(await sb.from("fin_pessoal").select("*")),
+            ok(await sb.from("fin_ajustes").select("mes,tipo,valor")),
+            ok(await sb.from("fin_config").select("*").eq("id", 1).maybeSingle()),
+            ok(await sb.rpc("fin_vendas_mes")),
+          ]);
+          extra = { barbeiros, responsaveis, pessoal, ajustes, config, vendas };
+        } catch (e) { if (!/fin_barbeiros|fin_vendas_mes|PGRST20|Could not find|does not exist/i.test(String(e?.message))) throw e; }
+        return { meses, linhas, faturacao, rubricas, extra };
       },
+      async ajuste(mes, tipo, valor) {
+        if (valor == null) { ok(await sb.from("fin_ajustes").delete().eq("mes", mes).eq("tipo", tipo)); return null; }
+        return ok(await sb.from("fin_ajustes").upsert({ mes, tipo, valor, atualizado_em: new Date().toISOString() }).select().single());
+      },
+      async config(reparticao) { return ok(await sb.from("fin_config").upsert({ id: 1, reparticao, atualizado_em: new Date().toISOString() }).select().single()); },
+      async imputacao(chave, imputacao) { return ok(await sb.from("fin_rubricas").upsert({ chave, imputacao, atualizado_em: new Date().toISOString() }).select().single()); },
       async importar(p) { return ok(await sb.rpc("fin_importar", { p })); },
       async rubrica(chave, categoria) { return ok(await sb.from("fin_rubricas").upsert({ chave, categoria, atualizado_em: new Date().toISOString() }).select().single()); },
       async apagarMes(mes) { ok(await sb.from("fin_meses").delete().eq("mes", mes)); },
@@ -411,7 +430,7 @@ export function criarApi() {
         log_locais: "id", log_encomendas: "id", log_rotas: "id", stk_produtos: "id", stk_movimentos: "id", stk_config: "id", prz_viaturas: "id", prz_prazos: "id", prz_config: "id", prs_propostas: "id", prs_zonas: "codigo", prs_balancos: "id", prs_config: "id", prs_excluidos: "chave",
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
-        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
+        fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
         aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;

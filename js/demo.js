@@ -689,8 +689,53 @@ export function criarDemo() {
       };
       const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
       const pode = () => eGestor(eu());
+      // Barbeiros, responsáveis, pessoal e regras de exemplo (inventados) para o separador Resultados e Barbeiros
+      function completar(x) {
+        if (x.barbeiros) return x;
+        x.barbeiros = []; x.responsaveis = []; x.pessoal = []; x.ajustes = [];
+        x.config = { id: 1, reparticao: { metodo: "faturacao", pesos: { barbearias: 60, produtos: 25, academia: 10, tech: 5 } } };
+        const LET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let k = 0;
+        for (const m of x.meses) {
+          const fat = x.faturacao.filter((f) => f.mes === m.mes);
+          fat.forEach((f, i) => {
+            const n = i === 1 || i === 4 ? 4 : i === 0 ? 3 : 2;
+            for (let j = 0; j < n; j++) {
+              const vt = Math.round(f.total / n * (1 + (j - 1) * 0.12)), cab = Math.round(vt / 16 * 0.55), com = Math.round(vt / 24 * 0.35), bar = Math.max(0, Math.round((vt - cab * 16 - com * 24) / 16));
+              const pc = [0.45, 0.5, 0.4, 0.35][j % 4], liq = vt - 0.5 * (cab + bar + com), rec = Math.round(liq * pc * 100) / 100, extras = j === 0 && i === 1 ? 600 : 0;
+              x.barbeiros.push({ mes: m.mes, loja: f.espaco, barbeiro: "Barbeiro " + LET[(i * 4 + j) % 26] + " (exemplo)", dias: "COMPL", cabelos: cab, barbas: bar, combos: com, outro: 0, valor_total: vt, liquido: liq, comissao: pc, a_receber: rec, extras, nota: extras ? "Referente a gestão" : "", total: rec + extras });
+            }
+            x.responsaveis.push({ mes: m.mes, loja: f.espaco, valor: 50 });
+          });
+          x.pessoal.push({ mes: m.mes, pessoa: "Pessoa 1 (exemplo)", valor: 1100, pesos: { barbearias: 0.4, academia: 0.3, produtos: 0.3, tech: 0 } },
+            { mes: m.mes, pessoa: "Pessoa 2 (exemplo)", valor: 950, pesos: { produtos: 1 } });
+          x.ajustes.push({ mes: m.mes, tipo: "receita_academia", valor: 2400 + k * 300 }, { mes: m.mes, tipo: "autoconsumo", valor: 380 });
+          k++;
+        }
+        return x;
+      }
+      // Vendas por mês a partir do Comercial de exemplo (as mesmas contas que a função fin_vendas_mes faz na base de dados)
+      async function vendasMes() {
+        const c = await API.crm.carregar(), linha = new Map(c.produtos.map((p) => [p.codigo, p.linha || "produtos"])), r = new Map();
+        for (const v of c.vendas) { const k = v.data.slice(0, 7) + "|" + (linha.get(v.produto_codigo) || "produtos"); r.set(k, (r.get(k) || 0) + Number(v.valor)); }
+        return [...r].map(([k, valor]) => ({ mes: k.split("|")[0], linha: k.split("|")[1], valor: Math.round(valor * 100) / 100 }));
+      }
       return {
-        async carregar() { if (!pode()) throw new Error("Só a direção tem acesso ao Financeiro."); return structuredClone(ler()); },
+        async carregar() {
+          if (!pode()) throw new Error("Só a direção tem acesso ao Financeiro.");
+          const x = completar(ler()); guardar();
+          const { barbeiros, responsaveis, pessoal, ajustes, config, ...resto } = structuredClone(x);
+          return { ...resto, extra: { barbeiros, responsaveis, pessoal, ajustes, config, vendas: await vendasMes() } };
+        },
+        async ajuste(mes, tipo, valor) {
+          if (!pode()) throw new Error("Só a direção altera o Financeiro.");
+          const x = completar(ler()); x.ajustes = x.ajustes.filter((a) => !(a.mes === mes && a.tipo === tipo)); if (valor != null) x.ajustes.push({ mes, tipo, valor }); guardar(); return valor == null ? null : { mes, tipo, valor };
+        },
+        async config(reparticao) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = completar(ler()); x.config = { id: 1, reparticao }; guardar(); return x.config; },
+        async imputacao(chave, imputacao) {
+          if (!pode()) throw new Error("Só a direção altera o Financeiro.");
+          const x = ler(), r = x.rubricas.find((y) => y.chave === chave); if (r) r.imputacao = imputacao; else x.rubricas.push({ chave, categoria: null, imputacao }); guardar(); return { chave, imputacao };
+        },
         async importar(p) {
           if (!pode()) throw new Error("Só a direção importa os dados financeiros.");
           const x = ler();
@@ -698,11 +743,13 @@ export function criarDemo() {
             x.meses = x.meses.filter((y) => y.mes !== m.mes).concat([{ mes: m.mes, ficheiro: m.ficheiro, assinatura: m.assinatura, assinatura_custos: m.assinatura_custos, avisos: m.avisos || [], importado_por: euId, importado_em: agora() }]);
             x.linhas = x.linhas.filter((l) => l.mes !== m.mes).concat((m.linhas || []).map((l) => ({ mes: m.mes, ...l })));
             x.faturacao = x.faturacao.filter((f) => f.mes !== m.mes).concat((m.faturacao || []).map((f) => ({ mes: m.mes, ...f })));
+            completar(x);
+            for (const k of ["barbeiros", "responsaveis", "pessoal"]) x[k] = x[k].filter((y) => y.mes !== m.mes).concat((m[k] || []).map((y) => ({ mes: m.mes, ...y })));
           }
           x.meses.sort((a, b) => a.mes.localeCompare(b.mes)); guardar(); return { meses: (p.meses || []).length };
         },
-        async rubrica(chave, categoria) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.rubricas = x.rubricas.filter((r) => r.chave !== chave).concat([{ chave, categoria }]); guardar(); return { chave, categoria }; },
-        async apagarMes(mes) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.meses = x.meses.filter((m) => m.mes !== mes); x.linhas = x.linhas.filter((l) => l.mes !== mes); x.faturacao = x.faturacao.filter((f) => f.mes !== mes); guardar(); },
+        async rubrica(chave, categoria) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(), r = x.rubricas.find((y) => y.chave === chave); if (r) r.categoria = categoria; else x.rubricas.push({ chave, categoria }); guardar(); return { chave, categoria }; },
+        async apagarMes(mes) { if (!pode()) throw new Error("Só a direção altera o Financeiro."); const x = ler(); x.meses = x.meses.filter((m) => m.mes !== mes); x.linhas = x.linhas.filter((l) => l.mes !== mes); x.faturacao = x.faturacao.filter((f) => f.mes !== mes); completar(x); for (const k of ["barbeiros", "responsaveis", "pessoal"]) x[k] = x[k].filter((y) => y.mes !== mes); guardar(); },
       };
     })(),
     mk: (() => {

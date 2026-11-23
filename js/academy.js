@@ -20,6 +20,21 @@ const dataCurta = (s) => { if (!s) return ""; const [a, m, d] = String(s).split(
 const pl = (v, um, varios) => num(v) + " " + (v === 1 ? um : varios);
 
 // Lê o ficheiro tirado da Secretaria Online e prepara a importação, já com a região de cada formando
+// Erros técnicos da leitura da Secretaria Online, explicados em português
+function explicarErro(msg) {
+  const m = String(msg || "");
+  if (!m) return "falhou.";
+  const exp = m.match(/not valid after (\d{9,})/);
+  if (/certificate expired|invalid peer certificate|CertificateExpired/i.test(m)) {
+    const d = exp ? new Date(+exp[1] * 1000) : null;
+    return "o certificado de segurança (SSL) do site da Secretaria Online " + (d ? "expirou a " + d.toLocaleDateString("pt-PT", { day: "numeric", month: "long", year: "numeric" }) : "não é válido") +
+      ". Por segurança, a Central não envia a palavra-passe para um site sem certificado válido. Quem gere o domínio 26academy.pt tem de renovar o certificado; depois disso a leitura volta a funcionar sozinha.";
+  }
+  if (/dns error|failed to lookup|Name or service not known/i.test(m)) return "o endereço da Secretaria Online não foi encontrado. Confirma se o site está no ar.";
+  if (/timed out|TimeoutError|deadline/i.test(m)) return "a Secretaria Online demorou demasiado a responder. A Central volta a tentar na próxima leitura.";
+  return m;
+}
+
 export function prepararImportacao(dados, fonte) {
   const meses = { jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12 };
   const data = (s) => {
@@ -412,7 +427,7 @@ export function criarAcademy(ctx) {
   function vistaImportar() {
     const a = A.aImportar, c = A.config || {}, s = A.sinc;
     let h = '<section class="cartao-sec"><h3>Ligação à Secretaria Online</h3><p>A Central lê sozinha a Secretaria Online duas vezes por dia (de manhã e ao fim da tarde): as ações novas, as que estão a decorrer ou em avaliação e as que mudaram de estado, com os formandos de cada uma e a residência dos formandos novos. Só lê: nunca altera nada na Secretaria Online.</p>';
-    if (c.sinc_em) h += c.sinc_ok === false ? '<div class="aviso erro">Última tentativa ' + esc(quando(c.sinc_em)) + ": " + esc(c.sinc_msg || "falhou.") + "</div>"
+    if (c.sinc_em) h += c.sinc_ok === false ? '<div class="aviso erro"><span>Última tentativa ' + esc(quando(c.sinc_em)) + ": " + esc(explicarErro(c.sinc_msg)) + "</span></div>"
       : '<p class="aca-sinc-ok"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>Última leitura ' + esc(quando(c.sinc_em)) + (c.sinc_msg ? " · " + esc(c.sinc_msg) : "") + "</span></p>";
     else h += "<p>Ainda não houve nenhuma leitura automática.</p>";
     if (s?.aCorrer) h += '<p class="aca-sinc-ok"><span class="aca-roda" aria-hidden="true"></span><span>' + esc(s.msg) + "</span></p>";

@@ -438,7 +438,7 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", crm_custos: "produto_codigo" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -561,6 +561,32 @@ export function criarApi() {
       },
     },
     // 26 Academy: formações, formandos e inscrições (script 19)
+    // Proformas da TwentySix (script 24)
+    com: {
+      async carregar() {
+        const [precos, config, proformas] = await Promise.all([
+          todas(() => sb.from("com_precos").select("*").order("produto_codigo")),
+          sb.from("com_config").select("*").eq("id", 1).maybeSingle(),
+          todas(() => sb.from("com_proformas").select("*").order("numero", { ascending: false })),
+        ]);
+        return { precos, config: ok(config), proformas };
+      },
+      async precos(lote) { return ok(await sb.from("com_precos").upsert(lote, { onConflict: "produto_codigo" }).select()); },
+      async configurar(campos) { return ok(await sb.from("com_config").update(campos).eq("id", 1).select().single()); },
+      async criar(o) { return ok(await sb.from("com_proformas").insert(o).select().single()); },
+      async atualizar(id, campos) { return ok(await sb.from("com_proformas").update(campos).eq("id", id).select().single()); },
+      async apagar(id) { ok(await sb.from("com_proformas").delete().eq("id", id)); },
+      async aceitar(id) { return ok(await sb.rpc("com_proforma_aceitar", { p_id: id })); },
+      async faturar(id, fatura) { return ok(await sb.rpc("com_proforma_faturar", { p_id: id, p_fatura: fatura })); },
+      async cancelar(id) { return ok(await sb.rpc("com_proforma_cancelar", { p_id: id })); },
+      async reabrir(id) { return ok(await sb.rpc("com_proforma_reabrir", { p_id: id })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-proformas")
+          .on("postgres_changes", { event: "*", schema: "public", table: "com_proformas" }, (p) => cb(p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     aca: {
       async carregar() {
         const [formacoes, formandos, inscricoes, config] = await Promise.all([

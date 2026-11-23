@@ -6,6 +6,7 @@ import {
 } from "./dados.js";
 import { MODELOS } from "./modelos.js";
 import { criarCrm, podeCrm } from "./crm.js";
+import { criarProformas } from "./proformas.js";
 import { criarChat } from "./chat.js";
 import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { criarLogistica, podeEncomendas } from "./logistica.js";
@@ -236,7 +237,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
+  CRM.reiniciar(); PF.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -400,7 +401,7 @@ function lerRota(desenhar = true) {
   if (m) {
     const [, r, p] = m;
     if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes", "reciclagem"].includes(r)) rota = r;
-    else if (r === "comercial") { rota = "comercial"; param = ["funil", "mapa", "analise", "importar", "clientes"].includes(p) ? p : null; }
+    else if (r === "comercial") { rota = "comercial"; param = ["funil", "mapa", "analise", "importar", "clientes", "proformas"].includes(p) ? p : null; }
     else if (r === "cliente" && p) { rota = "cliente"; param = p; }
     else if (r === "chat") { rota = "chat"; param = p || null; }
     else if (r === "assistente") { rota = "assistente"; param = p || null; }
@@ -1266,6 +1267,7 @@ function painelHTML() {
   if (a.tipo === "dep") return painelDep();
   if (a.tipo === "modelos") return painelModelos();
   if (a.tipo === "cliente" || a.tipo === "crm-novo") return CRM.painel(a);
+  if (a.tipo === "proforma" || a.tipo === "pf-escolher") return PF.painel(a);
   if (a.tipo === "evento") return AGENDA.painel(a);
   if (["encomenda", "enc-nova", "rota-nova", "local-novo"].includes(a.tipo)) return LOG.painel(a);
   if (a.tipo === "aud-item" || a.tipo === "aud-novo") return AUD.painel(a);
@@ -1515,14 +1517,14 @@ document.addEventListener("click", async (e) => {
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
     case "sincronizar": api.sincronizar?.(); break;
-    default: FIA.clique(acao, el, e) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
+    default: FIA.clique(acao, el, e) || PF.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
 document.addEventListener("submit", async (e) => {
   const f = e.target;
   e.preventDefault();
-  if ((await FIA.submeter(f)) || (await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f)) || (await STK.submeter(f)) || (await PRZ.submeter(f)) || (await ACA.submeter(f)) || (await IA.submeter(f))) return;
+  if ((await FIA.submeter(f)) || (await PF.submeter(f)) || (await CRM.submeter(f)) || (await CHAT.submeter(f)) || (await AGENDA.submeter(f)) || (await LOG.submeter(f)) || (await AUD.submeter(f)) || (await OP.submeter(f)) || (await MK.submeter(f)) || (await STK.submeter(f)) || (await PRZ.submeter(f)) || (await ACA.submeter(f)) || (await IA.submeter(f))) return;
   if (f.id === "form-entrar") {
     const email = $("#e-email").value, pass = $("#e-pass").value;
     if (!email || !pass) { S.erroEntrada = "Indica o email e a palavra-passe."; render(); return; }
@@ -1627,7 +1629,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (FIA.escrever(e) || CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e) || PRZ.escrever(e) || ACA.escrever(e) || PRS.escrever(e) || IA.escrever(e)) return;
+  if (FIA.escrever(e) || PF.escrever(e) || CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e) || PRZ.escrever(e) || ACA.escrever(e) || PRS.escrever(e) || IA.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1642,7 +1644,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (FIA.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
+  if (FIA.mudar(e) || PF.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
   if (t.id === "pf-foto" && t.files?.[0]) { mudarFoto(t.files[0]); t.value = ""; return; }
   if (t.dataset.pref && S.prefs && !S.prefs.falta) {
     const campo = t.dataset.pref, v = t.checked; S.prefs = { ...S.prefs, [campo]: v };
@@ -1701,7 +1703,8 @@ async function ativarPush() {
   } catch (e) { render(); falha(e); }
 }
 
-const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $, extraCliente: (c) => (podeAcademy(S.eu) ? ACA.blocoCliente(c) : "") });
+const PF = criarProformas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeCrm, carregarCrm: () => CRM.carregar(), aoFaturar: () => { if (LOG.estado() !== "por-carregar") LOG.carregar(); } });
+const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $, vistaProformas: () => PF.vista(), extraCliente: (c) => PF.blocoCliente(c) + (podeAcademy(S.eu) ? ACA.blocoCliente(c) : "") });
 const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $, novaTarefa: (d) => abrir({ tipo: "nova", marca: "grupo", freq: "unica", ...d }) });
 const AGENDA = criarAgenda({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, abrirTarefa, $ });
 const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, crm: () => CRM, podeCrm, stk: () => (podeStocks(S.eu) ? STK : null), $ });

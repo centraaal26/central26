@@ -228,7 +228,10 @@ export function criarLogistica(ctx) {
       '<label for="enc-morada">Morada</label><input id="enc-morada" value="' + esc(e.morada) + '" placeholder="Com código postal, para a rota"' + dis + ">" +
       (e.lat != null ? '<span class="ajuda"><a href="' + navegarGoogle(e) + '" target="_blank" rel="noopener">Abrir no Google Maps</a> · <a href="' + navegarWaze(e) + '" target="_blank" rel="noopener">Waze</a></span>' : "") +
       '<label for="enc-fatnum">N.º da fatura</label><input id="enc-fatnum" value="' + esc(e.fatura_numero) + '" placeholder="Ex.: Fac 26DNT/512"' + dis + ">" +
+      ("transportadora" in e ? '<label for="enc-transp">Transporte</label><select id="enc-transp"' + (ed || trata || podeEntregar() ? "" : " disabled") + ">" +
+        [["", "Entrega nossa"], ["nacex", "Nacex"], ["levanta", "O cliente levanta"]].map(([k, r]) => '<option value="' + k + '"' + ((e.transportadora || "") === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" : "") +
       "</div>";
+    if (e.transportadora === "nacex") h += blocoNacex(e);
     h += '<section class="p-sec"><h3>Fatura</h3><div class="acts">' + (e.fatura_ficheiro ? '<button class="btn sec" data-acao="enc-fatura-ver">' + I.nota + "Abrir " + esc(e.fatura_nome || "fatura") + "</button>" : '<span class="muted">Sem ficheiro anexado.</span>') +
       (ed || trata ? '<label class="btn sec" for="enc-fatura">' + I.plus + (e.fatura_ficheiro ? "Substituir" : "Anexar fatura (PDF ou foto)") + '</label><input id="enc-fatura" type="file" accept="application/pdf,image/*" hidden>' : "") + "</div></section>";
     h += '<section class="p-sec"><h3>Notas</h3><textarea id="enc-notas" class="notas" placeholder="Horário de entrega, a quem entregar, cuidados…"' + dis + ">" + esc(e.notas) + "</textarea></section>";
@@ -236,6 +239,25 @@ export function criarLogistica(ctx) {
     const pe = "<span>" + (e.entregue_em ? "Entregue por " + esc(nomeDe(e.entregue_por) || "—") + " " + haQuanto(e.entregue_em) : e.atualizado_por ? "Alterada por " + esc(nomeDe(e.atualizado_por) || "—") + " " + haQuanto(e.atualizado_em) : "") + "</span>";
     return mold(h, pe);
   }
+  /* ---------- envio pela Nacex: ficha para copiar para o portal e tracking ---------- */
+  function dadosEnvio(e) {
+    const v = e.envio || {};
+    const cp = v.cp || (String(e.morada).match(/\b\d{4}-\d{3}\b/) || [""])[0];
+    return [["Serviço", v.servico || "27"], ["Nome", v.nome || e.cliente_nome], ["Telefone", v.telefone || e.contacto], ["Telemóvel", v.telemovel || ""],
+      ["Morada", String(v.morada || e.morada || "").replace(/,?\s*\d{4}-\d{3}.*$/, "").trim()], ["Código postal", cp], ["Email", v.email || ""], ["Referência", ref(e) + (e.fatura_numero ? " · " + e.fatura_numero : "")]];
+  }
+  function blocoNacex(e) {
+    const pode = podeEntregar() || podeTratar();
+    return '<section class="p-sec nacex"><h3>Envio pela Nacex</h3>' +
+      '<p class="muted">No portal: <b>myNacex → Documentar envio</b>, escolhe o código de cliente guardado, a data de hoje e o <b>serviço ' + esc(dadosEnvio(e)[0][1]) + "</b>. Copia os dados abaixo (a localidade, a província e a delegação preenchem-se sozinhas com o código postal) e carrega em <b>Guardar</b>. " +
+      "Depois, em <b>myNacex → Gestão</b>, abre o envio pela opção da direita (no aviso de impressão escolhe «não») e copia o número de tracking.</p>" +
+      '<div class="nx-campos">' + dadosEnvio(e).map(([r, v], i) => '<div class="nx-linha"><span>' + r + "</span><b" + (v ? "" : ' class="falta"') + ">" + esc(v || "em falta") + "</b>" +
+        (v ? '<button class="ib" data-acao="enc-copiar" data-i="' + i + '" aria-label="Copiar ' + esc(r) + '">Copiar</button>' : "<i></i>") + "</div>").join("") + "</div>" +
+      '<div class="acts"><a class="btn sec" href="https://www.nacex.com/irGestionEnvio.do" target="_blank" rel="noopener">' + I.out + "Abrir o portal da Nacex</a></div>" +
+      '<div class="campo"><label for="enc-tracking">Número de tracking</label><input id="enc-tracking" value="' + esc(e.tracking || "") + '" placeholder="Cola aqui o tracking da Nacex" autocomplete="off"' + (pode ? "" : " disabled") + ">" +
+      '<span class="ajuda">Quando guardas o tracking, quem fatura recebe o aviso para imprimir a etiqueta e entregá-la à Logística.</span></div></section>';
+  }
+
   /* ---------- ligação aos Stocks da TwentySix ---------- */
   function produtosStock() {
     const T = S.stk;
@@ -458,6 +480,12 @@ export function criarLogistica(ctx) {
   function clique(acao, el) {
     const id = el.dataset.id;
     switch (acao) {
+      case "enc-copiar": {
+        const e = G.encomendas[S.aberto?.id]; if (!e) return true;
+        const [r, v] = dadosEnvio(e)[+el.dataset.i] || [];
+        if (v) (navigator.clipboard?.writeText(v) || Promise.reject()).then(() => toast(r + " copiado")).catch(() => toast("Não foi possível copiar. Seleciona o texto e copia.", true));
+        return true;
+      }
       case "log-pag": G.pag = +el.dataset.p; render(); document.querySelector(".enc-lista")?.scrollIntoView({ block: "start", behavior: "smooth" }); return true;
       case "log-tab": G.tab = el.dataset.tab; if (S.param) { location.hash = "logistica"; } else render(); return true;
       case "enc-filtro": G.filtro = G.filtro === el.dataset.v && el.dataset.v !== "ativas" ? "ativas" : el.dataset.v; render(); return true;
@@ -565,6 +593,8 @@ export function criarLogistica(ctx) {
       const enc = G.encomendas[S.aberto.id]; if (!enc) return false;
       const m = { "enc-tipo": "tipo", "enc-prio": "prioridade", "enc-data": "data_prevista", "enc-resp": "responsavel_id" };
       if (m[t.id]) { gravarEnc(enc.id, { [m[t.id]]: t.value || null }); return true; }
+      if (t.id === "enc-transp") { gravarEnc(enc.id, { transportadora: t.value }).then((r) => { if (r) renderPainel(true); }); return true; }
+      if (t.id === "enc-tracking") { const v = t.value.trim(); if (v !== (enc.tracking || "")) gravarEnc(enc.id, { tracking: v }).then((r) => { if (r && v) toast("Tracking guardado"); }); return true; }
       if (t.classList.contains("sel-stock") && t.dataset.item) {
         gravarEnc(enc.id, { itens: enc.itens.map((i) => { if (i.id !== t.dataset.item) return i; const { produto_id, ...resto } = i; return t.value ? { ...resto, produto_id: t.value } : resto; }) });
         return true;

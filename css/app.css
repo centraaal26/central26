@@ -2010,3 +2010,54 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .res-lista{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}
 .res-lista li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
 .btn.mini{padding:5px 10px;font-size:12.5px}
+
+/* ---------- Proformas (Comercial) e envio pela Nacex ---------- */
+.pf-tab,.pf-precos{font-size:13.5px}
+.pf-precos{min-width:900px}
+.pf-precos .crm-custo{width:76px}
+.pf-faturar{border:1px solid var(--line);border-left:3px solid var(--b);border-radius:12px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.pf-faturar h3{margin:0;font-size:14px;display:flex;align-items:center;gap:8px}
+.pf-faturar p{margin:0;font-size:13px}
+.pf-fat-linha{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:6px 0;border-top:1px solid var(--line)}
+.pf-faturar .pf-fat-linha:first-of-type{border-top:0}
+.pf-fat-linha .c-link{flex:1 1 220px;text-align:left;min-width:0}
+.pf-fat-linha label{font-size:13px;color:var(--muted)}
+.pf-fat-linha .inp.mini{max-width:180px}
+.pf-colar{border:1px dashed var(--line-strong);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.pf-colar[open]{gap:12px}
+.pf-colar summary{cursor:pointer;font-weight:600;font-size:14px}
+.pf-colar textarea{font-family:var(--f-mono);font-size:12.5px}
+.pf-def{display:flex;flex-direction:column;gap:22px;max-width:760px}
+.pf-cli-linha{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.pf-cli-linha .sel{max-width:240px}
+.pf-cli-linha .chk-txt{flex:none}
+.pf-passos{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;counter-reset:pf}
+.pf-passos li{counter-increment:pf;font-size:12px;color:var(--faint);padding-top:8px;border-top:3px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pf-passos li::before{content:counter(pf) ". "}
+.pf-passos li.feito{border-color:var(--ok);color:var(--muted)}
+.pf-passos li.atual{border-color:var(--b);color:var(--ink);font-weight:600}
+.pf-acoes{flex-wrap:wrap;align-items:center}
+.pf-prod{min-width:560px}
+.pf-prod td{padding:6px 8px}
+.pf-prod tr.on td{background:color-mix(in srgb,var(--b) 8%,transparent)}
+.pf-prod .inp.mini.n{width:72px}
+.pf-totais{margin-left:auto;width:min(100%,340px);display:flex;flex-direction:column;gap:2px;font-size:14px}
+.pf-totais div{display:flex;justify-content:space-between;gap:12px;padding:3px 0}
+.pf-totais b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
+.pf-totais .tot{border-top:2px solid var(--ink);margin-top:4px;padding-top:7px;font-size:16px}
+.pf-totais .tot b{font-weight:700}
+.pf-patamar{position:relative;margin-top:10px;padding:10px 12px 14px;border-radius:10px;background:var(--sunken);font-size:13px;color:var(--muted);overflow:hidden}
+.pf-patamar b{color:var(--ink)}
+.pf-patamar i{position:absolute;left:0;bottom:0;height:4px;width:var(--p);background:var(--b);border-radius:0 3px 3px 0;transition:width .3s}
+.pf-patamar.ok{background:var(--ok-bg);color:var(--ok)}
+.pf-patamar.ok i{background:var(--ok)}
+.nacex .muted{font-size:13px;margin:0}
+.nx-campos{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.nx-linha{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 10px;border-top:1px solid var(--line);font-size:13.5px}
+.nx-linha:first-child{border-top:0}
+.nx-linha span{color:var(--muted);font-size:12.5px}
+.nx-linha b{font-weight:500;overflow-wrap:anywhere}
+.nx-linha b.falta{color:var(--faint);font-style:italic;font-weight:400}
+.nx-linha .ib{font-size:12px}
+@media (max-width:560px){.nx-linha{grid-template-columns:90px minmax(0,1fr) auto}.pf-passos li{font-size:11px}}
+@media (max-width:560px){.pf-prod{min-width:0}.pf-prod th:nth-child(3),.pf-prod td:nth-child(3){display:none}.pf-prod td:first-child{font-size:13px}.pf-prod td{padding:6px 4px}}

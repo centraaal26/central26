@@ -3,6 +3,7 @@
 import { MODELOS } from "./modelos.js";
 import { periodo, ymd, podeVer, podeAtribuirA, eGestor, semanaIso } from "./dados.js";
 import { CATALOGO_STK } from "./stocks-catalogo.js";
+import { totais } from "./proformas.js";
 
 const CHAVE = "central26-demo-v1";
 const CHAVE_EU = "central26-demo-eu";
@@ -437,7 +438,8 @@ export function criarDemo() {
           },
           async atualizar(id, campos) {
             const x = ler(), r = x.encomendas.find((e) => e.id === id); if (!r) throw new Error("A encomenda já não existe.");
-            if (!logi()) {
+            const soTransporte = Object.keys(campos).every((c) => ["transportadora", "tracking"].includes(c));
+            if (!logi() && !soTransporte) {
               const so = (k) => Object.keys(campos).every((c) => k.includes(c));
               const ENT = ["pronta", "em_rota", "entregue"];
               const entrega = ENT.includes(r.estado) && ENT.includes(campos.estado ?? r.estado) && so(["estado", "rota_id", "lat", "lng", "morada_geo"]);
@@ -449,17 +451,32 @@ export function criarDemo() {
                 if (campos.estado && !["nova", "cancelada"].includes(campos.estado)) throw new Error("Só a Logística prepara a encomenda. Podes entregá-la quando estiver pronta.");
               }
             }
-            const antes = r.estado;
+            const antes = r.estado, trAntes = r.tracking || "";
+            if ("tracking" in campos) campos = { ...campos, tracking: String(campos.tracking || "").trim() };
             if ("morada" in campos && campos.morada !== r.morada && !("morada_geo" in campos)) Object.assign(r, { lat: null, lng: null, morada_geo: "" });
             Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId });
             if (("estado" in campos || "itens" in campos) && ganchos.stock) ganchos.stock(r);
             if (r.estado === "entregue" && antes !== "entregue") { r.entregue_em = agora(); r.entregue_por = euId; }
             if (r.estado !== antes && ["pronta", "entregue", "cancelada"].includes(r.estado) && r.criado_por !== euId)
               notificar(r.criado_por, "encomenda", "Encomenda E-" + String(r.numero).padStart(4, "0") + " " + ({ pronta: "pronta", entregue: "entregue", cancelada: "cancelada" })[r.estado], r.cliente_nome + " · " + nome(euId), "#encomenda-" + r.id);
+            if (r.tracking && r.tracking !== trAntes) {
+              const fat = ganchos.faturador?.(), refE = "E-" + String(r.numero).padStart(4, "0");
+              if (fat && fat !== euId) notificar(fat, "encomenda", "Etiqueta Nacex para imprimir · " + refE, r.cliente_nome + " · tracking " + r.tracking, "#encomenda-" + r.id);
+              if (r.criado_por && r.criado_por !== euId && r.criado_por !== fat) notificar(r.criado_por, "encomenda", "Encomenda " + refE + " com tracking", r.cliente_nome + " · " + r.tracking, "#encomenda-" + r.id);
+            }
             guardar(); gravar(db); return structuredClone(r);
           },
           async apagar(id) { const x = ler(); x.encomendas = x.encomendas.filter((e) => e.id !== id); guardar(); },
         },
+        _ganchos: (ganchos.novaEncomenda = (o) => {
+          const x = ler(), r = { id: uid(), numero: x.seq++, tipo: "encomenda", estado: "nova", prioridade: "media", crm_cliente_id: null, contacto: "", morada: "", lat: null, lng: null, morada_geo: "", itens: [], notas: "",
+            fatura_numero: "", fatura_ficheiro: "", fatura_nome: "", data_prevista: null, responsavel_id: null, rota_id: null, transportadora: "", tracking: "", envio: null, proforma_id: null, ...o,
+            criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, entregue_em: null, entregue_por: null };
+          x.encomendas.push(r); guardar();
+          db.perfis.filter((p) => p.ativo && p.id !== euId && p.departamento_id === "logistica")
+            .forEach((p) => notificar(p.id, "encomenda", "Nova encomenda E-" + String(r.numero).padStart(4, "0"), nome(euId) + " · " + r.cliente_nome, "#encomenda-" + r.id));
+          gravar(db); return r;
+        }, null),
         rotas: {
           async criar(o) { if (!podeVer()) throw new Error("Sem permissão para gerir rotas."); const x = ler(), r = { id: uid(), estado: "planeada", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...o }; x.rotas.unshift(r); guardar(); return structuredClone(r); },
           async atualizar(id, campos) { const x = ler(), r = x.rotas.find((e) => e.id === id); Object.assign(r, campos, { atualizado_em: agora() }); guardar(); return structuredClone(r); },
@@ -1207,6 +1224,106 @@ export function criarDemo() {
     })(),
 
     // 26 Academy (igual ao script 19), com formandos e formações de exemplo
+    // Proformas (exemplo): preços inventados para os produtos de exemplo
+    com: (() => {
+      const K = "central26-demo-com-v1";
+      let d = null;
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const P = [["E01", 8.9, 15.9], ["E02", 8.9, 15.9], ["E03", 7.5, 13.5], ["E04", 9.8, 16.9], ["E05", 8.4, 14.5], ["E06", 16, 27.9]];
+          d = { seq: 1, proformas: [],
+            precos: P.map(([c, b, prvp], i) => ({ produto_codigo: c, base: b, pro6: Math.round(b * 87) / 100, pro12: Math.round(b * 72) / 100, pvd30: Math.round(b * 70) / 100, pvd40: Math.round(b * 60) / 100, pvd50: Math.round(b * 50) / 100, prvp, ordem: i, atualizado_em: agora(), atualizado_por: null })),
+            config: { id: 1, empresa: { nome: "Empresa Exemplo, Lda.", nif: "500000000", morada: "Rua Exemplo, 1", cp: "4400-000 Vila Nova de Gaia", telefone: "", email: "", iban: "" }, iva: 23, validade_dias: 15, desconto_embaixador: 5,
+              faturador: "p-samuel", patamares: { pro6: 6000, pro12: 12000, pvd40: 3000, pvd50: 5000 }, patamar_por: "encomenda", nacex_servico: "27", atualizado_em: agora() } };
+          const it = [{ codigo: "E01", descricao: "Cera modeladora 100 ml (exemplo)", qtd: 12, preco: 8.9 }, { codigo: "E04", descricao: "Óleo para barba 30 ml (exemplo)", qtd: 6, preco: 9.8 }];
+          d.proformas.push(calc({ id: uid(), numero: d.seq++, cliente_id: null, cliente: { nome: "Barbearia Exemplo 2", nif: "", morada: "Rua Exemplo, 10", cp: "4400-100", localidade: "Vila Nova de Gaia", telefone: "910000000", telemovel: "", email: "" },
+            escalao: "base", embaixador: false, desc_embaixador: 0, desconto: 0, itens: it, iva: 23, envio: "nacex", notas: "", estado: "enviada", validade: ymd(new Date(Date.now() + 10 * 864e5)),
+            fatura_numero: "", tarefa_id: null, encomenda_id: null, criado_por: "p-wembley", criado_em: agora(), atualizado_em: agora(), atualizado_por: "p-wembley", aceite_em: null, faturada_em: null, faturada_por: null }));
+        }
+        ganchos.faturador = () => d.config.faturador;
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      function calc(p) { const t = totais(p); p.subtotal = t.sub; p.total_sem_iva = t.base; return p; }
+      const podeCrmD = () => { const e = eu(); return !!e && (eGestor(e) || e.departamento_id === "comercial"); };
+      const eFat = () => ler().config.faturador === euId;
+      const refP = (p) => "PF-" + String(p.numero).padStart(4, "0");
+      const achar = (id) => { const p = ler().proformas.find((x) => x.id === id); if (!p) throw new Error("A proforma já não existe."); return p; };
+      setTimeout(() => ler(), 0);
+      return {
+        async carregar() {
+          const x = ler();
+          if (!podeCrmD() && !eFat()) return structuredClone({ precos: [], config: x.config, proformas: [] });
+          return structuredClone({ precos: x.precos, config: x.config, proformas: x.proformas });
+        },
+        async precos(lote) {
+          if (!eGestor(eu())) throw new Error("Só a direção muda a tabela de preços.");
+          const x = ler();
+          const out = lote.map((n) => { let r = x.precos.find((y) => y.produto_codigo === n.produto_codigo); if (!r) { r = { produto_codigo: n.produto_codigo, ordem: x.precos.length }; x.precos.push(r); } Object.assign(r, n, { atualizado_em: agora(), atualizado_por: euId }); return structuredClone(r); });
+          guardar(); return out;
+        },
+        async configurar(campos) { if (!eGestor(eu())) throw new Error("Só a direção muda as definições."); const x = ler(); Object.assign(x.config, campos, { atualizado_em: agora() }); guardar(); return structuredClone(x.config); },
+        async criar(o) {
+          if (!podeCrmD()) throw new Error("Sem permissão.");
+          const x = ler(), r = calc({ escalao: "base", embaixador: false, desc_embaixador: 0, desconto: 0, itens: [], iva: 23, envio: "nacex", notas: "", validade: null, cliente: {}, cliente_id: null, ...o,
+            id: uid(), numero: x.seq++, estado: "rascunho", fatura_numero: "", tarefa_id: null, encomenda_id: null, criado_por: euId, criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, aceite_em: null, faturada_em: null, faturada_por: null });
+          x.proformas.unshift(r); guardar(); return structuredClone(r);
+        },
+        async atualizar(id, campos) {
+          if (!podeCrmD()) throw new Error("Sem permissão.");
+          const p = achar(id);
+          if (!["rascunho", "enviada"].includes(p.estado)) throw new Error("A proforma " + refP(p) + " já foi " + (p.estado === "aceite" ? "aceite e está à espera da fatura" : p.estado) + ". Já não pode ser alterada.");
+          if (campos.estado && !["rascunho", "enviada"].includes(campos.estado)) throw new Error("Usa os botões da proforma para a aceitar, faturar ou cancelar.");
+          Object.assign(p, campos, { atualizado_em: agora(), atualizado_por: euId }); calc(p); guardar(); return structuredClone(p);
+        },
+        async apagar(id) { const x = ler(); x.proformas = x.proformas.filter((p) => p.id !== id); guardar(); },
+        async aceitar(id) {
+          if (!podeCrmD()) throw new Error("Sem permissão.");
+          const x = ler(), p = achar(id);
+          if (!["rascunho", "enviada"].includes(p.estado)) throw new Error("A proforma " + refP(p) + " não está à espera do cliente.");
+          if (!(p.subtotal > 0)) throw new Error("A proforma " + refP(p) + " não tem artigos.");
+          if (!x.config.faturador) throw new Error("Falta escolher quem fatura as proformas: Comercial → Proformas → Definições.");
+          const linhas = p.itens.filter((i) => i.qtd > 0).map((i) => i.qtd + "× " + i.descricao + " a " + i.preco.toFixed(2).replace(".", ",") + " €").join("\n");
+          const t = { id: uid(), modelo: null, titulo: "Faturar " + refP(p) + " · " + (p.cliente.nome || "cliente"), marca: "twentysix", departamento_id: null, freq: "unica", estado: "por_fazer", estado_periodo: "unica", prioridade: "alta",
+            responsavel_id: x.config.faturador, prazo: ymd(new Date()), checklist: [], checklist_periodo: "",
+            notas: "Criar a fatura no Multixop e escrever o número na Central (Comercial → Proformas → " + refP(p) + ").\n\nCliente: " + (p.cliente.nome || "") + "\n" + linhas + "\nTotal sem IVA: " + p.total_sem_iva.toFixed(2).replace(".", ",") + " €",
+            criado_por: euId, criado_em: agora(), atualizado_em: agora(), concluido_por: null, concluido_em: null };
+          db.tarefas.push(t); registar(t, "criou");
+          if (t.responsavel_id !== euId) { registar(t, "atribuiu"); notificar(t.responsavel_id, "tarefa_atribuida", "Nova tarefa para ti", nome(euId) + " atribuiu-te: " + t.titulo, "#tarefa-" + t.id); }
+          if (t.responsavel_id === euId) emitir("tarefas", "INSERT", structuredClone(t));
+          gravar(db);
+          Object.assign(p, { estado: "aceite", aceite_em: agora(), tarefa_id: t.id, atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(p);
+        },
+        async faturar(id, fatura) {
+          if (!eGestor(eu()) && !eFat()) throw new Error("Só quem fatura as proformas (ou a direção) pode marcar a fatura.");
+          if (!String(fatura || "").trim()) throw new Error("Escreve o número da fatura do Multixop.");
+          const x = ler(), p = achar(id);
+          if (p.estado !== "aceite") throw new Error("A proforma " + refP(p) + " não está à espera da fatura.");
+          const c = p.cliente || {};
+          const enc = ganchos.novaEncomenda({ cliente_nome: c.nome || "Cliente", crm_cliente_id: p.cliente_id, contacto: c.telefone || c.telemovel || "", morada: [c.morada, [c.cp, c.localidade].filter(Boolean).join(" ")].filter(Boolean).join(", "),
+            itens: p.itens.filter((i) => i.qtd > 0).map((i, n) => ({ id: "i" + (n + 1), descricao: i.descricao, qtd: i.qtd, preparado: false })), notas: refP(p) + (p.notas ? "\n" + p.notas : ""), fatura_numero: String(fatura).trim(),
+            criado_por: p.criado_por, transportadora: p.envio === "nacex" ? "nacex" : p.envio === "levanta" ? "levanta" : "", envio: { ...c, servico: x.config.nacex_servico }, proforma_id: p.id });
+          const t = db.tarefas.find((y) => y.id === p.tarefa_id);
+          if (t && t.estado !== "concluido") { Object.assign(t, { estado: "concluido", concluido_por: euId, concluido_em: agora(), atualizado_em: agora() }); registar(t, "concluiu"); if (t.criado_por !== euId) notificar(t.criado_por, "tarefa_concluida", "Tarefa concluída", nome(euId) + " concluiu: " + t.titulo, "#tarefa-" + t.id); emitir("tarefas", "UPDATE", structuredClone(t)); gravar(db); }
+          Object.assign(p, { estado: "faturada", fatura_numero: String(fatura).trim(), encomenda_id: enc.id, faturada_em: agora(), faturada_por: euId, atualizado_em: agora() }); guardar(); return structuredClone(p);
+        },
+        async cancelar(id) {
+          const p = achar(id);
+          if (p.estado === "faturada") throw new Error("A proforma já foi faturada: cancela a encomenda na Logística e faz a nota de crédito no Multixop.");
+          if (p.tarefa_id) { db.tarefas = db.tarefas.filter((t) => t.id !== p.tarefa_id); gravar(db); }
+          Object.assign(p, { estado: "cancelada", tarefa_id: null, atualizado_em: agora() }); guardar(); return structuredClone(p);
+        },
+        async reabrir(id) {
+          const p = achar(id);
+          if (!["aceite", "cancelada"].includes(p.estado)) throw new Error("Só se volta a abrir uma proforma aceite (ainda sem fatura) ou cancelada.");
+          if (p.tarefa_id) { db.tarefas = db.tarefas.filter((t) => t.id !== p.tarefa_id); gravar(db); }
+          Object.assign(p, { estado: "enviada", tarefa_id: null, aceite_em: null, atualizado_em: agora() }); guardar(); return structuredClone(p);
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
     aca: (() => {
       const K = "central26-demo-aca-v2";
       let d = null;

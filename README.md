@@ -274,6 +274,18 @@ O que passa a existir no Financeiro:
 - **Previsão**: saldo previsto no fim deste mês e dos 3 seguintes, pela média dos últimos meses e pelos prazos com valor (seguros, inspeções…), com aviso abaixo do mínimo.
 - **Barbeiros**: desempenho do mês (valor por serviço, cabelo/barba/combo, comparação com os meses anteriores, avisos de quedas) e resumos para cada barbeiro (copiar para WhatsApp ou imprimir/guardar em PDF).
 
+### 3w. Proformas da TwentySix e envios pela Nacex
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/24-proformas-nacex.sql` → **Run** (depois do 20).
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy** (a cópia passa a incluir as proformas e a tabela de preços).
+3. Na app (direção): **Comercial → Proformas → Definições** → escolhe **quem fatura** e preenche os dados da empresa. Depois, em **Tabela de preços**, cola a tabela (ou escreve os preços à mão).
+
+Como funciona:
+- Na ficha do cliente escolhes o **escalão** (Base, PRO, distribuidor PVD30/40/50) e se é **embaixador**. O botão **Proforma** abre a lista dos produtos com o preço do escalão e a margem do cliente; escreves as quantidades.
+- A proforma mostra quanto falta para o próximo patamar e quanto o cliente pouparia. **Imprimir** abre a proforma para imprimir ou guardar em PDF.
+- **Cliente aceitou** cria uma tarefa para quem fatura, com os artigos e o total. Quem fatura cria a fatura no Multixop e escreve o número na proforma: a encomenda passa sozinha para a Logística, com os artigos ligados ao stock (o stock desce quando fica **Pronta**).
+- **Envio pela Nacex**: a encomenda mostra os dados para copiar para o portal (serviço 27). Quando se escreve o tracking, quem fatura recebe o aviso para imprimir a etiqueta.
+- As credenciais do portal da Nacex **não** entram na Central.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -319,6 +331,7 @@ supabase/functions/academy-sincronizar/     leitura automática da Secretaria On
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
 js/resultados.js                            Financeiro: resultados por área, loja e barbeiro, divisão dos custos gerais e exportação para Excel
+js/proformas.js                             Comercial: proformas, escalões de preço, tarefa para faturar e passagem à Logística
 js/ferramentas.js                           Financeiro: caixa, simulador de preços e comissões, previsão de tesouraria, desempenho e resumos dos barbeiros
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços
 js/prospecao-importar.js                    leitura do Excel da base de prospeção

@@ -180,7 +180,7 @@ export function criarCrm(ctx) {
     const ref = C.estado === "pronto" ? calc().ref : "";
     let h = '<div class="cab"><div><div class="eyebrow neutro">Departamento Comercial' + (ref ? " · faturação até " + esc(rotData(ref)) : "") + "</div><h1>Comercial</h1></div>" +
       (C.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="crm-novo">' + I.plus + "Novo cliente ou lead</button></div>" : "") + "</div>";
-    const tabs = [["clientes", "Clientes e leads"], ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"]];
+    const tabs = [["clientes", "Clientes e leads"], ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"]];
     if (podeImportar(S.eu)) tabs.push(["importar", "Importar"]);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="crm-tab" data-tab="' + k + '" aria-selected="' + (C.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (C.estado === "erro") {
@@ -194,6 +194,7 @@ export function criarCrm(ctx) {
     }
     if (C.tab === "funil") return h + vistaFunil();
     if (C.tab === "analise") return h + vistaAnalise();
+    if (C.tab === "proformas" && ctx.vistaProformas) return h + ctx.vistaProformas();
     if (C.tab === "mapa") return h + MAPA.vista();
     if (C.tab === "importar") return h + vistaImportar();
     return h + vistaClientes();

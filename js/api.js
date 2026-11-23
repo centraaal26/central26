@@ -438,7 +438,7 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", crm_custos: "produto_codigo" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", loj_lojas: "id", loj_itens: "id", loj_stock: "loja_id,item_id", loj_pedidos: "id", loj_config: "id", loj_cadeiras: "id", loj_cadeiras_mes: "cadeira_id,mes", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -561,6 +561,47 @@ export function criarApi() {
       },
     },
     // 26 Academy: formações, formandos e inscrições (script 19)
+    // Lojas (script 25)
+    loj: {
+      async carregar() {
+        const desde = new Date(Date.now() - 120 * 864e5).toISOString();
+        const [lojas, itens, stock, pedAbertos, pedAntigos, config] = await Promise.all([
+          todas(() => sb.from("loj_lojas").select("*").order("ordem")),
+          todas(() => sb.from("loj_itens").select("*").order("ordem")),
+          todas(() => sb.from("loj_stock").select("*").order("loja_id").order("item_id")),
+          todas(() => sb.from("loj_pedidos").select("*").in("estado", ["pedido", "em_curso"]).order("criado_em")),
+          todas(() => sb.from("loj_pedidos").select("*").in("estado", ["feito", "cancelado"]).gte("criado_em", desde).order("criado_em", { ascending: false })),
+          sb.from("loj_config").select("*").eq("id", 1).maybeSingle(),
+        ]);
+        return { lojas, itens, stock, pedidos: pedAbertos.concat(pedAntigos), config: config.error ? null : config.data };
+      },
+      async loja(id, campos) { return ok(await sb.from("loj_lojas").update(campos).eq("id", id).select().single()); },
+      async criarItem(o) { return ok(await sb.from("loj_itens").insert(o).select().single()); },
+      async item(id, campos) { return ok(await sb.from("loj_itens").update(campos).eq("id", id).select().single()); },
+      async stock(loja_id, item_id, campos) { return ok(await sb.from("loj_stock").upsert({ loja_id, item_id, ...campos }, { onConflict: "loja_id,item_id" }).select().single()); },
+      async criarPedido(o) { return ok(await sb.from("loj_pedidos").insert(o).select().single()); },
+      async pedido(id, campos) { return ok(await sb.from("loj_pedidos").update(campos).eq("id", id).select().single()); },
+      async configurar(campos) { return ok(await sb.from("loj_config").update(campos).eq("id", 1).select().single()); },
+      async cadeiras(mes) {
+        const [cadeiras, meses] = await Promise.all([
+          todas(() => sb.from("loj_cadeiras").select("*").order("nome")),
+          todas(() => sb.from("loj_cadeiras_mes").select("*").eq("mes", mes).order("cadeira_id")),
+        ]);
+        // faturação bruta de cada barbeiro na folha do mês (script 21), para sugerir o valor
+        const f = await sb.from("fin_barbeiros").select("loja, barbeiro, valor_total").eq("mes", mes);
+        return { cadeiras, meses, folha: f.error ? [] : f.data };
+      },
+      async criarCadeira(o) { return ok(await sb.from("loj_cadeiras").insert(o).select().single()); },
+      async cadeira(id, campos) { return ok(await sb.from("loj_cadeiras").update(campos).eq("id", id).select().single()); },
+      async cadeiraMes(o) { return ok(await sb.from("loj_cadeiras_mes").upsert({ ...o, atualizado_em: new Date().toISOString() }, { onConflict: "cadeira_id,mes" }).select().single()); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-lojas")
+          .on("postgres_changes", { event: "*", schema: "public", table: "loj_pedidos" }, (p) => cb("loj_pedidos", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "loj_stock" }, (p) => cb("loj_stock", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     // Proformas da TwentySix (script 24)
     com: {
       async carregar() {

@@ -2061,3 +2061,44 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .nx-linha .ib{font-size:12px}
 @media (max-width:560px){.nx-linha{grid-template-columns:90px minmax(0,1fr) auto}.pf-passos li{font-size:11px}}
 @media (max-width:560px){.pf-prod{min-width:0}.pf-prod th:nth-child(3),.pf-prod td:nth-child(3){display:none}.pf-prod td:first-child{font-size:13px}.pf-prod td{padding:6px 4px}}
+
+/* ---------- Lojas ---------- */
+.loj-seg{flex-wrap:wrap;height:auto}
+.loj-seg button{height:36px;display:inline-flex;align-items:center;gap:6px}
+.loj-topo{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px 16px}
+.loj-topo b{font-size:17px;display:block}
+.loj-topo small{color:var(--muted);font-size:13px}
+.loj-topo .acts{flex-wrap:wrap}
+.loj-ajuda{margin:0;font-size:13px}
+.loj-stock{min-width:0}
+.loj-stock .inp.mini.n{width:70px}
+.loj-stock tr.baixo td{background:var(--danger-bg)}
+.loj-stock tr.loj-cat td{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:600;padding-top:16px;background:none}
+.loj-sec{display:flex;flex-direction:column;gap:8px}
+.loj-sec h3{margin:0;font-size:15px;display:flex;gap:8px;align-items:baseline}
+.loj-sec-cab{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+.loj-sec-cab .acts{flex-wrap:wrap}
+.loj-ped{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);width:100%}
+.loj-ped:hover{border-color:var(--line-strong)}
+.loj-ped .mono{color:var(--faint);font-size:12px}
+.loj-ped .t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.loj-ped small{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.loj-cad{min-width:860px}
+.loj-cad tfoot td{padding-top:12px;font-weight:600}
+.loj-cad-novo{border:1px dashed var(--line-strong);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:12px;max-width:760px}
+.loj-cad-novo h3{margin:0;font-size:14px}
+.loj-def-lojas,.loj-def-itens{display:flex;flex-direction:column;gap:6px}
+.loj-def-linha{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.loj-def-linha .inp{flex:1 1 200px;min-width:0}
+.loj-def-linha .inp.mini{flex:0 0 90px}
+.loj-def-linha .chk-txt{flex:none}
+.loj-quem{display:flex;flex-wrap:wrap;gap:6px 16px}
+.loj-quem .chk-txt{flex:none}
+.loj-pedir{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.loj-pedir-l{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-top:1px solid var(--line);font-size:14px}
+.loj-pedir-l:first-child{border-top:0}
+.loj-pedir-l span{display:flex;flex-direction:column;min-width:0}
+.loj-pedir-l small{color:var(--faint);font-size:12px}
+.loj-pedir-l .inp.mini.n{width:70px;flex:none}
+@media (max-width:560px){.loj-ped{grid-template-columns:minmax(0,1fr) auto}.loj-ped .mono{display:none}}
+@media (max-width:560px){.loj-stock th:nth-child(4),.loj-stock td:nth-child(4){display:none}.loj-stock td{padding:8px 4px}}

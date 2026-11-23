@@ -286,6 +286,18 @@ Como funciona:
 - **Envio pela Nacex**: a encomenda mostra os dados para copiar para o portal (serviço 27). Quando se escreve o tracking, quem fatura recebe o aviso para imprimir a etiqueta.
 - As credenciais do portal da Nacex **não** entram na Central.
 
+### 3x. Lojas e parcerias (embaixador / influencer)
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/25-lojas-parcerias.sql` → **Run** (depois do 24).
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy**.
+3. Cria em **Equipa** a conta de cada responsável de loja. Depois, em **Lojas → Definições**, escolhe o responsável de cada loja e quem recebe os pedidos.
+4. Em **Comercial → Proformas → Definições**, escreve o desconto de embaixador (o de influencer vem a 5%).
+
+O que passa a existir:
+- **Lojas → Stock**: o responsável conta os consumíveis e produtos da sua loja e define o mínimo; o que fica abaixo do mínimo aparece a vermelho.
+- **Pedidos**: pedido da semana (já vem com o que falta), trocos (moedas de 2 €, 1 € e 0,50 €) e manutenção. Quem trata recebe o aviso; quando o pedido da semana fica **Feito**, os artigos entram no stock da loja.
+- **Aluguer de cadeiras** (direção): valor fixo + percentagem da faturação bruta de cada barbeiro, com o número da fatura do Multixop.
+- **Parcerias**: cada cliente pode ser embaixador ou influencer (um ou outro). O desconto não acumula com os escalões: só conta no preço Base.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -331,6 +343,7 @@ supabase/functions/academy-sincronizar/     leitura automática da Secretaria On
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
 js/resultados.js                            Financeiro: resultados por área, loja e barbeiro, divisão dos custos gerais e exportação para Excel
+js/lojas.js                                 lojas: stock de consumíveis, pedidos da semana, trocos, manutenção e aluguer de cadeiras
 js/proformas.js                             Comercial: proformas, escalões de preço, tarefa para faturar e passagem à Logística
 js/ferramentas.js                           Financeiro: caixa, simulador de preços e comissões, previsão de tesouraria, desempenho e resumos dos barbeiros
 js/prospecao.js                             prospeção: propostas do agente, aprovação e envio, barbearias, rotas, balanços

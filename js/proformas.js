@@ -5,6 +5,7 @@ import { eGestor, normalizar, haQuanto, ymd, MES } from "./dados.js";
 export const ESCALOES = ["base", "pro6", "pro12", "pvd30", "pvd40", "pvd50"];
 const PROXIMO = { base: "pro6", pro6: "pro12", pvd30: "pvd40", pvd40: "pvd50" };
 const EST = { rascunho: ["Rascunho", "e-lead"], enviada: ["Enviada ao cliente", "e-contactado"], aceite: ["Aceite · por faturar", "e-proposta"], faturada: ["Faturada", "e-cliente"], cancelada: ["Cancelada", "e-perdido"] };
+const PARC = { "": "Sem parceria", embaixador: "Embaixador", influencer: "Influencer" };
 const ENVIO = { nacex: "Envio pela Nacex", entrega: "Entrega nossa", levanta: "O cliente levanta" };
 const CAMPOS_CLIENTE = [["nome", "Nome"], ["nif", "NIF"], ["morada", "Morada"], ["cp", "Código postal"], ["localidade", "Localidade"], ["telefone", "Telefone"], ["telemovel", "Telemóvel"], ["email", "Email"]];
 const CAMPOS_EMPRESA = [["nome", "Nome da empresa"], ["nif", "NIF"], ["morada", "Morada"], ["cp", "Código postal e localidade"], ["telefone", "Telefone"], ["email", "Email"], ["iban", "IBAN"]];
@@ -19,7 +20,9 @@ export const refPf = (p) => "PF-" + String(p?.numero ?? "").padStart(4, "0");
 
 export function totais(p) {
   const sub = r2((p.itens || []).reduce((s, i) => s + r2(Math.max(0, +i.qtd || 0) * Math.max(0, +i.preco || 0)), 0));
-  const emb = p.embaixador ? +p.desc_embaixador || 0 : 0, desc = +p.desconto || 0;
+  // desconto de parceria (embaixador ou influencer): não acumula com os escalões, só conta no preço Base
+  const ativa = p.parceria !== undefined ? !!p.parceria && p.escalao === "base" : !!p.embaixador;
+  const emb = ativa ? +p.desc_embaixador || 0 : 0, desc = +p.desconto || 0;
   const aposEmb = sub * (1 - emb / 100), base = r2(aposEmb * (1 - desc / 100)), iva = r2(base * (+p.iva || 0) / 100);
   return { sub, descEmb: r2(sub - aposEmb), descExtra: r2(aposEmb - base), base, iva, total: r2(base + iva), unidades: (p.itens || []).reduce((s, i) => s + (+i.qtd || 0), 0) };
 }
@@ -35,7 +38,9 @@ export function criarProformas(ctx) {
   const podeVer = () => podeCrm(S.eu) || eFat();
   const podeFaturar = () => eGestor(S.eu) || eFat();
   const editavel = (p) => p && ["rascunho", "enviada"].includes(p.estado) && podeCrm(S.eu);
-  const cfg = () => P.config || { iva: 23, validade_dias: 15, desconto_embaixador: 5, patamares: { pro6: 6000, pro12: 12000, pvd40: 3000, pvd50: 5000 }, patamar_por: "encomenda", empresa: {}, nacex_servico: "27" };
+  const cfg = () => P.config || { iva: 23, validade_dias: 15, desconto_embaixador: 0, desconto_influencer: 5, patamares: { pro6: 6000, pro12: 12000, pvd40: 3000, pvd50: 5000 }, patamar_por: "encomenda", empresa: {}, nacex_servico: "27" };
+  const pctPar = (k) => (k === "embaixador" ? +cfg().desconto_embaixador || 0 : k === "influencer" ? +(cfg().desconto_influencer ?? 5) || 0 : 0);
+  const nomePar = (k) => (k ? PARC[k] + " (−" + pct(pctPar(k)) + ")" : PARC[""]);
   const pat = () => ({ pro6: 6000, pro12: 12000, pvd40: 3000, pvd50: 5000, ...(cfg().patamares || {}) });
   function nomeEsc(k) {
     const l = pat();
@@ -117,7 +122,7 @@ export function criarProformas(ctx) {
     const k = cfg(), validade = new Date(Date.now() + (k.validade_dias || 15) * 864e5);
     try {
       const r = await api.com.criar({
-        cliente_id: c.id, escalao: c.escalao || "base", embaixador: !!c.embaixador, desc_embaixador: c.embaixador ? +k.desconto_embaixador || 0 : 0, iva: +k.iva, validade: ymd(validade), envio: "nacex",
+        cliente_id: c.id, escalao: c.escalao || "base", parceria: c.parceria || "", desc_embaixador: pctPar(c.parceria || ""), iva: +k.iva, validade: ymd(validade), envio: "nacex",
         cliente: { nome: c.nome, nif: c.nif || "", morada: c.morada || "", cp: c.codigo_postal || "", localidade: c.concelho || "", telefone: c.telefone || "", telemovel: "", email: c.email || "" } });
       P.proformas[r.id] = r; render();
       abrir({ tipo: "proforma", id: r.id });
@@ -165,7 +170,7 @@ export function criarProformas(ctx) {
     if (!ver.length) return h + '<div class="vazio"><h3>' + (l.length ? "Nada com este filtro" : "Ainda não há proformas") + "</h3><p>" + (l.length ? "Muda o filtro acima." : "Abre a ficha de um cliente e carrega em <b>Proforma</b>, ou usa o botão <b>Nova proforma</b>.") + "</p></div>";
     h += '<div class="tabela-scroll"><table class="crm-tabela pf-tab"><thead><tr><th>Proforma</th><th>Cliente</th><th>Escalão</th><th class="n">Unid.</th><th class="n">Total s/ IVA</th><th>Estado</th></tr></thead><tbody>' +
       ver.map((p) => { const t = totais(p);
-        return '<tr data-acao="pf-abrir" data-id="' + p.id + '" tabindex="0"><td><b class="mono">' + refPf(p) + "</b><small>" + esc(nomeDe(p.criado_por) || "—") + " · " + haQuanto(p.criado_em) + "</small></td><td>" + esc(p.cliente?.nome || "—") + (p.fatura_numero ? "<small>" + esc(p.fatura_numero) + "</small>" : "") + "</td><td>" + esc(curtoEsc(p.escalao)) + (p.embaixador ? " <small>embaixador</small>" : "") + '</td><td class="n">' + t.unidades + '</td><td class="n">' + eur2(p.total_sem_iva) + '</td><td><span class="etapa ' + EST[p.estado][1] + '">' + EST[p.estado][0] + "</span></td></tr>"; }).join("") +
+        return '<tr data-acao="pf-abrir" data-id="' + p.id + '" tabindex="0"><td><b class="mono">' + refPf(p) + "</b><small>" + esc(nomeDe(p.criado_por) || "—") + " · " + haQuanto(p.criado_em) + "</small></td><td>" + esc(p.cliente?.nome || "—") + (p.fatura_numero ? "<small>" + esc(p.fatura_numero) + "</small>" : "") + "</td><td>" + esc(curtoEsc(p.escalao)) + (p.parceria ? " <small>" + esc(PARC[p.parceria].toLowerCase()) + "</small>" : "") + '</td><td class="n">' + t.unidades + '</td><td class="n">' + eur2(p.total_sem_iva) + '</td><td><span class="etapa ' + EST[p.estado][1] + '">' + EST[p.estado][0] + "</span></td></tr>"; }).join("") +
       "</tbody></table></div>";
     return h;
   }
@@ -243,7 +248,8 @@ export function criarProformas(ctx) {
       '<section class="p-sec"><h3>Empresa (aparece na proforma)</h3><div class="campos-2">' + CAMPOS_EMPRESA.map(([c, r]) => campo("pf-emp-" + c, r, e[c])).join("") + "</div></section>" +
       '<section class="p-sec"><h3>Condições</h3><div class="campos-2">' +
       campo("pf-cfg-iva", "IVA (%)", numIn(k.iva), ' inputmode="decimal"') + campo("pf-cfg-val", "Validade da proforma (dias)", k.validade_dias, ' inputmode="numeric"') +
-      campo("pf-cfg-emb", "Desconto de embaixador (%)", numIn(k.desconto_embaixador), ' inputmode="decimal"') + campo("pf-cfg-nacex", "Serviço Nacex", k.nacex_servico) +
+      campo("pf-cfg-emb", "Desconto de embaixador (%)", numIn(k.desconto_embaixador), ' inputmode="decimal"') + campo("pf-cfg-inf", "Desconto de influencer (%)", numIn(k.desconto_influencer ?? 5), ' inputmode="decimal"') +
+      campo("pf-cfg-nacex", "Serviço Nacex", k.nacex_servico) +
       "</div></section>" +
       '<section class="p-sec"><h3>Patamares</h3><div class="campos-2">' +
       campo("pf-pat-pro6", "1.º patamar PRO a partir de (€)", l.pro6, ' inputmode="numeric"') + campo("pf-pat-pro12", "2.º patamar PRO a partir de (€)", l.pro12, ' inputmode="numeric"') +
@@ -259,7 +265,7 @@ export function criarProformas(ctx) {
     const minhas = P.estado === "pronto" ? doCliente(c.id).slice(0, 5) : [];
     return '<section class="p-sec pf-cli"><h3>Preços TwentySix</h3><div class="pf-cli-linha">' +
       '<label class="sr" for="pf-cli-esc">Escalão</label><select id="pf-cli-esc" class="sel" data-cliente="' + c.id + '">' + ESCALOES.map((k) => '<option value="' + k + '"' + ((c.escalao || "base") === k ? " selected" : "") + ">" + esc(nomeEsc(k)) + "</option>").join("") + "</select>" +
-      '<label class="chk-txt"><input type="checkbox" id="pf-cli-emb" data-cliente="' + c.id + '"' + (c.embaixador ? " checked" : "") + "> Embaixador (−" + pct(cfg().desconto_embaixador) + ")</label>" +
+      '<label class="sr" for="pf-cli-par">Parceria</label><select id="pf-cli-par" class="sel" data-cliente="' + c.id + '">' + Object.keys(PARC).map((k) => '<option value="' + k + '"' + ((c.parceria || "") === k ? " selected" : "") + ">" + esc(nomePar(k)) + "</option>").join("") + "</select>" +
       '<button class="btn pri" data-acao="pf-nova" data-cliente="' + c.id + '">' + I.plus + "Proforma</button></div>" +
       (minhas.length ? '<div class="hist">' + minhas.map((p) => '<div><button class="c-link" data-acao="pf-abrir" data-id="' + p.id + '">' + refPf(p) + " · " + esc(haQuanto(p.criado_em)) + '</button><span><span class="etapa ' + EST[p.estado][1] + '">' + EST[p.estado][0] + '</span> <span class="mono">' + eur2(p.total_sem_iva) + "</span></span></div>").join("") + "</div>" : "") +
       "</section>";
@@ -282,7 +288,7 @@ export function criarProformas(ctx) {
     let h = topo("Comercial / " + refPf(p), '<button class="ib" data-acao="pf-imprimir">' + I.nota + "Imprimir</button>" + (apaga ? '<button class="ib perigo" data-acao="pf-apagar">' + I.lixo + "Eliminar</button>" : ""));
     if (a.confirmar) h += '<div class="aviso erro" style="justify-content:space-between;flex-wrap:wrap">Eliminar a proforma ' + refPf(p) + '?<span class="acts"><button class="btn sec" data-acao="pf-apagar-nao">Manter</button><button class="btn perigo" data-acao="pf-apagar-sim">Eliminar</button></span></div>';
     h += '<h2 style="margin:0">' + esc(p.cliente?.nome || "Cliente") + "</h2>" +
-      '<div class="chips"><span class="etapa ' + EST[p.estado][1] + '">' + EST[p.estado][0] + "</span><span>" + esc(nomeEsc(p.escalao)) + "</span>" + (p.embaixador ? "<span>Embaixador</span>" : "") +
+      '<div class="chips"><span class="etapa ' + EST[p.estado][1] + '">' + EST[p.estado][0] + "</span><span>" + esc(nomeEsc(p.escalao)) + "</span>" + (p.parceria ? "<span>" + esc(PARC[p.parceria]) + "</span>" : "") +
       "<span>Feita por " + esc(nomeDe(p.criado_por) || "—") + " " + haQuanto(p.criado_em) + "</span>" + (p.cliente_id ? '<button class="c-link" data-acao="crm-abrir" data-id="' + p.cliente_id + '">Ficha do cliente</button>' : "") + "</div>";
     const passos = [["rascunho", "Rascunho"], ["enviada", "Enviada"], ["aceite", "Aceite"], ["faturada", "Faturada"]], iAtual = passos.findIndex(([k]) => k === p.estado);
     if (p.estado !== "cancelada") h += '<ol class="pf-passos">' + passos.map(([k, r], i) => '<li class="' + (i < iAtual ? "feito" : i === iAtual ? "atual" : "") + '">' + r + "</li>").join("") + "</ol>";
@@ -290,7 +296,8 @@ export function criarProformas(ctx) {
     // condições
     h += '<div class="props">' +
       '<label for="pf-esc">Escalão</label><select id="pf-esc"' + dis + ">" + ESCALOES.map((k) => '<option value="' + k + '"' + (p.escalao === k ? " selected" : "") + ">" + esc(nomeEsc(k)) + "</option>").join("") + "</select>" +
-      '<label for="pf-emb">Embaixador</label><label class="chk-txt"><input type="checkbox" id="pf-emb"' + (p.embaixador ? " checked" : "") + dis + "> Desconto de " + pct(p.embaixador ? p.desc_embaixador : cfg().desconto_embaixador) + " na fatura</label>" +
+      '<label for="pf-par">Parceria</label><select id="pf-par"' + dis + ">" + Object.keys(PARC).map((k) => '<option value="' + k + '"' + ((p.parceria || "") === k ? " selected" : "") + ">" + esc(k && p.parceria === k ? PARC[k] + " (−" + pct(p.desc_embaixador) + ")" : nomePar(k)) + "</option>").join("") + "</select>" +
+      (p.parceria && p.escalao !== "base" ? '<span class="ajuda">Não acumula com o escalão: o desconto de ' + esc(PARC[p.parceria].toLowerCase()) + " só conta no preço Base.</span>" : "") +
       '<label for="pf-desc">Desconto extra (%)</label><input id="pf-desc" inputmode="decimal" value="' + numIn(p.desconto || null) + '" placeholder="0"' + dis + ">" +
       '<label for="pf-envio">Envio</label><select id="pf-envio"' + dis + ">" + Object.entries(ENVIO).map(([k, r]) => '<option value="' + k + '"' + (p.envio === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
       '<label for="pf-val">Válida até</label><input id="pf-val" type="date" value="' + esc(p.validade || "") + '"' + dis + ">" +
@@ -348,7 +355,7 @@ export function criarProformas(ctx) {
 
   function htmlTotais(p, t) {
     let h = '<div class="pf-totais">' + (t.descEmb || t.descExtra ? "<div><span>Subtotal</span><b>" + eur2(t.sub) + "</b></div>" : "") +
-      (t.descEmb ? "<div><span>Desconto de embaixador (" + pct(p.desc_embaixador) + ")</span><b>−" + eur2(t.descEmb) + "</b></div>" : "") +
+      (t.descEmb ? "<div><span>Desconto de " + esc((PARC[p.parceria] || "parceria").toLowerCase()) + " (" + pct(p.desc_embaixador) + ")</span><b>−" + eur2(t.descEmb) + "</b></div>" : "") +
       (t.descExtra ? "<div><span>Desconto (" + pct(p.desconto) + ")</span><b>−" + eur2(t.descExtra) + "</b></div>" : "") +
       "<div><span>Total sem IVA</span><b>" + eur2(t.base) + "</b></div><div><span>IVA (" + pct(p.iva) + ")</span><b>" + eur2(t.iva) + '</b></div><div class="tot"><span>Total</span><b>' + eur2(t.total) + "</b></div></div>";
     const prox = PROXIMO[p.escalao];
@@ -462,13 +469,13 @@ export function criarProformas(ctx) {
         .catch((err) => { if (antes) P.precos[cod] = antes; else delete P.precos[cod]; render(); falha(err); });
       return true;
     }
-    if (t.id === "pf-cli-esc" || t.id === "pf-cli-emb") {
+    if (t.id === "pf-cli-esc" || t.id === "pf-cli-par") {
       const cid = t.dataset.cliente, c = S.crm?.clientes?.[cid]; if (!c) return true;
-      const campos = t.id === "pf-cli-esc" ? { escalao: t.value } : { embaixador: t.checked };
-      const antes = { escalao: c.escalao, embaixador: c.embaixador };
+      const campos = t.id === "pf-cli-esc" ? { escalao: t.value } : { parceria: t.value };
+      const antes = { escalao: c.escalao, parceria: c.parceria };
       Object.assign(c, campos);
-      api.crm.atualizar(cid, campos).then((r) => { if (r) S.crm.clientes[cid] = r; toast(t.id === "pf-cli-esc" ? "Escalão: " + nomeEsc(t.value) : t.checked ? "Marcado como embaixador" : "Já não é embaixador"); })
-        .catch((err) => { Object.assign(c, antes); renderPainel(true); falha(/escalao|embaixador/.test(String(err?.message)) ? new Error("Falta correr o ficheiro supabase/24-proformas-nacex.sql no Supabase.") : err); });
+      api.crm.atualizar(cid, campos).then((r) => { if (r) S.crm.clientes[cid] = r; toast(t.id === "pf-cli-esc" ? "Escalão: " + nomeEsc(t.value) : "Parceria: " + PARC[t.value]); })
+        .catch((err) => { Object.assign(c, antes); renderPainel(true); falha(/escalao|parceria/.test(String(err?.message)) ? new Error("Falta correr os ficheiros supabase/24-proformas-nacex.sql e 25-lojas-parcerias.sql no Supabase.") : err); });
       return true;
     }
     // definições
@@ -481,7 +488,7 @@ export function criarProformas(ctx) {
       else {
         const v = lerNum(t.value);
         if (v == null || Number.isNaN(v) || v < 0) { toast("Escreve um número.", true); return true; }
-        if (t.id === "pf-cfg-iva") campos.iva = v; else if (t.id === "pf-cfg-val") campos.validade_dias = Math.round(v); else if (t.id === "pf-cfg-emb") campos.desconto_embaixador = v;
+        if (t.id === "pf-cfg-iva") campos.iva = v; else if (t.id === "pf-cfg-val") campos.validade_dias = Math.round(v); else if (t.id === "pf-cfg-emb") campos.desconto_embaixador = v; else if (t.id === "pf-cfg-inf") campos.desconto_influencer = v;
         else campos.patamares = { ...pat(), [t.id.slice(7)]: Math.round(v) };
       }
       const antes = P.config; P.config = { ...k, ...campos };
@@ -496,7 +503,7 @@ export function criarProformas(ctx) {
       guardar(p.id, { escalao: esc2, itens: (p.itens || []).map((i) => ({ ...i, preco: precoDe(i.codigo, esc2) ?? i.preco })) }, 0);
       redesenhar(); return true;
     }
-    if (t.id === "pf-emb") { guardar(p.id, { embaixador: t.checked, desc_embaixador: t.checked ? +cfg().desconto_embaixador || 0 : 0 }, 0); redesenhar(); return true; }
+    if (t.id === "pf-par") { guardar(p.id, { parceria: t.value, desc_embaixador: pctPar(t.value) }, 0); redesenhar(); return true; }
     if (t.id === "pf-desc") {
       const v = lerNum(t.value) ?? 0;
       if (Number.isNaN(v) || v < 0 || v > 100) { toast("O desconto é uma percentagem entre 0 e 100.", true); return true; }

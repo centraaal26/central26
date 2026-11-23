@@ -21,6 +21,7 @@ const PESSOAS = [
   ["p-wembley", "Wembley Costa", "Departamento Comercial", "comercial", "chefe"],
   ["p-rui", "Rui Neves", "Departamento de Logística", "logistica", "chefe"],
   ["p-isaac", "Isaac Maia", "Departamento Tecnológico", "tecnologico", "admin"],
+  ["p-loja", "Responsável de Loja (exemplo)", "Responsável da loja", "operacional", "colaborador"],
 ].map(([id, nome, cargo, departamento_id, papel]) => ({
   id, nome, cargo, departamento_id, papel, email: id.slice(2) + "@exemplo.pt", telefone: "", ativo: true, mudar_password: false, gere_agenda: id === "p-samuel",
   criado_em: new Date(Date.now() - 30 * 864e5).toISOString(),
@@ -1224,6 +1225,80 @@ export function criarDemo() {
     })(),
 
     // 26 Academy (igual ao script 19), com formandos e formações de exemplo
+    // Lojas (exemplo)
+    loj: (() => {
+      const K = "central26-demo-loj-v1";
+      let d = null;
+      const ler = () => {
+        if (d) return d;
+        try { d = JSON.parse(localStorage.getItem(K) || "null"); } catch { d = null; }
+        if (!d) {
+          const nomes = ["Luvas de látex|caixa", "Papel higiénico|rolo", "Rolo de papel de cozinha|rolo", "Esfregona|un.", "Líquido de chão|garrafa", "WC Pato|un.", "Bloco sanitário (pendurar na sanita)|un.", "Multiusos|garrafa",
+            "Líquido de vidros|garrafa", "Ambientador (Ambipur)|un.", "Água de colónia|garrafa", "Sacos do lixo 50 L|rolo", "Sacos do lixo 10 L|rolo", "Rebuçados|saco"];
+          d = { seq: 1, lojas: [["morro", "Jardim do Morro"], ["santo-ovidio", "Santo Ovídio"], ["porto", "Porto"], ["arcozelo", "Arcozelo"], ["madalena", "Madalena"]].map(([id, nome], i) => ({ id, nome, responsavel_id: id === "madalena" ? "p-loja" : null, ativo: true, ordem: i + 1 })),
+            itens: nomes.map((x, i) => { const [nome, unidade] = x.split("|"); return { id: uid(), nome, categoria: "consumivel", unidade, ativo: true, ordem: i + 1, criado_em: agora() }; }),
+            stock: [], pedidos: [], cadeiras: [], meses: [], config: { id: 1, recebe_semanal: [], recebe_trocos: [], recebe_manutencao: [] } };
+          d.itens.slice(0, 6).forEach((it, i) => d.stock.push({ loja_id: "madalena", item_id: it.id, quantidade: [1, 8, 3, 2, 1, 4][i], minimo: [2, 6, 4, 1, 2, 2][i], atualizado_em: agora(), atualizado_por: "p-loja" }));
+        }
+        return d;
+      };
+      const guardar = () => { try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* */ } };
+      const gestor = () => eGestor(eu()), logi = () => gestor() || eu()?.departamento_id === "logistica";
+      const resp = (loja) => ler().lojas.some((l) => l.id === loja && l.responsavel_id === euId);
+      const dest = (tipo) => { const c = ler().config, l = { semanal: c.recebe_semanal, trocos: c.recebe_trocos, manutencao: c.recebe_manutencao }[tipo] || [];
+        return db.perfis.filter((p) => p.ativo && (l.length ? l.includes(p.id) : tipo === "semanal" ? p.departamento_id === "logistica" || ["ceo", "admin"].includes(p.papel) : ["ceo", "admin"].includes(p.papel))).map((p) => p.id); };
+      const trata = (tipo) => gestor() || (tipo === "semanal" && logi()) || dest(tipo).includes(euId);
+      const TIP = { semanal: "Pedido da semana", trocos: "Pedido de trocos", manutencao: "Pedido de manutenção" };
+      return {
+        async carregar() {
+          const x = ler();
+          const pode = logi() || x.lojas.some((l) => l.responsavel_id === euId);
+          return structuredClone({ lojas: x.lojas, itens: pode ? x.itens : [], stock: x.stock.filter((s) => logi() || resp(s.loja_id)),
+            pedidos: x.pedidos.filter((p) => resp(p.loja_id) || p.criado_por === euId || trata(p.tipo)), config: pode ? x.config : null });
+        },
+        async loja(id, campos) { if (!gestor()) throw new Error("Só a direção muda as lojas."); const l = ler().lojas.find((y) => y.id === id); Object.assign(l, campos); guardar(); return structuredClone(l); },
+        async criarItem(o) { if (!logi()) throw new Error("Sem permissão."); const r = { id: uid(), categoria: "consumivel", unidade: "un.", ativo: true, ordem: 99, criado_em: agora(), ...o }; ler().itens.push(r); guardar(); return structuredClone(r); },
+        async item(id, campos) { if (!logi()) throw new Error("Sem permissão."); const r = ler().itens.find((y) => y.id === id); Object.assign(r, campos); guardar(); return structuredClone(r); },
+        async stock(loja_id, item_id, campos) {
+          if (!logi() && !resp(loja_id)) throw new Error("Sem permissão para mexer no stock desta loja.");
+          const x = ler(); let r = x.stock.find((y) => y.loja_id === loja_id && y.item_id === item_id);
+          if (!r) { r = { loja_id, item_id, quantidade: null, minimo: null }; x.stock.push(r); }
+          Object.assign(r, campos, { atualizado_em: agora(), atualizado_por: euId }); guardar(); return structuredClone(r);
+        },
+        async criarPedido(o) {
+          if (!gestor() && !resp(o.loja_id)) throw new Error("Só o responsável da loja (ou a direção) faz pedidos para esta loja.");
+          const x = ler(), r = { itens: [], trocos: {}, descricao: "", urgente: false, ...o, id: uid(), numero: x.seq++, estado: "pedido", resposta: "", criado_por: euId, criado_em: agora(), atualizado_em: agora(), tratado_por: null, feito_em: null, stock_somado: false };
+          x.pedidos.push(r); guardar();
+          const loja = x.lojas.find((l) => l.id === r.loja_id)?.nome;
+          dest(r.tipo).filter((p) => p !== euId).forEach((p) => notificar(p, "loja", (r.urgente ? "Urgente · " : "") + TIP[r.tipo] + " · " + loja, nome(euId), "#lojas-pedidos"));
+          gravar(db); return structuredClone(r);
+        },
+        async pedido(id, campos) {
+          const x = ler(), r = x.pedidos.find((y) => y.id === id); if (!r) throw new Error("O pedido já não existe.");
+          if (!trata(r.tipo)) {
+            if (r.estado !== "pedido") throw new Error("O pedido já está a ser tratado. Fala com quem o está a tratar.");
+            if (campos.estado && !["pedido", "cancelado"].includes(campos.estado)) throw new Error("Só quem trata os pedidos muda o estado.");
+          }
+          const antes = r.estado;
+          Object.assign(r, campos, { atualizado_em: agora() });
+          if (r.estado !== antes && ["em_curso", "feito"].includes(r.estado)) r.tratado_por = euId;
+          if (r.estado === "feito" && antes !== "feito") r.feito_em = agora();
+          if (r.tipo === "semanal" && r.estado === "feito" && !r.stock_somado) {
+            r.itens.filter((i) => i.item_id).forEach((i) => { let s = x.stock.find((y) => y.loja_id === r.loja_id && y.item_id === i.item_id); if (!s) { s = { loja_id: r.loja_id, item_id: i.item_id, quantidade: 0, minimo: null }; x.stock.push(s); } s.quantidade = (s.quantidade || 0) + (+i.qtd || 0); s.atualizado_em = agora(); });
+            r.stock_somado = true;
+          }
+          if (r.estado !== antes && r.criado_por !== euId && ["em_curso", "feito", "cancelado"].includes(r.estado))
+            notificar(r.criado_por, "loja", TIP[r.tipo] + " " + ({ em_curso: "a ser tratado", feito: "feito", cancelado: "cancelado" })[r.estado], (x.lojas.find((l) => l.id === r.loja_id)?.nome || "") + (r.resposta ? " · " + r.resposta : ""), "#lojas-pedidos");
+          guardar(); gravar(db); return structuredClone(r);
+        },
+        async configurar(campos) { if (!gestor()) throw new Error("Só a direção muda as definições."); Object.assign(ler().config, campos); guardar(); return structuredClone(ler().config); },
+        async cadeiras(mes) { if (!gestor()) throw new Error("Só a direção vê o aluguer de cadeiras."); const x = ler(); return structuredClone({ cadeiras: x.cadeiras, meses: x.meses.filter((m) => m.mes === mes), folha: [] }); },
+        async criarCadeira(o) { const r = { id: uid(), ativo: true, criado_em: agora(), nif: "", loja_id: null, fixo: 300, percentagem: 5, ...o }; ler().cadeiras.push(r); guardar(); return structuredClone(r); },
+        async cadeira(id, campos) { const r = ler().cadeiras.find((y) => y.id === id); Object.assign(r, campos); guardar(); return structuredClone(r); },
+        async cadeiraMes(o) { const x = ler(); x.meses = x.meses.filter((m) => !(m.cadeira_id === o.cadeira_id && m.mes === o.mes)).concat([{ ...o }]); guardar(); return structuredClone(o); },
+        subscrever() { return () => {}; },
+      };
+    })(),
     // Proformas (exemplo): preços inventados para os produtos de exemplo
     com: (() => {
       const K = "central26-demo-com-v1";
@@ -1235,7 +1310,7 @@ export function criarDemo() {
           const P = [["E01", 8.9, 15.9], ["E02", 8.9, 15.9], ["E03", 7.5, 13.5], ["E04", 9.8, 16.9], ["E05", 8.4, 14.5], ["E06", 16, 27.9]];
           d = { seq: 1, proformas: [],
             precos: P.map(([c, b, prvp], i) => ({ produto_codigo: c, base: b, pro6: Math.round(b * 87) / 100, pro12: Math.round(b * 72) / 100, pvd30: Math.round(b * 70) / 100, pvd40: Math.round(b * 60) / 100, pvd50: Math.round(b * 50) / 100, prvp, ordem: i, atualizado_em: agora(), atualizado_por: null })),
-            config: { id: 1, empresa: { nome: "Empresa Exemplo, Lda.", nif: "500000000", morada: "Rua Exemplo, 1", cp: "4400-000 Vila Nova de Gaia", telefone: "", email: "", iban: "" }, iva: 23, validade_dias: 15, desconto_embaixador: 5,
+            config: { id: 1, empresa: { nome: "Empresa Exemplo, Lda.", nif: "500000000", morada: "Rua Exemplo, 1", cp: "4400-000 Vila Nova de Gaia", telefone: "", email: "", iban: "" }, iva: 23, validade_dias: 15, desconto_embaixador: 0, desconto_influencer: 5,
               faturador: "p-samuel", patamares: { pro6: 6000, pro12: 12000, pvd40: 3000, pvd50: 5000 }, patamar_por: "encomenda", nacex_servico: "27", atualizado_em: agora() } };
           const it = [{ codigo: "E01", descricao: "Cera modeladora 100 ml (exemplo)", qtd: 12, preco: 8.9 }, { codigo: "E04", descricao: "Óleo para barba 30 ml (exemplo)", qtd: 6, preco: 9.8 }];
           d.proformas.push(calc({ id: uid(), numero: d.seq++, cliente_id: null, cliente: { nome: "Barbearia Exemplo 2", nif: "", morada: "Rua Exemplo, 10", cp: "4400-100", localidade: "Vila Nova de Gaia", telefone: "910000000", telemovel: "", email: "" },

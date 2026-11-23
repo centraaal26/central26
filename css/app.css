@@ -2109,3 +2109,32 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 @media (max-width:560px){.pf-tab{min-width:0}.pf-tab th:nth-child(3),.pf-tab td:nth-child(3),.pf-tab th:nth-child(4),.pf-tab td:nth-child(4){display:none}}
 .lote-tab{min-width:620px;font-size:13.5px}
 .lote-tab input[type=checkbox]{width:17px;height:17px;accent-color:var(--b)}
+
+/* ---------- Lojas → Marcações (estatísticas do Booknetic) ---------- */
+.bk-imp{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 20px;border:1px dashed var(--line-strong);border-radius:12px;padding:14px 16px}
+.bk-imp>div:first-child{display:flex;flex-direction:column;gap:4px;flex:1 1 320px;min-width:0}
+.bk-imp small{color:var(--muted);font-size:13px;line-height:1.45}
+.bk-imp.grande{border-style:solid;background:var(--surface);padding:22px}
+.bk-imp.grande b{font-size:17px}
+.bk-prog{flex:1 1 260px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.bk-prog i{display:block;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bk-prog i b{display:block;height:100%;background:var(--b);transition:width .3s}
+.bk-cab{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 16px}
+.bk-cab .barra{margin:0}
+.bk-kpis{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.bk-kpis .kpi small{line-height:1.35}
+.bk-sobe{color:var(--ok);font-weight:600}
+.bk-desce{color:var(--danger);font-weight:600}
+.bk-sec{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bk-sec h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-bottom:6px;border-bottom:1px solid var(--line)}
+.bk-nota{margin:0;font-size:12.5px}
+.bk-graf .g-barra.parcial .g-marca{opacity:.45}
+.bk-tab{min-width:640px;font-size:13.5px}
+.bk-tab .spark{width:84px}
+.bk-duas{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:24px}
+.bk-mapa{border-collapse:separate;border-spacing:3px;font-size:11px;font-family:var(--f-mono)}
+.bk-mapa th{color:var(--faint);font-weight:500;padding:0 4px;text-align:center}
+.bk-mapa tbody th{text-align:right;font-family:var(--f-body,inherit)}
+.bk-mapa td{width:30px;height:26px;border-radius:5px;text-align:center;color:var(--ink);background:color-mix(in srgb,var(--b) calc(var(--a) * 100%),var(--sunken))}
+@media (max-width:760px){.bk-duas{grid-template-columns:1fr}}
+@media (max-width:560px){.bk-lojas{min-width:0}.bk-lojas th:nth-child(4),.bk-lojas td:nth-child(4),.bk-lojas th:nth-child(8),.bk-lojas td:nth-child(8){display:none}.bk-mapa td{width:22px;height:22px}}

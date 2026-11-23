@@ -298,6 +298,13 @@ O que passa a existir:
 - **Aluguer de cadeiras** (direção): valor fixo + percentagem da faturação bruta de cada barbeiro, com o número da fatura do Multixop.
 - **Parcerias**: cada cliente pode ser embaixador ou influencer (um ou outro). O desconto não acumula com os escalões: só conta no preço Base.
 
+### 3y. Estatísticas das barbearias (marcações do Booknetic)
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/26-estatisticas-barbearias.sql` → **Run**.
+2. Edge Functions → `copia-seguranca` → cola outra vez o código atual → **Deploy**.
+3. No WordPress da barbearia: **Booknetic → Settings → Export & Import data** → exportar. Na app (direção, num computador): **Lojas → Marcações** → **Escolher ficheiro** → o ficheiro `.Booknetic`.
+
+O ficheiro é lido no computador de quem importa e só os números ficam na Central (por mês, loja, barbeiro e serviço): marcações, canceladas, clientes diferentes, clientes novos, clientes ativos, habituais e os que deixaram de vir, e os dias e horas com mais movimento. Nomes, contactos e notas de clientes nunca saem do computador. Para atualizar, exporta outra vez e importa o ficheiro novo.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).
@@ -343,6 +350,7 @@ supabase/functions/academy-sincronizar/     leitura automática da Secretaria On
 js/relatorio.js · supabase/functions/relatorio-mensal/  relatório mensal da direção (na app e por email no dia 1)
 js/vida.js                                  ilustrações de cada área, números que contam e gráficos que crescem ao abrir uma página
 js/resultados.js                            Financeiro: resultados por área, loja e barbeiro, divisão dos custos gerais e exportação para Excel
+js/estatisticas-bar.js · js/booknetic.js    estatísticas das barbearias a partir da exportação do Booknetic (lida no navegador, só números)
 js/lojas.js                                 lojas: stock de consumíveis, pedidos da semana, trocos, manutenção e aluguer de cadeiras
 js/proformas.js                             Comercial: proformas, escalões de preço, tarefa para faturar e passagem à Logística
 js/ferramentas.js                           Financeiro: caixa, simulador de preços e comissões, previsão de tesouraria, desempenho e resumos dos barbeiros

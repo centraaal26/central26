@@ -446,7 +446,7 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", loj_lojas: "id", loj_itens: "id", loj_stock: "loja_id,item_id", loj_pedidos: "id", loj_config: "id", loj_cadeiras: "id", loj_cadeiras_mes: "cadeira_id,mes", crm_custos: "produto_codigo" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", loj_lojas: "id", loj_itens: "id", loj_stock: "loja_id,item_id", loj_pedidos: "id", loj_config: "id", loj_cadeiras: "id", loj_cadeiras_mes: "cadeira_id,mes", bar_stats: "nivel,mes,loja,chave", bar_horas: "loja,dow,hora", bar_importacao: "id", crm_custos: "produto_codigo" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {
@@ -569,6 +569,18 @@ export function criarApi() {
       },
     },
     // 26 Academy: formações, formandos e inscrições (script 19)
+    // Estatísticas das barbearias (script 26)
+    bar: {
+      async carregar() {
+        const [stats, horas, imp] = await Promise.all([
+          todas(() => sb.from("bar_stats").select("*").order("mes").order("nivel").order("loja").order("chave")),
+          todas(() => sb.from("bar_horas").select("*").order("loja").order("dow").order("hora")),
+          sb.from("bar_importacao").select("*").eq("id", 1).maybeSingle(),
+        ]);
+        return { stats, horas, imp: ok(imp) };
+      },
+      async importar(p) { return ok(await sb.rpc("bar_importar", { p })); },
+    },
     // Lojas (script 25)
     loj: {
       async carregar() {

@@ -55,7 +55,7 @@ export function criarLojas(ctx) {
 
   /* ============================== Vista ============================== */
   function vista(param) {
-    if (param && ["stock", "pedidos", "cadeiras", "definicoes"].includes(param)) L.tab = param;
+    if (param && ["stock", "pedidos", "marcacoes", "cadeiras", "definicoes"].includes(param)) L.tab = param;
     if (L.estado === "por-carregar") carregar();
     let h = '<div class="cab"><div><div class="eyebrow neutro">Barbearias</div><h1>Lojas</h1><p class="sub-cab">Stock de consumíveis e produtos, pedidos da semana, trocos e manutenção.</p></div></div>';
     if (L.estado === "erro") {
@@ -64,13 +64,14 @@ export function criarLojas(ctx) {
     }
     if (L.estado !== "pronto") return h + '<div class="tabela">' + [1, 2, 3].map((i) => '<div class="esqueleto"><i style="width:' + (30 + i * 14) + '%"></i></div>').join("") + "</div>";
     const tabs = [["stock", "Stock"], ["pedidos", "Pedidos"]];
-    if (podeFinanceiro(eu())) tabs.push(["cadeiras", "Aluguer de cadeiras"]);
+    if (podeFinanceiro(eu())) tabs.push(["marcacoes", "Marcações"], ["cadeiras", "Aluguer de cadeiras"]);
     if (eGestor(eu())) tabs.push(["definicoes", "Definições"]);
     if (!tabs.some(([k]) => k === L.tab)) L.tab = "stock";
     const nAbertos = abertos().filter((p) => p.estado === "pedido" && podeTratar(p.tipo)).length;
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="loj-tab" data-tab="' + k + '" aria-selected="' + (L.tab === k) + '">' + r + (k === "pedidos" && nAbertos ? ' <span class="mono">' + nAbertos + "</span>" : "") + "</button>").join("") + "</div>";
     if (L.tab === "definicoes") return h + vistaDefinicoes();
     if (L.tab === "cadeiras") return h + vistaCadeiras();
+    if (L.tab === "marcacoes" && ctx.vistaEstat) return h + ctx.vistaEstat();
     const m = minhas();
     if (!m.length) return h + '<div class="vazio"><h3>Ainda não há lojas atribuídas</h3><p>' + (eGestor(eu()) ? "Escolhe os responsáveis em <b>Definições</b>." : "Pede à direção para te pôr como responsável da tua loja.") + "</p></div>";
     const atual = lojaAtual();

@@ -1227,6 +1227,20 @@ export function criarDemo() {
     })(),
 
     // 26 Academy (igual ao script 19), com formandos e formações de exemplo
+    // Estatísticas das barbearias (exemplo: começa vazio; importa-se um ficheiro .Booknetic)
+    bar: (() => {
+      const K = "central26-demo-bar-v1";
+      const ler = () => { try { return JSON.parse(localStorage.getItem(K) || "null"); } catch { return null; } };
+      return {
+        async carregar() { const d = ler(); return d ? structuredClone(d) : { stats: [], horas: [], imp: null }; },
+        async importar(p) {
+          if (!eGestor(eu())) throw new Error("Só a direção importa as estatísticas das barbearias.");
+          const d = { stats: p.linhas, horas: p.horas, imp: { id: 1, resumo: p.resumo, ficheiro: p.ficheiro, importado_em: agora(), importado_por: euId } };
+          try { localStorage.setItem(K, JSON.stringify(d)); } catch { /* sem espaço */ }
+          return { linhas: p.linhas.length, horas: p.horas.length };
+        },
+      };
+    })(),
     // Lojas (exemplo)
     loj: (() => {
       const K = "central26-demo-loj-v1";

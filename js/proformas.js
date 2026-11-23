@@ -208,7 +208,7 @@ export function criarProformas(ctx) {
     if (c?.linhas) {
       const okL = c.linhas.filter((x) => x.cod);
       h += '<div class="tabela-scroll"><table class="crm-tabela"><thead><tr><th>Linha colada</th><th>Produto encontrado</th><th class="n">Preços</th></tr></thead><tbody>' +
-        c.linhas.map((x) => "<tr><td>" + esc(x.nome) + "</td><td>" + (x.cod ? esc(descDe(x.cod)) + '<small class="mono">' + esc(x.cod) + "</small>" : '<span class="at">Não encontrado: preenche à mão</span>') + '</td><td class="n">' + esc(Object.entries(x.v).map(([k, v]) => (COLS().find((y) => y[0] === k)?.[1] || k) + " " + eur2(v)).join(" · ")) + "</td></tr>").join("") +
+        c.linhas.map((x) => "<tr><td>" + esc(x.nome) + "</td><td>" + (x.cod ? esc(descDe(x.cod)) + '<small class="mono">' + esc(x.cod) + "</small>" : x.repetido ? '<span class="at">Parece «' + esc(x.repetido) + '», que já ficou com outra linha: preenche à mão</span>' : '<span class="at">Não encontrado: preenche à mão</span>') + '</td><td class="n">' + esc(Object.entries(x.v).map(([k, v]) => (COLS().find((y) => y[0] === k)?.[1] || k) + " " + eur2(v)).join(" · ")) + "</td></tr>").join("") +
         "</tbody></table></div>" + '<div class="acts"><button class="btn pri" data-acao="pf-colar-gravar"' + (okL.length ? "" : " disabled") + ">Gravar " + okL.length + " produto" + (okL.length === 1 ? "" : "s") + '</button><button class="btn sec" data-acao="pf-colar-limpar">Limpar</button></div>';
     }
     return h + "</details>";
@@ -217,7 +217,7 @@ export function criarProformas(ctx) {
   function lerColagem(txt, fmt) {
     const prods = Object.values(S.crm?.produtos || {}).filter((x) => x.linha === "produtos");
     const ordem = fmt === "pvd" ? ["pvd30", "pvd40", "pvd50", "base", "prvp"] : ["base", "pro6", "pro12", "prvp"];
-    return String(txt).split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+    const linhas = String(txt).split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
       const cel = l.split(/\t|\s{2,}|\|/).map((x) => x.trim()).filter(Boolean);
       let nome = cel[0] || "";
       let nums = cel.slice(1).filter((x) => !/%\s*$/.test(x)).map(lerNum).filter((n) => n != null && !Number.isNaN(n));
@@ -231,12 +231,20 @@ export function criarProformas(ctx) {
       for (const p of prods) {
         const kp = chaves(p.descricao), tp = kp.find((w) => /^\d+(ml|gr|g)$/.test(w));
         if (tam && tp && tam !== tp) continue;
-        const nota = kn.filter((w) => kp.includes(w)).length + (tam && tam === tp ? 1 : 0) - (tp && !tam ? 0.25 : 0);
+        // tem de coincidir pelo menos uma palavra do nome (o tamanho sozinho não chega)
+        const pal = kn.filter((w) => w.length > 2 && !/^\d/.test(w) && kp.includes(w)).length;
+        if (!pal) continue;
+        const nota = pal * 2 + (tam && tam === tp ? 1 : 0) - (tp && !tam ? 0.25 : 0);
         if (nota > melhor) { melhor = nota; cod = p.codigo; }
       }
       if (melhor < 1) cod = null;
-      return { nome, v, cod };
+      return { nome, v, cod, nota: melhor };
     }).filter((x) => x.nome && Object.keys(x.v).length);
+    // dois produtos colados não podem ir parar ao mesmo produto do catálogo: fica o que tem o nome mais parecido
+    const dono = new Map();
+    linhas.forEach((x, i) => { if (!x.cod) return; const j = dono.get(x.cod); if (j == null || linhas[j].nota < x.nota) dono.set(x.cod, i); });
+    linhas.forEach((x, i) => { if (x.cod && dono.get(x.cod) !== i) { x.repetido = descDe(x.cod); x.cod = null; } });
+    return linhas;
   }
 
   function vistaDefinicoes() {
@@ -365,7 +373,7 @@ export function criarProformas(ctx) {
       if (lim) h += '<div class="pf-patamar' + (conta >= lim ? " ok" : "") + '"><b>' + esc(nomeEsc(prox)) + "</b> " + (conta >= lim
         ? "já está ao alcance" + (porAno ? " (compras dos últimos 12 meses + esta proforma)" : "") + ". Com esse preço o cliente poupa " + eur2(poup) + " nesta encomenda."
         : "· faltam " + eur2(lim - conta) + (porAno ? " (contando as compras dos últimos 12 meses)" : "") + ". Com esse preço o cliente pouparia " + eur2(poup) + " nesta encomenda.") +
-        '<i style="--p:' + Math.min(100, Math.round((conta / lim) * 100)) + '%"></i></div>';
+        '<span class="pf-pat-barra"><i style="width:' + Math.min(100, Math.round((conta / lim) * 100)) + '%"></i></span></div>';
     }
     return h;
   }

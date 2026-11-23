@@ -2046,11 +2046,12 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .pf-totais b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
 .pf-totais .tot{border-top:2px solid var(--ink);margin-top:4px;padding-top:7px;font-size:16px}
 .pf-totais .tot b{font-weight:700}
-.pf-patamar{position:relative;margin-top:10px;padding:10px 12px 14px;border-radius:10px;background:var(--sunken);font-size:13px;color:var(--muted);overflow:hidden}
+.pf-patamar{position:relative;margin-top:10px;padding:10px 12px 12px;border-radius:10px;background:var(--sunken);font-size:13px;color:var(--muted);overflow:hidden}
 .pf-patamar b{color:var(--ink)}
-.pf-patamar i{position:absolute;left:0;bottom:0;height:4px;width:var(--p);background:var(--b);border-radius:0 3px 3px 0;transition:width .3s}
+.pf-pat-barra{display:block;height:5px;border-radius:3px;background:var(--line);margin-top:8px;overflow:hidden}
+.pf-pat-barra i{display:block;height:100%;min-width:4px;background:var(--b);border-radius:3px;transition:width .3s}
 .pf-patamar.ok{background:var(--ok-bg);color:var(--ok)}
-.pf-patamar.ok i{background:var(--ok)}
+.pf-patamar.ok .pf-pat-barra i{background:var(--ok)}
 .nacex .muted{font-size:13px;margin:0}
 .nx-campos{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .nx-linha{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 10px;border-top:1px solid var(--line);font-size:13.5px}
@@ -2102,3 +2103,7 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .loj-pedir-l .inp.mini.n{width:70px;flex:none}
 @media (max-width:560px){.loj-ped{grid-template-columns:minmax(0,1fr) auto}.loj-ped .mono{display:none}}
 @media (max-width:560px){.loj-stock th:nth-child(4),.loj-stock td:nth-child(4){display:none}.loj-stock td{padding:8px 4px}}
+.loj-def-linha .inp,#loj-cad-mes{height:36px;border:1px solid var(--line-strong);border-radius:8px;padding:0 10px;background:var(--surface);color:var(--ink);outline:none;min-width:0;font:inherit;font-size:14px}
+.loj-def-linha .inp:focus,#loj-cad-mes:focus{border-color:var(--b)}
+.loj-def-linha .inp.mini{height:32px;font-size:13px;border-radius:6px}
+@media (max-width:560px){.pf-tab{min-width:0}.pf-tab th:nth-child(3),.pf-tab td:nth-child(3),.pf-tab th:nth-child(4),.pf-tab td:nth-child(4){display:none}}

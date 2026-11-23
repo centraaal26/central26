@@ -201,6 +201,8 @@ export function criarDemo() {
       },
       async atualizar(id, campos) { const d = db.departamentos.find((x) => x.id === id); Object.assign(d, campos); gravar(db); return d; },
     },
+    // barbeiros de exemplo da folha da faturação
+    async equipaFolha() { return [["Tiago Exemplo", "Madalena"], ["Hugo Exemplo", "Porto"], ["Rafael Exemplo", "Arcozelo"]].map(([barbeiro, loja]) => ({ mes: "2026-10", loja, barbeiro })); },
     async empregados(acao, dados) {
       const pass = "Central-" + Math.floor(1000 + Math.random() * 9000) + "-demo";
       if (acao === "criar") {

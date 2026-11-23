@@ -2107,3 +2107,5 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .loj-def-linha .inp:focus,#loj-cad-mes:focus{border-color:var(--b)}
 .loj-def-linha .inp.mini{height:32px;font-size:13px;border-radius:6px}
 @media (max-width:560px){.pf-tab{min-width:0}.pf-tab th:nth-child(3),.pf-tab td:nth-child(3),.pf-tab th:nth-child(4),.pf-tab td:nth-child(4){display:none}}
+.lote-tab{min-width:620px;font-size:13.5px}
+.lote-tab input[type=checkbox]{width:17px;height:17px;accent-color:var(--b)}

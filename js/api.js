@@ -291,6 +291,14 @@ export function criarApi() {
         return () => sb.removeChannel(canal);
       },
     },
+    // barbeiros das folhas da faturação dos últimos 3 meses importados (script 21), para «Criar várias contas»
+    async equipaFolha() {
+      const r = await sb.from("fin_barbeiros").select("mes, loja, barbeiro").order("mes", { ascending: false }).limit(600);
+      if (r.error || !r.data.length) return [];
+      const meses = [...new Set(r.data.map((x) => x.mes))].slice(0, 3), vistos = new Map();
+      for (const x of r.data) if (meses.includes(x.mes) && !vistos.has(x.barbeiro.toLowerCase())) vistos.set(x.barbeiro.toLowerCase(), x);
+      return [...vistos.values()];
+    },
     async empregados(acao, dados) {
       const chamada = {
         criar: ["admin_criar_empregado", { p_nome: dados.nome, p_email: dados.email, p_cargo: dados.cargo || "", p_telefone: dados.telefone || "",

@@ -8,6 +8,7 @@ import { MODELOS } from "./modelos.js";
 import { criarCrm, podeCrm } from "./crm.js";
 import { criarProformas } from "./proformas.js";
 import { criarLojas } from "./lojas.js";
+import { criarEquipaLote } from "./equipa-lote.js";
 import { criarChat } from "./chat.js";
 import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { criarLogistica, podeEncomendas } from "./logistica.js";
@@ -981,7 +982,7 @@ function vistaEquipa() {
   const pessoas = listaPerfis().filter((p) => p.ativo || g);
   const abertas = todas().filter((t) => t.responsavel_id && !concluida(t)), atraso = todas().filter((t) => emAtraso(t, S.hoje)).length;
   let h = '<div class="cab"><div><div class="eyebrow neutro">Grupo 26</div><h1>Equipa</h1></div>' +
-    (g ? '<div class="acts"><button class="btn sec" data-acao="novo-dep">Novo departamento</button><button class="btn pri" data-acao="novo-empregado">' + I.plus + "Adicionar empregado</button></div>" : "") + "</div>";
+    (g ? '<div class="acts"><button class="btn sec" data-acao="novo-dep">Novo departamento</button><button class="btn sec" data-acao="lote-abrir">' + I.equipa + 'Criar várias contas</button><button class="btn pri" data-acao="novo-empregado">' + I.plus + "Adicionar empregado</button></div>" : "") + "</div>";
   h += '<div class="resumo-crm resumo-eq"><div class="kpi"><span>Pessoas ativas</span><b>' + ativos().length + '</b></div><div class="kpi"><span>Departamentos</span><b>' + listaDeps().length +
     '</b></div><div class="kpi"><span>Tarefas por fazer</span><b>' + abertas.length + '</b></div><div class="kpi' + (atraso ? " alerta-kpi" : "") + '"><span>Em atraso</span><b>' + atraso + "</b></div></div>";
   const porDep = {};
@@ -1275,6 +1276,7 @@ function painelHTML() {
   if (a.tipo === "cliente" || a.tipo === "crm-novo") return CRM.painel(a);
   if (a.tipo === "proforma" || a.tipo === "pf-escolher") return PF.painel(a);
   if (a.tipo === "loj-novo" || a.tipo === "loj-pedido") return LOJ.painel(a);
+  if (a.tipo === "lote") return LOTE.painel(a);
   if (a.tipo === "evento") return AGENDA.painel(a);
   if (["encomenda", "enc-nova", "rota-nova", "local-novo"].includes(a.tipo)) return LOG.painel(a);
   if (a.tipo === "aud-item" || a.tipo === "aud-novo") return AUD.painel(a);
@@ -1524,7 +1526,7 @@ document.addEventListener("click", async (e) => {
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
     case "sincronizar": api.sincronizar?.(); break;
-    default: FIA.clique(acao, el, e) || PF.clique(acao, el) || LOJ.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
+    default: FIA.clique(acao, el, e) || PF.clique(acao, el) || LOJ.clique(acao, el) || LOTE.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
@@ -1651,7 +1653,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (FIA.mudar(e) || PF.mudar(e) || LOJ.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
+  if (FIA.mudar(e) || PF.mudar(e) || LOJ.mudar(e) || LOTE.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
   if (t.id === "pf-foto" && t.files?.[0]) { mudarFoto(t.files[0]); t.value = ""; return; }
   if (t.dataset.pref && S.prefs && !S.prefs.falta) {
     const campo = t.dataset.pref, v = t.checked; S.prefs = { ...S.prefs, [campo]: v };
@@ -1710,6 +1712,7 @@ async function ativarPush() {
   } catch (e) { render(); falha(e); }
 }
 
+const LOTE = criarEquipaLote({ S, api, esc, I, toast, renderPainel, recarregar });
 const LOJ = criarLojas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeFinanceiro });
 const PF = criarProformas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeCrm, carregarCrm: () => CRM.carregar(), aoFaturar: () => { if (LOG.estado() !== "por-carregar") LOG.carregar(); } });
 const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $, vistaProformas: () => PF.vista(), extraCliente: (c) => PF.blocoCliente(c) + (podeAcademy(S.eu) ? ACA.blocoCliente(c) : "") });

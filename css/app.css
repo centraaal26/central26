@@ -2189,3 +2189,20 @@ body.protegida img{-webkit-user-drag:none}
   body.protegida>*{display:none!important}
   body.protegida::before{content:"A impressão não está disponível nesta conta.";display:block;padding:40px;font:16px sans-serif}
 }
+
+/* ---------- Envio pela Nacex (webservice) ---------- */
+.nx-envio{display:flex;flex-direction:column;gap:10px}
+.nx-est{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:8px;padding:10px 12px;border-radius:10px;background:var(--sunken)}
+.nx-est i{width:10px;height:10px;border-radius:50%;background:var(--faint)}
+.nx-est small{grid-column:2;color:var(--muted);font-size:12.5px}
+.nx-est.nx-transito i,.nx-est.nx-reparto i,.nx-est.nx-recogido i{background:var(--warn)}
+.nx-est.nx-ok i{background:var(--ok)}
+.nx-est.nx-incidencia i{background:var(--danger)}
+.nx-est.nx-incidencia b{color:var(--danger)}
+.nx-criar{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.nx-criar label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.nx-criar input{width:110px;padding:8px 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px}
+.nx-manual{border-top:1px solid var(--line);padding-top:10px}
+.nx-manual>summary{cursor:pointer;font-size:13.5px;color:var(--muted);font-weight:600}
+.nx-manual[open]>summary{margin-bottom:10px}
+.nx-manual>*+*{margin-top:10px}

@@ -427,6 +427,8 @@ export function criarApi() {
       async emailTeste() { return invocar("enviar-push", { acao: "email-teste" }); },
     },
 
+    // Envios pela Nacex (função «nacex» no servidor; as credenciais nunca chegam ao navegador)
+    async nacex(acao, dados) { return invocar("nacex", { acao, ...(dados || {}) }); },
     ia: {
       async conversas() { const { data, error } = await sb.from("ia_conversas").select("*").order("atualizado_em", { ascending: false }).limit(100); if (error) throw new Error(/ia_conversas|PGRST20/.test(error.message + error.code) ? "FALTA_SCRIPT" : error.message); return data; },
       async mensagens(id) { return ok(await sb.from("ia_mensagens").select("*").eq("conversa_id", id).order("id")); },

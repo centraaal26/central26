@@ -123,6 +123,7 @@ export function criarDemo() {
     async sair() { euId = null; try { localStorage.removeItem(CHAVE_EU); } catch { /* */ } },
     async mudarPassword() { const p = eu(); if (p) p.mudar_password = false; gravar(db); },
     async meuPerfil(id) { return db.perfis.find((p) => p.id === id) || null; },
+    async nacex(acao, dados) { return ganchos.nacex(acao, dados || {}); },
     repor() { try { localStorage.removeItem(CHAVE); } catch { /* */ } db = ler(); },
 
     async carregar() {
@@ -436,7 +437,7 @@ export function criarDemo() {
            ["Exemplo · Barbearia Arcozelo (reposição)", "Arcozelo, Vila Nova de Gaia", "interna", [["Toalhas", 40], ["SPARK", 10]], "p-marcos", "em_preparacao"]].forEach(([cliente_nome, morada, tipo, itens, por, estado], i) =>
             d.encomendas.push({ id: uid(), numero: d.seq++, tipo, estado, prioridade: i === 1 ? "alta" : "media", cliente_nome, crm_cliente_id: null, contacto: "", morada, lat: null, lng: null, morada_geo: "",
               itens: itens.map(([descricao, qtd], j) => ({ id: "i" + j, descricao, qtd, preparado: estado !== "nova" && j === 0 })), notas: "", fatura_numero: "Fac 26DNT/" + (510 + i), fatura_ficheiro: "", fatura_nome: "",
-              data_prevista: ymd(amanha), responsavel_id: null, rota_id: null, criado_por: por, criado_em: agora(), atualizado_em: agora(), atualizado_por: por, entregue_em: null, entregue_por: null }));
+              data_prevista: ymd(amanha), responsavel_id: null, rota_id: null, transportadora: "", tracking: "", envio: null, proforma_id: null, criado_por: por, criado_em: agora(), atualizado_em: agora(), atualizado_por: por, entregue_em: null, entregue_por: null }));
         }
         return d;
       };
@@ -495,6 +496,28 @@ export function criarDemo() {
           db.perfis.filter((p) => p.ativo && p.id !== euId && p.departamento_id === "logistica")
             .forEach((p) => notificar(p.id, "encomenda", "Nova encomenda E-" + String(r.numero).padStart(4, "0"), nome(euId) + " · " + r.cliente_nome, "#encomenda-" + r.id));
           gravar(db); return r;
+        }, null),
+        // Envio pela Nacex no modo de demonstração: cria um envio de teste, sem contactar a Nacex
+        _nacex: (ganchos.nacex = async (acao, dados) => {
+          await new Promise((r) => setTimeout(r, 500));
+          const x = ler();
+          if (acao === "atualizar") return { ok: true, vistos: 0, mudaram: 0 };
+          const r = x.encomendas.find((e) => e.id === dados.id); if (!r) throw new Error("Encomenda não encontrada.");
+          if (acao === "criar") {
+            const v = r.envio || {};
+            const falta = [!(v.morada || r.morada) && "morada", !(v.cp || /\d{4}-\d{3}/.test(r.morada || "")) && "código postal"].filter(Boolean);
+            if (falta.length) throw new Error("Faltam dados de envio: " + falta.join(", ") + ". Corrige a ficha do cliente ou a encomenda.");
+            const d = new Date(); d.setDate(d.getDate() + 1);
+            r.nacex = { expe_codigo: "999999999", albaran: "7440/999999999", servico: "NACEX 19:00H", data_prevista: d.toLocaleDateString("pt-PT"), agencia_entrega: "Exemplo", volumes: +dados.volumes || 1, peso: +dados.peso || 1,
+              seguimento: "", teste: true, estado: "DOCUMENTADO", criado_em: agora() };
+            r.tracking = r.nacex.albaran; r.transportadora = "nacex"; guardar();
+            return { ok: true, nacex: structuredClone(r.nacex), pdf: null };
+          }
+          if (!r.nacex) throw new Error("Esta encomenda ainda não tem envio criado na Nacex.");
+          if (acao === "etiqueta") throw new Error("No modo de demonstração não há etiquetas reais da Nacex.");
+          if (acao === "estado") { r.nacex = { ...r.nacex, estado: "TRANSITO", estado_data: new Date().toLocaleString("pt-PT"), estado_em: agora() }; guardar(); return { ok: true, nacex: structuredClone(r.nacex), estado: r.estado }; }
+          if (acao === "cancelar") { r.nacex = null; r.tracking = ""; guardar(); return { ok: true }; }
+          throw new Error("Ação desconhecida.");
         }, null),
         rotas: {
           async criar(o) { if (!podeVer()) throw new Error("Sem permissão para gerir rotas."); const x = ler(), r = { id: uid(), estado: "planeada", criado_por: euId, criado_em: agora(), atualizado_em: agora(), ...o }; x.rotas.unshift(r); guardar(); return structuredClone(r); },

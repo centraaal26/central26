@@ -36,6 +36,7 @@ export function criarLogistica(ctx) {
       G.rotas = Object.fromEntries(d.rotas.map((x) => [x.id, x]));
       G.estado = "pronto";
       if (!desligar) desligar = api.log.subscrever(aoMudar);
+      setTimeout(atualizarNacex, 1500);
     } catch (e) { G.estado = /PGRST205|log_encomendas|Could not find/i.test(String(e?.message)) ? "falta-script" : "erro"; G.erro = e.message; }
     agendarRender();
     if (["encomenda", "enc-nova"].includes(S.aberto?.tipo)) renderPainel(true);
@@ -246,16 +247,77 @@ export function criarLogistica(ctx) {
     return [["Serviço", v.servico || "27"], ["Nome", v.nome || e.cliente_nome], ["Telefone", v.telefone || e.contacto], ["Telemóvel", v.telemovel || ""],
       ["Morada", String(v.morada || e.morada || "").replace(/,?\s*\d{4}-\d{3}.*$/, "").trim()], ["Código postal", cp], ["Email", v.email || ""], ["Referência", ref(e) + (e.fatura_numero ? " · " + e.fatura_numero : "")]];
   }
+  // Estados da Nacex em português
+  const NX_EST = { DOCUMENTADO: "Envio criado, à espera de recolha", RECOGIDO: "Recolhido pela Nacex", TRANSITO: "Em trânsito", REPARTO: "Em distribuição", OK: "Entregue", INCIDENCIA: "Incidência" };
   function blocoNacex(e) {
-    const pode = podeEntregar() || podeTratar();
-    return '<section class="p-sec nacex"><h3>Envio pela Nacex</h3>' +
-      '<p class="muted">No portal: <b>myNacex → Documentar envio</b>, escolhe o código de cliente guardado, a data de hoje e o <b>serviço ' + esc(dadosEnvio(e)[0][1]) + "</b>. Copia os dados abaixo (a localidade, a província e a delegação preenchem-se sozinhas com o código postal) e carrega em <b>Guardar</b>. " +
-      "Depois, em <b>myNacex → Gestão</b>, abre o envio pela opção da direita (no aviso de impressão escolhe «não») e copia o número de tracking.</p>" +
+    const pode = podeEntregar() || podeTratar(), nx = e.nacex, ocupado = G.nxOcupado === e.id;
+    let h = '<section class="p-sec nacex"><h3>Envio pela Nacex</h3>';
+    if (nx && nx.expe_codigo) {
+      const est = nx.estado || "DOCUMENTADO";
+      h += (nx.teste ? '<div class="aviso"><span>A ligação à Nacex ainda está em <b>modo de testes</b>: este envio não é real. Quando a Nacex ativar o modo real, cancela-o e cria-o de novo.</span></div>' : "") +
+        '<div class="nx-envio"><div class="nx-est nx-' + esc(est.toLowerCase()) + '"><i></i><b>' + esc(NX_EST[est] || est) + "</b>" + (nx.estado_data ? "<small>" + esc(nx.estado_data) + (nx.estado_obs ? " · " + esc(nx.estado_obs) : "") + "</small>" : "") + "</div>" +
+        '<div class="nx-campos">' + [["Carta de porte", nx.albaran], ["Serviço", nx.servico], ["Entrega prevista", nx.data_prevista], ["Volumes", nx.volumes + (nx.volumes == 1 ? " volume" : " volumes") + " · " + String(nx.peso).replace(".", ",") + " kg"], ["Agência de entrega", nx.agencia_entrega]]
+          .filter(([, v]) => v).map(([r, v]) => '<div class="nx-linha"><span>' + r + "</span><b>" + esc(v) + "</b><i></i></div>").join("") + "</div></div>" +
+        '<div class="acts">' + (pode ? '<button class="btn pri" data-acao="nx-etiqueta"' + (ocupado ? " disabled" : "") + ">" + I.nota + "Etiqueta (PDF)</button>" : "") +
+        (nx.seguimento ? '<a class="btn sec" href="' + esc(nx.seguimento) + '" target="_blank" rel="noopener">' + I.out + "Seguimento na Nacex</a>" : "") +
+        (pode ? '<button class="btn sec" data-acao="nx-estado"' + (ocupado ? " disabled" : "") + ">Atualizar estado</button>" : "") + "</div>" +
+        (pode && !["OK"].includes(est) ? (G.nxCancelar === e.id
+          ? '<div class="aviso aviso-acao"><span>Cancelar o envio ' + esc(nx.albaran) + ' na Nacex?</span><span class="acts"><button class="btn perigo" data-acao="nx-cancelar-sim">Cancelar envio</button><button class="btn sec" data-acao="nx-cancelar-nao">Voltar</button></span></div>'
+          : '<div class="acts"><button class="btn perigo-sec" data-acao="nx-cancelar">Cancelar envio na Nacex</button></div>') : "");
+      return h + "</section>";
+    }
+    if (pode && e.estado !== "cancelada") {
+      h += '<p class="muted">A Central cria o envio na Nacex (serviço ' + esc(dadosEnvio(e)[0][1]) + ") com os dados abaixo e devolve a etiqueta pronta a imprimir e o tracking.</p>" +
+        '<div class="nx-campos">' + dadosNacex(e).map(([r, v]) => '<div class="nx-linha"><span>' + r + "</span><b" + (v ? "" : ' class="falta"') + ">" + esc(v || "em falta") + "</b><i></i></div>").join("") + "</div>" +
+        '<div class="nx-criar"><label>Volumes<input id="nx-vol" type="number" min="1" max="99" value="1" inputmode="numeric"></label>' +
+        '<label>Peso total (kg)<input id="nx-peso" type="number" min="0.1" step="0.1" value="1" inputmode="decimal"></label>' +
+        '<button class="btn pri" data-acao="nx-criar"' + (ocupado ? " disabled" : "") + ">" + (ocupado ? "A criar o envio…" : "Criar envio Nacex") + "</button></div>";
+    }
+    // Sem ligação ou para fazer à mão: ficha para copiar para o portal e campo de tracking
+    h += '<details class="nx-manual"' + (pode && e.estado !== "cancelada" ? "" : " open") + '><summary>Fazer no portal da Nacex, à mão</summary>' +
+      '<p class="muted">No portal: <b>myNacex → Documentar envio</b>, escolhe o código de cliente guardado, a data de hoje e o <b>serviço ' + esc(dadosEnvio(e)[0][1]) + "</b>. Copia os dados abaixo e carrega em <b>Guardar</b>. " +
+      "Depois, em <b>myNacex → Gestão</b>, abre o envio e copia o número de tracking.</p>" +
       '<div class="nx-campos">' + dadosEnvio(e).map(([r, v], i) => '<div class="nx-linha"><span>' + r + "</span><b" + (v ? "" : ' class="falta"') + ">" + esc(v || "em falta") + "</b>" +
         (v ? '<button class="ib" data-acao="enc-copiar" data-i="' + i + '" aria-label="Copiar ' + esc(r) + '">Copiar</button>' : "<i></i>") + "</div>").join("") + "</div>" +
       '<div class="acts"><a class="btn sec" href="https://www.nacex.com/irGestionEnvio.do" target="_blank" rel="noopener">' + I.out + "Abrir o portal da Nacex</a></div>" +
       '<div class="campo"><label for="enc-tracking">Número de tracking</label><input id="enc-tracking" value="' + esc(e.tracking || "") + '" placeholder="Cola aqui o tracking da Nacex" autocomplete="off"' + (pode ? "" : " disabled") + ">" +
-      '<span class="ajuda">Quando guardas o tracking, quem fatura recebe o aviso para imprimir a etiqueta e entregá-la à Logística.</span></div></section>';
+      '<span class="ajuda">Quando guardas o tracking, quem fatura recebe o aviso para imprimir a etiqueta e entregá-la à Logística.</span></div></details>';
+    return h + "</section>";
+  }
+  // Dados que seguem para a Nacex (a localidade vem da ficha do cliente ou do que vem depois do código postal na morada)
+  function dadosNacex(e) {
+    const d = dadosEnvio(e), v = e.envio || {};
+    const loc = v.localidade || (String(e.morada || "").match(/\d{4}-\d{3}\s+(.+)$/) || [])[1] || "";
+    return [d[1], d[2], d[3], d[4], d[5], ["Localidade", loc], d[6]];
+  }
+  function abrirPdf(base64, nome) {
+    const bin = atob(base64), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([u8], { type: "application/pdf" }));
+    const w = window.open(url, "_blank");
+    if (!w) { const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  async function nacex(acao, e, extra) {
+    if (!api.nacex) { toast("A app foi atualizada a meio. Recarrega a página.", true); return; }
+    G.nxOcupado = e.id; G.nxCancelar = null; renderPainel(true);
+    try {
+      const r = await api.nacex(acao, { id: e.id, ...(extra || {}) });
+      const atual = G.encomendas[e.id];
+      if (acao === "criar" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, tracking: r.nacex.albaran, transportadora: "nacex" }; toast(r.nacex.teste ? "Envio de teste criado na Nacex" : "Envio criado na Nacex · " + r.nacex.albaran); }
+      if (acao === "estado" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, estado: r.estado || atual.estado }; toast("Estado atualizado"); }
+      if (acao === "cancelar" && atual) { G.encomendas[e.id] = { ...atual, nacex: null, tracking: "" }; toast("Envio cancelado na Nacex"); }
+      if (r.pdf) abrirPdf(r.pdf, "Etiqueta-" + ref(e) + ".pdf");
+    } catch (err) { falha(err); }
+    G.nxOcupado = null; agendarRender(); renderPainel(true);
+  }
+  // Ao abrir a Logística, pede à Nacex o estado dos envios em curso (no máximo de 30 em 30 minutos)
+  let nxVisto = 0;
+  function atualizarNacex() {
+    if (!api.nacex || !podeEntregar() || Date.now() - nxVisto < 30 * 60000) return;
+    if (!encomendas().some((e) => e.nacex?.expe_codigo && !["entregue", "cancelada"].includes(e.estado))) return;
+    nxVisto = Date.now();
+    api.nacex("atualizar", {}).then((r) => { if (r?.mudaram) { G.estado = "por-carregar"; carregar(); } }).catch(() => { /* tenta na próxima vez */ });
   }
 
   /* ---------- ligação aos Stocks da TwentySix ---------- */
@@ -480,6 +542,12 @@ export function criarLogistica(ctx) {
   function clique(acao, el) {
     const id = el.dataset.id;
     switch (acao) {
+      case "nx-criar": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("criar", e, { volumes: document.getElementById("nx-vol")?.value, peso: document.getElementById("nx-peso")?.value }); return true; }
+      case "nx-etiqueta": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("etiqueta", e); return true; }
+      case "nx-estado": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("estado", e); return true; }
+      case "nx-cancelar": G.nxCancelar = S.aberto?.id; renderPainel(true); return true;
+      case "nx-cancelar-nao": G.nxCancelar = null; renderPainel(true); return true;
+      case "nx-cancelar-sim": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("cancelar", e); return true; }
       case "enc-copiar": {
         const e = G.encomendas[S.aberto?.id]; if (!e) return true;
         const [r, v] = dadosEnvio(e)[+el.dataset.i] || [];

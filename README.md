@@ -320,6 +320,17 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 3. esconde os valores até a pessoa tocar neles, e voltam a esconder-se ao fim de 6 segundos;
 4. não deixa copiar, abrir o menu de contexto, arrastar nem imprimir.
 
+### 3z-c. Envios pela Nacex (webservice)
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/28-nacex-webservice.sql` → **Run**.
+2. Edge Functions → **Deploy a new function** → nome `nacex` → cola `supabase/functions/nacex/index.ts` → **Deploy**.
+3. Edge Functions → **Secrets** → acrescenta (os valores vêm da Nacex e nunca vão para o GitHub):
+   - `NACEX_UTILIZADOR`: o utilizador do webservice (começa pelo de testes);
+   - `NACEX_CHAVE`: a palavra-passe em MD5, tal como a Nacex a envia;
+   - `NACEX_DELEGACAO`: a agência do cliente;
+   - `NACEX_CLIENTE`: o código de cliente (n.º de abonado).
+4. Na app: encomenda com transporte **Nacex** → **Criar envio Nacex** (volumes e peso). A Central devolve a etiqueta em PDF e guarda a carta de porte como tracking. **Etiqueta (PDF)** volta a imprimi-la; **Atualizar estado** pergunta à Nacex (também é feito sozinho quando a Logística abre as encomendas, de 30 em 30 minutos): em trânsito passa a «em rota», entregue passa a «entregue».
+5. A Nacex começa em modo de testes (envios fictícios, carta de porte com 9s). Quando os testes estiverem bem, pede a ativação do modo real a atencion.informatica@nacex.es; a Central mostra os envios de teste com um aviso.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

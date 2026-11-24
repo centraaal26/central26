@@ -258,7 +258,8 @@ export function criarLogistica(ctx) {
         '<div class="nx-envio"><div class="nx-est nx-' + esc(est.toLowerCase()) + '"><i></i><b>' + esc(NX_EST[est] || est) + "</b>" + (nx.estado_data ? "<small>" + esc(nx.estado_data) + (nx.estado_obs ? " · " + esc(nx.estado_obs) : "") + "</small>" : "") + "</div>" +
         '<div class="nx-campos">' + [["Carta de porte", nx.albaran], ["Serviço", nx.servico], ["Entrega prevista", nx.data_prevista], ["Volumes", nx.volumes + (nx.volumes == 1 ? " volume" : " volumes") + " · " + String(nx.peso).replace(".", ",") + " kg"], ["Agência de entrega", nx.agencia_entrega]]
           .filter(([, v]) => v).map(([r, v]) => '<div class="nx-linha"><span>' + r + "</span><b>" + esc(v) + "</b><i></i></div>").join("") + "</div></div>" +
-        '<div class="acts">' + (pode ? '<button class="btn pri" data-acao="nx-etiqueta"' + (ocupado ? " disabled" : "") + ">" + I.nota + "Etiqueta (PDF)</button>" : "") +
+        '<div class="acts">' + (pode ? '<button class="btn pri" data-acao="nx-etiqueta"' + (ocupado ? " disabled" : "") + ">" + I.nota + "Imprimir etiqueta</button>" +
+          '<button class="btn sec" data-acao="nx-etiqueta-pdf"' + (ocupado ? " disabled" : "") + ">Abrir PDF</button>" : "") +
         (nx.seguimento ? '<a class="btn sec" href="' + esc(nx.seguimento) + '" target="_blank" rel="noopener">' + I.out + "Seguimento na Nacex</a>" : "") +
         (pode ? '<button class="btn sec" data-acao="nx-estado"' + (ocupado ? " disabled" : "") + ">Atualizar estado</button>" : "") + "</div>" +
         (pode && !["OK"].includes(est) ? (G.nxCancelar === e.id
@@ -290,13 +291,29 @@ export function criarLogistica(ctx) {
     const loc = v.localidade || (String(e.morada || "").match(/\d{4}-\d{3}\s+(.+)$/) || [])[1] || "";
     return [d[1], d[2], d[3], d[4], d[5], ["Localidade", loc], d[6]];
   }
-  function abrirPdf(base64, nome) {
+  // Etiqueta: no computador vai direta para a janela de impressão (ou imprime sozinha, se o Chrome estiver em modo de impressão automática);
+  // no telemóvel, ou se a impressão não abrir, abre o PDF
+  const telemovel = () => matchMedia("(pointer: coarse)").matches && innerWidth <= 820;
+  function pdfUrl(base64) {
     const bin = atob(base64), u8 = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([u8], { type: "application/pdf" }));
+    return URL.createObjectURL(new Blob([u8], { type: "application/pdf" }));
+  }
+  function abrirPdf(base64, nome) {
+    const url = pdfUrl(base64);
     const w = window.open(url, "_blank");
     if (!w) { const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  function imprimirPdf(base64, nome) {
+    if (telemovel()) { abrirPdf(base64, nome); return; }
+    const url = pdfUrl(base64);
+    document.getElementById("nx-impressao")?.remove();
+    const f = document.createElement("iframe");
+    f.id = "nx-impressao"; f.title = "Etiqueta Nacex"; f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0";
+    f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch { abrirPdf(base64, nome); } }, 300);
+    f.src = url; document.body.appendChild(f);
+    setTimeout(() => { URL.revokeObjectURL(url); f.remove(); }, 120000);
   }
   async function nacex(acao, e, extra) {
     if (!api.nacex) { toast("A app foi atualizada a meio. Recarrega a página.", true); return; }
@@ -307,7 +324,7 @@ export function criarLogistica(ctx) {
       if (acao === "criar" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, tracking: r.nacex.albaran, transportadora: "nacex" }; toast(r.nacex.teste ? "Envio de teste criado na Nacex" : "Envio criado na Nacex · " + r.nacex.albaran); }
       if (acao === "estado" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, estado: r.estado || atual.estado }; toast("Estado atualizado"); }
       if (acao === "cancelar" && atual) { G.encomendas[e.id] = { ...atual, nacex: null, tracking: "" }; toast("Envio cancelado na Nacex"); }
-      if (r.pdf) abrirPdf(r.pdf, "Etiqueta-" + ref(e) + ".pdf");
+      if (r.pdf) (extra?.abrir ? abrirPdf : imprimirPdf)(r.pdf, "Etiqueta-" + ref(e) + ".pdf");
     } catch (err) { falha(err); }
     G.nxOcupado = null; agendarRender(); renderPainel(true);
   }
@@ -544,6 +561,7 @@ export function criarLogistica(ctx) {
     switch (acao) {
       case "nx-criar": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("criar", e, { volumes: document.getElementById("nx-vol")?.value, peso: document.getElementById("nx-peso")?.value }); return true; }
       case "nx-etiqueta": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("etiqueta", e); return true; }
+      case "nx-etiqueta-pdf": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("etiqueta", e, { abrir: true }); return true; }
       case "nx-estado": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("estado", e); return true; }
       case "nx-cancelar": G.nxCancelar = S.aberto?.id; renderPainel(true); return true;
       case "nx-cancelar-nao": G.nxCancelar = null; renderPainel(true); return true;

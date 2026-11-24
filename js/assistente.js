@@ -11,7 +11,7 @@ const SUGESTOES = {
   direcao: ["Resume como está a semana da equipa", "Que tarefas estão em atraso e de quem?", "Como correu a faturação das barbearias este ano?", "Que produtos estão a acabar no stock?"],
   administrativo: ["Resume como está a semana da equipa", "Que tarefas estão em atraso e de quem?", "O que tenho na agenda nos próximos dias?", "Compara as propostas dos pedidos de orçamento em aberto"],
 };
-const NOMES_FERR = { tarefas: "tarefas", equipa: "equipa", agenda: "agenda", clientes: "clientes", vendas: "vendas", encomendas: "encomendas", stocks: "stocks", fornecedores: "fornecedores", marketing: "marketing", auditoria: "auditoria", financeiro: "financeiro" };
+const NOMES_FERR = { tarefas: "tarefas", equipa: "equipa", agenda: "agenda", clientes: "clientes", vendas: "vendas", encomendas: "encomendas", stocks: "stocks", fornecedores: "fornecedores", marketing: "marketing", auditoria: "auditoria", financeiro: "financeiro", propor_tarefas: "propostas de tarefas" };
 
 export function criarAssistente(ctx) {
   const { S, api, esc, I, toast, falha, render, nomeDe, ativos, $ } = ctx;
@@ -69,6 +69,8 @@ export function criarAssistente(ctx) {
       else { A.tab = "conversa"; if (param && param !== "nova" && param !== A.ativa) abrirConversa(param); else if (!param || param === "nova") A.ativa = null; }
     }
     if (S.iaPre) { A.rascunho = S.iaPre; S.iaPre = null; A.ativa = null; setTimeout(() => { const t = $("#ia-input"); if (t) { t.focus(); autoAltura(t); } }, 50); }
+    // pedido feito noutro sítio da app (ex.: «Pedir propostas»): abre uma conversa nova e envia logo que o assistente estiver pronto
+    if (S.iaAuto && A.estado === "pronto" && !A.aEnviar) { const t = S.iaAuto; S.iaAuto = null; A.ativa = null; setTimeout(() => enviar(t), 0); }
     const g = eGestor(S.eu);
     if (A.estado === "falta-script") return cab(g) + '<div class="vazio"><h3>Falta instalar o assistente</h3><p>No Supabase, corre o ficheiro <b>supabase/14-assistente.sql</b> e instala a função <b>assistente</b> (README, passo 3n).</p></div>';
     if (A.estado === "erro") return cab(g) + '<div class="aviso erro">Não foi possível abrir o assistente: ' + esc(A.erro || "") + "</div>";
@@ -95,6 +97,7 @@ export function criarAssistente(ctx) {
     if (m.papel === "user") return '<div class="ia-msg eu"><div class="ia-b">' + esc(m.texto).replace(/\n/g, "<br>") + "</div></div>";
     const fs = (m.ferramentas || []).map((f) => NOMES_FERR[f] || f);
     return '<div class="ia-msg ia"><span class="ia-av" aria-hidden="true">' + I.ia + '</span><div class="ia-b"><div class="md">' + markdown(m.texto, esc) + "</div>" +
+      ((m.ferramentas || []).includes("propor_tarefas") ? '<a class="btn sec ia-prop" href="#propostas">' + I.tarefas + "Ver propostas para aprovar</a>" : "") +
       '<div class="ia-b-pe">' + (fs.length ? '<small class="muted">Consultou: ' + esc(fs.join(", ")) + "</small>" : "") + '<button class="ib" data-acao="ia-copiar" data-id="' + esc(String(m.id)) + '">' + I.copiar + "Copiar</button></div></div></div>";
   }
   function conversa() {

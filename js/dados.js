@@ -130,27 +130,30 @@ export function ordenar(lista) {
 
 // Permissões no ecrã (a base de dados aplica as mesmas regras)
 export const eGestor = (eu) => !!eu && (eu.papel === "ceo" || eu.papel === "admin");
+// Conta com acesso limitado: só o módulo do departamento e as suas tarefas, sem nada com valores em €
+export const eRestrito = (eu) => !!eu?.restrito;
+// Texto com valores em euros (as mesmas regras de public.tem_euros na base de dados)
+export const temEuros = (s) => /(€|\beur\b|\beuros?\b)/i.test(String(s || ""));
 export function podeAtribuirA(eu, pessoa) {
   if (!eu) return false;
   if (!pessoa || pessoa.id === eu.id) return true;
   if (!pessoa.ativo) return false;
   if (eGestor(eu)) return true;
+  if (pessoa.supervisor_id === eu.id) return true;
   return eu.papel === "chefe" && pessoa.departamento_id === eu.departamento_id;
 }
-export function podeEditar(eu, t) {
+// resp = perfil do responsável da tarefa (para saber se quem vê é o responsável direto dele)
+export function podeEditar(eu, t, resp) {
   if (!eu) return false;
-  return eGestor(eu) || t.responsavel_id === eu.id || t.criado_por === eu.id ||
-    (t.departamento_id && t.departamento_id === eu.departamento_id && (eu.papel === "chefe" || !t.responsavel_id));
+  if (eRestrito(eu) && t.tem_valores) return false;
+  return eGestor(eu) || t.responsavel_id === eu.id || t.criado_por === eu.id || (!!resp && resp.supervisor_id === eu.id) ||
+    (!eRestrito(eu) && t.departamento_id && t.departamento_id === eu.departamento_id && (eu.papel === "chefe" || !t.responsavel_id));
 }
 export function podeApagar(eu, t) {
   if (!eu) return false;
   return eGestor(eu) || t.criado_por === eu.id || (eu.papel === "chefe" && t.departamento_id && t.departamento_id === eu.departamento_id);
 }
-export function podeVer(eu, t) {
-  if (!eu) return false;
-  return eGestor(eu) || t.responsavel_id === eu.id || t.criado_por === eu.id ||
-    (t.departamento_id && t.departamento_id === eu.departamento_id && (eu.papel === "chefe" || !t.responsavel_id));
-}
+export const podeVer = podeEditar;
 
 export function iniciais(nome) {
   const p = String(nome || "?").trim().split(/\s+/);

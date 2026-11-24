@@ -35,7 +35,7 @@ export function criarPesquisa(ctx) {
     r.push(...grupo("Páginas", paginas().filter((p) => ok(p.titulo + " " + (p.chaves || ""))).map((p) => ({ titulo: p.titulo, sub: "Abrir a página", href: p.href, ic: p.ic })), 4));
     r.push(...grupo("Tarefas", todas().filter((t) => ok(t.titulo + " " + (t.notas || ""))).sort((a, b) => (a.estado === "concluido") - (b.estado === "concluido"))
       .map((t) => ({ titulo: t.titulo, sub: [MARCA[t.marca]?.nome, t.responsavel_id ? nomeDe(t.responsavel_id) : "Sem responsável", t.estado === "concluido" ? "concluída" : ""].filter(Boolean).join(" · "), href: "#tarefa-" + t.id, ic: I.check }))));
-    r.push(...grupo("Pessoas", ativos().filter((p) => ok(p.nome + " " + (p.cargo || ""))).map((p) => ({ titulo: p.nome, sub: p.cargo || "", href: "#pessoa-" + p.id, av: p.id }))));
+    if (!S.eu?.restrito) r.push(...grupo("Pessoas", ativos().filter((p) => ok(p.nome + " " + (p.cargo || ""))).map((p) => ({ titulo: p.nome, sub: p.cargo || "", href: "#pessoa-" + p.id, av: p.id }))));
     if (m.crm && S.crm?.estado === "pronto") r.push(...grupo("Clientes", Object.values(S.crm.clientes).filter((c) => ok([c.nome, c.nif, c.concelho, c.distrito, c.contacto, c.email].join(" ")))
       .map((c) => ({ titulo: c.nome, sub: [c.etapa === "lead" ? "Lead" : "Cliente", c.concelho, c.nif ? "NIF " + c.nif : ""].filter(Boolean).join(" · "), href: "#cliente-" + c.id, ic: I.loja }))));
     if (m.log && S.log?.estado === "pronto") r.push(...grupo("Encomendas", Object.values(S.log.encomendas).filter((e) => ok(["E-" + String(e.numero).padStart(4, "0"), e.cliente_nome, e.morada, e.fatura_numero, ...(e.itens || []).map((i) => i.descricao)].join(" ")))
@@ -53,7 +53,7 @@ export function criarPesquisa(ctx) {
       r.push(...grupo("Documentos", Object.values(S.mk.docs).filter((d) => ok(d.titulo + " " + d.conteudo)).map((d) => ({ titulo: d.titulo, sub: "Documento do Marketing", href: "#marketing-documentos", ic: I.megafone })), 3));
     }
     if (m.aud && S.aud?.estado === "pronto") r.push(...grupo("Auditoria", Object.values(S.aud.itens).filter((x) => ok([x.id, x.problema, x.correcao, x.categoria, x.dominio].join(" "))).map((x) => ({ titulo: x.id + " · " + x.problema, sub: [x.prioridade, x.categoria, x.dominio].filter(Boolean).join(" · "), href: "#auditoria-" + x.id, ic: I.escudo }))));
-    if (S.agenda?.estado === "pronto") r.push(...grupo("Agenda", Object.values(S.agenda.eventos).filter((e) => ok([e.titulo, e.local, e.notas].join(" "))).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))
+    if (S.agenda?.estado === "pronto" && !S.eu?.restrito) r.push(...grupo("Agenda", Object.values(S.agenda.eventos).filter((e) => ok([e.titulo, e.local, e.notas].join(" "))).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)))
       .map((e) => ({ titulo: e.titulo, sub: new Date(e.inicio).toLocaleString("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + (e.local ? " · " + e.local : ""), href: "#agenda-" + e.id, ic: I.cal })), 4));
     if (S.chat?.estado === "pronto") r.push(...grupo("Conversas", S.chat.resumo.map((c) => ({ c, nome: c.tipo === "direto" ? nomeDe(c.outro_id) || "" : c.tipo === "geral" ? "Geral" : c.nome })).filter((x) => x.nome && ok(x.nome))
       .map((x) => ({ titulo: x.nome, sub: x.c.tipo === "direto" ? "Mensagem direta" : x.c.tipo === "grupo" ? "Grupo" : "Canal", href: "#chat-" + x.c.canal_id, ic: I.balao })), 3));

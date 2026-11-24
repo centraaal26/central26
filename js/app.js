@@ -2,7 +2,7 @@
 import {
   MARCAS, MARCA, FREQS, FREQ, ESTADOS, PRIORIDADES, PAPEIS, DIA, MES_L, cap, ymd, periodo, inicioPeriodo, rotuloPeriodo,
   rotuloPrazo, dataLonga, haQuanto, estadoAtual, concluida, itensChecklist, emAtraso, ordenar, eGestor, podeAtribuirA,
-  podeEditar, podeApagar, iniciais, normalizar, semanaIso, paginar, paginador,
+  podeEditar, podeApagar, iniciais, normalizar, semanaIso, paginar, paginador, eRestrito,
 } from "./dados.js";
 import { MODELOS } from "./modelos.js";
 import { criarCrm, podeCrm } from "./crm.js";
@@ -10,6 +10,7 @@ import { criarProformas } from "./proformas.js";
 import { criarLojas } from "./lojas.js";
 import { criarEquipaLote } from "./equipa-lote.js";
 import { criarEstatBar } from "./estatisticas-bar.js";
+import { criarPropostas } from "./propostas.js";
 import { criarChat } from "./chat.js";
 import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { criarLogistica, podeEncomendas } from "./logistica.js";
@@ -163,7 +164,7 @@ async function duplicarTarefa(id) {
 /* ---------- menu ⋯ de cada tarefa ---------- */
 function abrirMenu(botao, id) {
   const t = S.tarefas[id]; if (!t) return;
-  const pode = podeEditar(S.eu, t), apaga = podeApagar(S.eu, t), feita = concluida(t);
+  const pode = podeEditar(S.eu, t, S.perfis[t.responsavel_id]), apaga = podeApagar(S.eu, t), feita = concluida(t);
   const root = $("#menu-root");
   root.innerHTML = '<div class="menu" role="menu" data-id="' + id + '">' +
     '<button role="menuitem" data-acao="m-abrir">' + I.nota + "Abrir</button>" +
@@ -241,7 +242,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); PF.reiniciar(); LOJ.reiniciar(); ESTAT.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
+  CRM.reiniciar(); PF.reiniciar(); LOJ.reiniciar(); ESTAT.reiniciar(); PROP.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -404,7 +405,7 @@ function lerRota(desenhar = true) {
   const m = h.match(/^([a-z]+)(?:-(.+))?$/);
   if (m) {
     const [, r, p] = m;
-    if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes", "reciclagem"].includes(r)) rota = r;
+    if (["inicio", "minhas", "equipa", "atividade", "notificacoes", "definicoes", "reciclagem", "propostas"].includes(r)) rota = r;
     else if (r === "comercial") { rota = "comercial"; param = ["funil", "mapa", "analise", "importar", "clientes", "proformas"].includes(p) ? p : null; }
     else if (r === "cliente" && p) { rota = "cliente"; param = p; }
     else if (r === "chat") { rota = "chat"; param = p || null; }
@@ -594,7 +595,7 @@ function vistaSemPerfil() {
 
 /* ---------- moldura da app ---------- */
 function vistaApp() {
-  const g = eGestor(S.eu);
+  const g = eGestor(S.eu), restrito = eRestrito(S.eu);
   const naoLidas = S.notifs.filter((n) => !n.lida).length;
   const minhasHoje = todas().filter((t) => t.responsavel_id === S.eu.id && ((t.freq === "diaria" && !concluida(t)) || emAtraso(t, S.hoje))).length;
   const atual = (r, p) => (S.rota === r && (p == null || S.param === p) ? ' aria-current="page"' : "");
@@ -606,26 +607,32 @@ function vistaApp() {
   side += '<a href="#minhas"' + atual("minhas") + ">" + I.tarefas + '<span class="nm">As minhas tarefas</span>' + (minhasHoje ? '<span class="ct">' + minhasHoje + "</span>" : "") + "</a>";
   const porLerChat = CHAT.naoLidas();
   side += '<a href="#chat"' + atual("chat") + ">" + I.balao + '<span class="nm">Mensagens</span>' + (porLerChat ? '<span class="ct">' + porLerChat + "</span>" : "") + "</a>";
-  side += '<a href="#assistente"' + atual("assistente") + ">" + I.ia + '<span class="nm">Assistente</span></a>';
-  side += '<a href="#agenda"' + atual("agenda") + ">" + I.cal + '<span class="nm">Agenda</span></a>';
-  side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
-  side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
-  if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
-  if (podeProspecao(S.eu)) { const n = PRS.contagem(); side += '<a href="#prospecao"' + (S.rota === "prospecao" || S.rota === "proposta" ? ' aria-current="page"' : "") + ">" + I.alvo + '<span class="nm">Prospeção</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (podeMarketing(S.eu)) { const n = MK.contagem(); side += '<a href="#marketing"' + (S.rota === "marketing" || S.rota === "publicacao" ? ' aria-current="page"' : "") + ">" + I.megafone + '<span class="nm">Marketing</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (podeStocks(S.eu)) { const n = STK.contagem(); side += '<a href="#stocks"' + (S.rota === "stocks" || S.rota === "stock" ? ' aria-current="page"' : "") + ">" + I.stock + '<span class="nm">Stocks</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (LOJ.visivel()) { const n = LOJ.contagem(); side += '<a href="#lojas"' + atual("lojas") + ">" + I.tesoura + '<span class="nm">Lojas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (podePrazos(S.eu)) { const n = PRZ.contagem(); side += '<a href="#prazos"' + (["prazos", "prazo", "viatura"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.carro + '<span class="nm">Seguros e viaturas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (podeAcademy(S.eu)) side += '<a href="#academy"' + (["academy", "formando", "formacao"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.capelo + '<span class="nm">26 Academy</span></a>';
-  if (podeFinanceiro(S.eu)) side += '<a href="#financeiro"' + atual("financeiro") + ">" + I.euro + '<span class="nm">Financeiro</span></a>';
-  if (podeOperacional(S.eu)) { const n = OP.contagem(); side += '<a href="#operacional"' + (["operacional", "fornecedor", "pedido"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.caixa + '<span class="nm">Fornecedores</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (AUD.visivel()) { const n = AUD.contagem(); side += '<a href="#auditoria"' + atual("auditoria") + ">" + I.escudo + '<span class="nm">Auditoria dos sites</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  if (podeEncomendas(S.eu)) { const n = LOG.contagem(); side += '<a href="#logistica"' + (S.rota === "logistica" || S.rota === "encomenda" ? ' aria-current="page"' : "") + ">" + I.camiao + '<span class="nm">Logística</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
-  side += '<div class="nav-rot">Marcas</div>';
-  MARCAS.forEach((m) => {
-    const n = contagemMarca(m.id);
-    side += '<a href="#marca-' + m.id + '" data-marca="' + m.id + '"' + atual("marca", m.id) + '><span class="sw"></span><span class="nm">' + esc(m.nome) + "</span>" + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>";
-  });
+  if (restrito) {
+    // conta com acesso limitado: só as tarefas, as mensagens e o módulo do departamento
+    if (podeMarketing(S.eu)) { const n = MK.contagem(); side += '<a href="#marketing"' + (S.rota === "marketing" || S.rota === "publicacao" ? ' aria-current="page"' : "") + ">" + I.megafone + '<span class="nm">Marketing</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+  } else {
+    side += '<a href="#assistente"' + atual("assistente") + ">" + I.ia + '<span class="nm">Assistente</span></a>';
+    side += '<a href="#agenda"' + atual("agenda") + ">" + I.cal + '<span class="nm">Agenda</span></a>';
+    side += '<a href="#equipa"' + atual("equipa") + ">" + I.equipa + '<span class="nm">Equipa</span></a>';
+    side += '<a href="#atividade"' + atual("atividade") + ">" + I.grafico + '<span class="nm">Quem fez o quê</span></a>';
+    if (podeCrm(S.eu)) side += '<a href="#comercial"' + (S.rota === "comercial" || S.rota === "cliente" ? ' aria-current="page"' : "") + ">" + I.loja + '<span class="nm">Comercial</span></a>';
+    if (podeProspecao(S.eu)) { const n = PRS.contagem(); side += '<a href="#prospecao"' + (S.rota === "prospecao" || S.rota === "proposta" ? ' aria-current="page"' : "") + ">" + I.alvo + '<span class="nm">Prospeção</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (podeMarketing(S.eu)) { const n = MK.contagem(); side += '<a href="#marketing"' + (S.rota === "marketing" || S.rota === "publicacao" ? ' aria-current="page"' : "") + ">" + I.megafone + '<span class="nm">Marketing</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (podeStocks(S.eu)) { const n = STK.contagem(); side += '<a href="#stocks"' + (S.rota === "stocks" || S.rota === "stock" ? ' aria-current="page"' : "") + ">" + I.stock + '<span class="nm">Stocks</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (LOJ.visivel()) { const n = LOJ.contagem(); side += '<a href="#lojas"' + atual("lojas") + ">" + I.tesoura + '<span class="nm">Lojas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (podePrazos(S.eu)) { const n = PRZ.contagem(); side += '<a href="#prazos"' + (["prazos", "prazo", "viatura"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.carro + '<span class="nm">Seguros e viaturas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (podeAcademy(S.eu)) side += '<a href="#academy"' + (["academy", "formando", "formacao"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.capelo + '<span class="nm">26 Academy</span></a>';
+    if (podeFinanceiro(S.eu)) side += '<a href="#financeiro"' + atual("financeiro") + ">" + I.euro + '<span class="nm">Financeiro</span></a>';
+    if (podeOperacional(S.eu)) { const n = OP.contagem(); side += '<a href="#operacional"' + (["operacional", "fornecedor", "pedido"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.caixa + '<span class="nm">Fornecedores</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (AUD.visivel()) { const n = AUD.contagem(); side += '<a href="#auditoria"' + atual("auditoria") + ">" + I.escudo + '<span class="nm">Auditoria dos sites</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (podeEncomendas(S.eu)) { const n = LOG.contagem(); side += '<a href="#logistica"' + (S.rota === "logistica" || S.rota === "encomenda" ? ' aria-current="page"' : "") + ">" + I.camiao + '<span class="nm">Logística</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (PROP.visivel()) { const n = PROP.contagem(); side += '<a href="#propostas"' + atual("propostas") + ">" + I.ia + '<span class="nm">Propostas de tarefas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    side += '<div class="nav-rot">Marcas</div>';
+    MARCAS.forEach((m) => {
+      const n = contagemMarca(m.id);
+      side += '<a href="#marca-' + m.id + '" data-marca="' + m.id + '"' + atual("marca", m.id) + '><span class="sw"></span><span class="nm">' + esc(m.nome) + "</span>" + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>";
+    });
+  }
   side += '</nav><div class="side-pe"><a class="eu-chip" href="#definicoes">' + av(S.eu.id) + "<span>" + esc(S.eu.nome) + "<small>" + esc(PAPEIS[S.eu.papel]) + "</small></span></a>" +
     '<span class="estado-ligacao' + (S.offline ? " off" : "") + '"><i></i>' + (S.offline ? "Sem ligação" : api.modo === "demo" ? "Modo de demonstração" : "Ligado") + "</span></div></aside>";
 
@@ -647,6 +654,8 @@ function vistaApp() {
 
   let corpo;
   if (!S.carregou) corpo = esqueleto();
+  else if (restrito && !ROTAS_RESTRITO.includes(S.rota)) corpo = vistaInicioMembro();
+  else if (S.rota === "propostas") corpo = PROP.vista();
   else if (S.rota === "marca") corpo = vistaMarca(MARCA[S.param]);
   else if (S.rota === "minhas") corpo = vistaMinhas();
   else if (S.rota === "equipa") corpo = vistaEquipa();
@@ -684,6 +693,9 @@ function vistaApp() {
   return '<div class="app">' + side + '<main class="main' + (ecraCheio ? " em-chat" : "") + '">' + topo + '<div class="wrap' + (ecraCheio ? " chat-wrap" : "") + (anim ? " anim" : "") + '" data-marca="' + marcaAtual + '">' + nova + faixaRede() + (ecraCheio ? "" : demo) + corpo + "</div></main>" + tab + "</div>";
 }
 
+// Conta com acesso limitado: só estas páginas (o resto também está fechado na base de dados)
+const ROTAS_RESTRITO = ["inicio", "minhas", "tarefa", "chat", "marketing", "publicacao", "notificacoes", "definicoes"];
+
 function esqueleto() {
   let h = '<div class="tabela" style="margin-top:24px">';
   for (let i = 0; i < 5; i++) h += '<div class="esqueleto"><i style="width:20px;height:20px;border-radius:6px"></i><i style="width:' + (35 + i * 10) + '%"></i></div>';
@@ -693,7 +705,7 @@ function esqueleto() {
 /* ============================== Linhas de tarefas ============================== */
 function linhaTarefa(t, o = {}) {
   const its = itensChecklist(t), feitos = its.filter((i) => i.feito).length, est = estadoAtual(t), feita = est === "concluido";
-  const atraso = emAtraso(t, S.hoje), hoje = t.prazo === S.hoje, pode = podeEditar(S.eu, t);
+  const atraso = emAtraso(t, S.hoje), hoje = t.prazo === S.hoje, pode = podeEditar(S.eu, t, S.perfis[t.responsavel_id]);
   const sub = [];
   if (o.marca) sub.push('<span class="tag-marca" data-marca="' + t.marca + '">' + esc(MARCA[t.marca]?.curto || "") + "</span>");
   if (o.freq && t.freq !== "unica") sub.push("<span>" + FREQ[t.freq].um + "</span>");
@@ -750,7 +762,7 @@ function quadroTarefas(lista) {
     h += '<div class="col" data-largar="' + est + '"><div class="col-h"><span class="p" style="background:' + cor + '"></span>' + ESTADOS[est] + '<span class="n">' + nesta.length + "</span></div>";
     nesta.forEach((t) => {
       const its = itensChecklist(t), f = its.filter((i) => i.feito).length;
-      h += '<div class="cartao" draggable="' + podeEditar(S.eu, t) + '" data-acao="abrir" data-id="' + t.id + '" tabindex="0" role="button"><span class="t">' + (esc(t.titulo) || "Sem título") + '</span><span class="meta"><span class="pri-tag ' + t.prioridade + '">' + PRIORIDADES[t.prioridade] + "</span>" +
+      h += '<div class="cartao" draggable="' + podeEditar(S.eu, t, S.perfis[t.responsavel_id]) + '" data-acao="abrir" data-id="' + t.id + '" tabindex="0" role="button"><span class="t">' + (esc(t.titulo) || "Sem título") + '</span><span class="meta"><span class="pri-tag ' + t.prioridade + '">' + PRIORIDADES[t.prioridade] + "</span>" +
         (its.length ? '<span class="mono">' + f + "/" + its.length + "</span>" : "") + (t.responsavel_id ? av(t.responsavel_id) + "<span>" + esc(nomeDe(t.responsavel_id).split(" ")[0]) + "</span>" : "") +
         (t.prazo ? '<span class="prazo' + (emAtraso(t, S.hoje) ? " atraso" : "") + '">' + esc(rotuloPrazo(t.prazo)) + "</span>" : "") + "</span></div>";
     });
@@ -858,6 +870,7 @@ function blocosInicio() {
   h += STK.blocoInicio(); // só aparece quando há produtos a repor
   h += PRZ.blocoInicio(); // seguros e viaturas: só aparece perto das datas
   h += PRS.blocoInicio(); // prospeção: propostas por aprovar (só para quem aprova)
+  h += PROP.blocoInicio(); // tarefas propostas pelo assistente, por aprovar (só o responsável direto)
   return h;
 }
 function resumoDirecao() {
@@ -1010,7 +1023,7 @@ function vistaPessoa(p) {
   const g = eGestor(S.eu), c = contagensPessoa(p.id);
   const dele = ordenar(todas().filter((t) => t.responsavel_id === p.id && !concluida(t)));
   let h = '<a href="#equipa" class="eyebrow neutro" style="text-decoration:none">← Equipa</a>';
-  h += '<div class="ficha">' + av(p.id, "xg") + '<div class="bmeta"><span class="eyebrow neutro">' + esc(PAPEIS[p.papel]) + " · " + esc(depNome(p.departamento_id)) + (p.ativo ? "" : " · Conta desativada") + "</span><h1>" + esc(p.nome) + '</h1><p class="sub-cab">' + esc(p.cargo || "") + '</p><div class="contactos"><span>' + I.mail + esc(p.email) + "</span>" + (p.telefone ? "<span>" + I.tel + esc(p.telefone) + "</span>" : "") + "</div></div></div>";
+  h += '<div class="ficha">' + av(p.id, "xg") + '<div class="bmeta"><span class="eyebrow neutro">' + esc(PAPEIS[p.papel]) + " · " + esc(depNome(p.departamento_id)) + (p.ativo ? "" : " · Conta desativada") + (p.restrito ? " · Acesso limitado" : "") + "</span><h1>" + esc(p.nome) + '</h1><p class="sub-cab">' + esc(p.cargo || "") + (p.supervisor_id && S.perfis[p.supervisor_id] ? " · responde a " + esc(S.perfis[p.supervisor_id].nome) : "") + '</p><div class="contactos"><span>' + I.mail + esc(p.email) + "</span>" + (p.telefone ? "<span>" + I.tel + esc(p.telefone) + "</span>" : "") + "</div></div></div>";
   if (p.id !== S.eu.id && p.ativo) h += '<div class="acts"><button class="btn sec" data-acao="chat-direto" data-id="' + p.id + '">' + I.balao + "Enviar mensagem</button></div>";
   h += '<div class="dados"><div class="dado"><span>Por fazer</span><b>' + c.abertas + '</b></div><div class="dado"><span>Em atraso</span><b class="' + (c.atraso ? "at" : "") + '">' + c.atraso + '</b></div><div class="dado"><span>Concluídas esta semana</span><b>' + c.semana + '</b></div><div class="dado"><span>Concluídas este mês</span><b>' + c.mes + "</b></div></div>";
   const podeDar = podeAtribuirA(S.eu, p);
@@ -1025,6 +1038,10 @@ function vistaPessoa(p) {
       '<div class="campos-2"><div class="campo"><label for="ep-dep">Departamento</label><select id="ep-dep">' + opcoesDeps(p.departamento_id) + "</select></div>" +
       '<div class="campo"><label for="ep-papel">Papel</label><select id="ep-papel">' + opcoesPapel(p.papel) + "</select></div></div>" +
       (p.papel !== "ceo" ? '<label class="chk-txt"><input type="checkbox" id="ep-agenda"' + (p.gere_agenda ? " checked" : "") + "> Pode gerir a agenda do CEO (criar, mudar e cancelar eventos)</label>" : "") +
+      '<div class="campos-2"><div class="campo"><label for="ep-sup">Responsável direto</label><select id="ep-sup"><option value="">Ninguém em particular</option>' +
+      ativos().filter((x) => x.id !== p.id).map((x) => '<option value="' + x.id + '"' + (x.id === p.supervisor_id ? " selected" : "") + ">" + esc(x.nome) + "</option>").join("") +
+      '</select><small class="ajuda">Vê as tarefas desta pessoa, pode dar-lhe tarefas e aprova as que o assistente propuser.</small></div></div>' +
+      (!["ceo", "admin"].includes(p.papel) ? '<label class="chk-txt"><input type="checkbox" id="ep-restrito"' + (p.restrito ? " checked" : "") + "> Acesso limitado: só vê as suas tarefas, as mensagens e o módulo do departamento, e nada com valores em euros (€)</label>" : "") +
       '<div class="acts"><button class="btn pri" type="submit">Guardar alterações</button><button class="btn sec" type="button" data-acao="repor-pass" data-id="' + p.id + '">Repor palavra-passe</button>' +
       (p.ativo ? '<button class="btn perigo-sec" type="button" data-acao="ativar" data-id="' + p.id + '" data-ativo="0">Desativar conta</button>' : '<button class="btn sec" type="button" data-acao="ativar" data-id="' + p.id + '" data-ativo="1">Reativar conta</button>') +
       "</div></form>" + (S.novaPass && S.novaPass.id === p.id ? senhaHTML(S.novaPass.password, p.nome) : "") + "</section>";
@@ -1144,9 +1161,9 @@ function estadoPush() {
 function vistaDefinicoes() {
   const p = estadoPush();
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
-  h += '<nav class="atalhos" aria-label="Secções">' + [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"], ["#prospecao", I.alvo, "Prospeção"]] : []),
+  h += '<nav class="atalhos" aria-label="Secções">' + (eRestrito(S.eu) ? [["#notificacoes", I.sino, "Notificações"], ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : [])] : [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"], ["#prospecao", I.alvo, "Prospeção"]] : []),
     ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []), ...(podePrazos(S.eu) ? [["#prazos", I.carro, "Seguros e viaturas"]] : []), ...(podeAcademy(S.eu) ? [["#academy", I.capelo, "26 Academy"]] : []), ...(eGestor(S.eu) ? [["#relatorio", I.grafico, "Relatório mensal"]] : []), ["#assistente", I.ia, "Assistente"],
-    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : []), ["#reciclagem", I.lixo, "Reciclagem"]]
+    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : []), ["#reciclagem", I.lixo, "Reciclagem"], ...(PROP.visivel() ? [["#propostas", I.ia, "Propostas de tarefas"]] : [])])
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   if (!S.prefs && api.preferencias) { S.prefs = { aCarregar: true }; api.preferencias.ler(S.eu.id).then((x) => { S.prefs = x; render(); }).catch(() => { S.prefs = { falta: true }; render(); }); }
   const corAtual = S.eu.cor || "";
@@ -1299,7 +1316,7 @@ function opcoesResp(atual) {
 
 function painelTarefa(t) {
   if (!t) return moldura("twentysix", "Tarefa", '<div class="p-topo"><span class="migalha">Tarefa</span><button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + '</button></div><div class="vazio"><h3>Tarefa indisponível</h3><p>Foi eliminada ou não tens acesso a ela.</p></div>');
-  const pode = podeEditar(S.eu, t), dis = pode ? "" : " disabled", its = itensChecklist(t), est = estadoAtual(t), m = MARCA[t.marca] || MARCA.grupo;
+  const pode = podeEditar(S.eu, t, S.perfis[t.responsavel_id]), dis = pode ? "" : " disabled", its = itensChecklist(t), est = estadoAtual(t), m = MARCA[t.marca] || MARCA.grupo;
   const dica = t.freq === "unica" ? "" : "Volta a «Por fazer» " + ({ diaria: "amanhã", semanal: "na próxima segunda-feira", mensal: "no dia 1 do próximo mês", anual: "a 1 de janeiro" })[t.freq] + ".";
   let c = '<div class="p-topo"><span class="migalha"><i></i>' + esc(m.nome) + " / " + esc(FREQ[t.freq].tab) + '</span><span class="acts">' +
     (pode ? '<button class="ib" data-acao="duplicar">' + I.copiar + "Duplicar</button>" : "") +
@@ -1466,7 +1483,7 @@ document.addEventListener("click", async (e) => {
     case "sel-cancelar": S.selecao = null; render(); break;
     case "sel-eliminar": if (S.selecao?.size) { eliminarTarefas([...S.selecao]); S.selecao = new Set(); render(); } break;
     case "sel-concluir": {
-      const ids = [...(S.selecao || [])].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x]) && !concluida(S.tarefas[x]));
+      const ids = [...(S.selecao || [])].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x], S.perfis[S.tarefas[x].responsavel_id]) && !concluida(S.tarefas[x]));
       ids.forEach((x) => definirEstado(x, "concluido"));
       S.selecao = new Set(); render(); toast(ids.length ? (ids.length === 1 ? "1 tarefa concluída" : ids.length + " tarefas concluídas") : "Nada para concluir.");
       break;
@@ -1527,7 +1544,7 @@ document.addEventListener("click", async (e) => {
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
     case "sincronizar": api.sincronizar?.(); break;
-    default: FIA.clique(acao, el, e) || PF.clique(acao, el) || LOJ.clique(acao, el) || ESTAT.clique(acao, el) || LOTE.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
+    default: FIA.clique(acao, el, e) || PROP.clique(acao, el) || PF.clique(acao, el) || LOJ.clique(acao, el) || ESTAT.clique(acao, el) || LOTE.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
@@ -1582,6 +1599,9 @@ document.addEventListener("submit", async (e) => {
     try {
       const campos = { cargo: $("#ep-cargo").value.trim(), telefone: $("#ep-tel").value.trim(), departamento_id: $("#ep-dep").value || null, papel: $("#ep-papel").value };
       if ($("#ep-agenda")) campos.gere_agenda = $("#ep-agenda").checked;
+      if ($("#ep-sup")) campos.supervisor_id = $("#ep-sup").value || null;
+      if ($("#ep-restrito")) campos.restrito = $("#ep-restrito").checked;
+      if (campos.restrito && ["ceo", "admin"].includes(campos.papel)) campos.restrito = false;
       const r = await api.perfis.atualizar(pid, campos);
       S.perfis[pid] = r; render(); toast("Alterações guardadas");
     } catch (err) { falha(err); }
@@ -1665,7 +1685,7 @@ document.addEventListener("change", (e) => {
   if (t.id === "filtro-dep") { S.filtroDep = t.value; render(); return; }
   if (t.id === "sel-resp" && t.value && S.selecao?.size) {
     const destino = t.value === "nenhum" ? null : t.value;
-    const ids = [...S.selecao].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x]));
+    const ids = [...S.selecao].filter((x) => S.tarefas[x] && podeEditar(S.eu, S.tarefas[x], S.perfis[S.tarefas[x].responsavel_id]));
     ids.forEach((x) => gravar(x, { responsavel_id: destino, ...(destino && S.perfis[destino]?.departamento_id && !S.tarefas[x].departamento_id ? { departamento_id: S.perfis[destino].departamento_id } : {}) }));
     S.selecao = new Set(); render();
     toast((ids.length === 1 ? "1 tarefa atribuída" : ids.length + " tarefas atribuídas") + (destino ? " a " + nomeDe(destino) : " a ninguém"));
@@ -1724,11 +1744,12 @@ const LOG = criarLogistica({ S, api, esc, I, toast, falha, render, agendarRender
 const AUD = criarAuditoria({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });
 const FIN = criarFinanceiro({ S, api, esc, I, toast, falha, render, agendarRender, $ });
 const IA = criarAssistente({ S, api, esc, I, toast, falha, render, nomeDe, ativos, av, $ });
+const PROP = criarPropostas({ S, api, esc, I, toast, falha, render, nomeDe, ativos });
 const PQ = criarPesquisa({
   S, api, esc, I, todas: () => todas(), ativos, nomeDe, av,
   modulos: () => ({ crm: podeCrm(S.eu) ? CRM : null, log: podeEncomendas(S.eu) ? LOG : null, stk: podeStocks(S.eu) ? STK : null, prz: podePrazos(S.eu) ? PRZ : null, aca: podeAcademy(S.eu) ? ACA : null, op: podeOperacional(S.eu) ? OP : null,
-    mk: podeMarketing(S.eu) ? MK : null, aud: AUD, agenda: AGENDA, chat: CHAT }),
-  paginas: () => [
+    mk: podeMarketing(S.eu) ? MK : null, aud: AUD, agenda: eRestrito(S.eu) ? null : AGENDA, chat: CHAT }),
+  paginas: () => (eRestrito(S.eu) ? [["#inicio", I.casa, "Início"], ["#minhas", I.tarefas, "As minhas tarefas"], ["#chat", I.balao, "Mensagens", "chat conversas"], ["#marketing", I.megafone, "Marketing", "calendário publicações redes"], ["#notificacoes", I.sino, "Notificações"], ["#definicoes", I.mais, "Mais", "perfil definições foto palavra-passe"]] : [
     ["#inicio", I.casa, "Início"], ["#minhas", I.tarefas, "As minhas tarefas"], ["#chat", I.balao, "Mensagens", "chat conversas"], ["#assistente", I.ia, "Assistente", "ia inteligência artificial ajuda escrever"], ["#agenda", I.cal, "Agenda", "calendário eventos"],
     ["#equipa", I.equipa, "Equipa", "pessoas empregados"], ["#atividade", I.grafico, "Quem fez o quê", "atividade registo"], ["#notificacoes", I.sino, "Notificações"], ["#reciclagem", I.lixo, "Reciclagem", "apagados recuperar lixo eliminados"], ["#definicoes", I.mais, "Mais", "perfil definições foto email palavra-passe cópia de segurança"],
     ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial", "crm clientes leads funil"], ["#comercial-mapa", I.mapa, "Mapa de clientes", "mapa"], ["#prospecao", I.alvo, "Prospeção de barbearias", "prospeção leads barbearias propostas abordagem rotas zonas"]] : []),
@@ -1739,7 +1760,8 @@ const PQ = criarPesquisa({
     ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores", "operacional orçamentos compras"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing", "calendário publicações redes"]] : []),
     ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites", "segurança sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro", "faturação custos"]] : []),
     ...MARCAS.map((m) => ["#marca-" + m.id, I.lista, m.nome, "marca"]),
-  ].map(([href, ic, titulo, chaves]) => ({ href, ic, titulo, chaves })),
+    ...(PROP.visivel() ? [["#propostas", I.ia, "Propostas de tarefas", "assistente aprovar atribuir sugestões"]] : []),
+  ]).map(([href, ic, titulo, chaves]) => ({ href, ic, titulo, chaves })),
 });
 pesquisaAtiva = PQ;
 const STK = criarStocks({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, av, $ });

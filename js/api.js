@@ -436,6 +436,19 @@ export function criarApi() {
       async uso() { return ok(await sb.from("ia_uso").select("*").order("mes", { ascending: false }).limit(500)); },
       async config() { return ok(await sb.from("ia_config").select("*").eq("id", 1).maybeSingle()); },
       async guardarConfig(c) { return ok(await sb.from("ia_config").update({ ...c, atualizado_em: new Date().toISOString() }).eq("id", 1).select().single()); },
+      // Propostas de tarefas do assistente (só o responsável direto as aprova)
+      async propostas() {
+        const { data, error } = await sb.from("ia_propostas").select("*").order("criado_em", { ascending: false }).limit(200);
+        if (error) throw new Error(/ia_propostas|PGRST20|42P01/.test(error.message + error.code) ? "FALTA_SCRIPT" : error.message);
+        return data;
+      },
+      async decidir(id, aprovar) { return ok(await sb.rpc("ia_proposta_decidir", { p_id: id, p_aprovar: aprovar })); },
+      subscreverPropostas(cb) {
+        const canal = sb.channel("central26-propostas")
+          .on("postgres_changes", { event: "*", schema: "public", table: "ia_propostas" }, (p) => cb(p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
     },
     // Cópia de segurança: lê todas as tabelas a que a pessoa tem acesso (a direção vê quase tudo)
     async copia(progresso) {

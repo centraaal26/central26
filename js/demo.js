@@ -1,7 +1,7 @@
 // Modo de demonstração: imita a base de dados dentro do navegador (abrir a app com ?demo).
 // Serve para mostrar a app e testá-la sem mexer nos dados reais. Nada sai deste aparelho.
 import { MODELOS } from "./modelos.js";
-import { periodo, ymd, podeVer, podeAtribuirA, eGestor, semanaIso } from "./dados.js";
+import { periodo, ymd, podeVer, podeAtribuirA, eGestor, semanaIso, temEuros } from "./dados.js";
 import { CATALOGO_STK } from "./stocks-catalogo.js";
 import { totais } from "./proformas.js";
 
@@ -22,8 +22,10 @@ const PESSOAS = [
   ["p-rui", "Rui Neves", "Departamento de Logística", "logistica", "chefe"],
   ["p-isaac", "Isaac Maia", "Departamento Tecnológico", "tecnologico", "admin"],
   ["p-loja", "Responsável de Loja (exemplo)", "Responsável da loja", "operacional", "colaborador"],
+  ["p-mkt", "Colaborador de Marketing (exemplo)", "Conteúdos e redes sociais", "marketing", "colaborador"],
 ].map(([id, nome, cargo, departamento_id, papel]) => ({
   id, nome, cargo, departamento_id, papel, email: id.slice(2) + "@exemplo.pt", telefone: "", ativo: true, mudar_password: false, gere_agenda: id === "p-samuel",
+  restrito: id === "p-mkt", supervisor_id: id === "p-mkt" ? "p-goncalo" : null,
   criado_em: new Date(Date.now() - 30 * 864e5).toISOString(),
 }));
 
@@ -80,6 +82,17 @@ function gravar(db) { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } c
 
 export function criarDemo() {
   let db = ler();
+  // dados de demonstração antigos: junta a pessoa com acesso limitado (exemplo) e as propostas do assistente
+  if (!db.perfis.some((p) => p.id === "p-mkt")) { db.perfis.push(structuredClone(PESSOAS.find((p) => p.id === "p-mkt"))); gravar(db); }
+  if (!db.propostas) {
+    const dia = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+    db.propostas = [
+      ["Gravar stories na loja de Gaia", "Três stories curtos com o antes e depois de um corte.", "barbearia", "alta", dia(2), "Há duas publicações da Barbearia esta semana sem vídeo preparado."],
+      ["Preparar as fotos dos produtos novos", "Fundo branco, três ângulos por produto.", "twentysix", "media", dia(5), "A campanha de Natal precisa de fotos e ninguém tem esta tarefa."],
+    ].map(([titulo, notas, marca, prioridade, prazo, motivo]) => ({ id: uid(), lote: "l-exemplo", tipo: "nova", destinatario_id: "p-mkt", aprovador_id: "p-goncalo", pedido_por: "p-goncalo",
+      tarefa_id: null, publicacao_id: null, titulo: "Exemplo · " + titulo, notas, marca, prioridade, prazo, motivo, estado: "pendente", decidido_por: null, decidido_em: null, criado_em: agora() }));
+    gravar(db);
+  }
   let euId = null;
   try { euId = localStorage.getItem(CHAVE_EU); } catch { /* */ }
   const ouvintes = new Set();
@@ -115,7 +128,8 @@ export function criarDemo() {
       const g = eGestor(e);
       return {
         perfis: structuredClone(db.perfis), departamentos: structuredClone(db.departamentos),
-        tarefas: structuredClone(db.tarefas.filter((t) => podeVer(e, t))),
+        tarefas: structuredClone(db.tarefas.map((t) => ({ ...t, tem_valores: temEuros(t.titulo + " " + t.notas + " " + JSON.stringify(t.checklist || [])) }))
+          .filter((t) => podeVer(e, t, db.perfis.find((p) => p.id === t.responsavel_id)))),
         notificacoes: structuredClone(db.notificacoes.filter((n) => n.destinatario_id === euId).slice(0, 100)),
         atividade: structuredClone(db.atividade.filter((a) => g || a.autor_id === euId || a.responsavel_id === euId ||
           (e.papel === "chefe" && a.departamento_id === e.departamento_id))),
@@ -814,7 +828,11 @@ export function criarDemo() {
       const exige = () => { if (!pode()) throw new Error("Só o Marketing e a direção gerem o calendário."); };
       const upd = (l, id, c) => { const r = l.find((x) => x.id === id); if (!r) throw new Error("Já não existe."); Object.assign(r, c, { atualizado_por: euId, atualizado_em: agora() }); return r; };
       return {
-        async carregar() { if (!pode()) return { publicacoes: [], documentos: [] }; return structuredClone(ler()); },
+        async carregar() {
+          if (!pode()) return { publicacoes: [], documentos: [] };
+          const x = structuredClone(ler()); if (!eu().restrito) return x;
+          return { publicacoes: x.publicacoes.filter((p) => !temEuros([p.titulo, p.copy, p.notas, p.inspiracao, p.link].join(" "))), documentos: x.documentos.filter((p) => !temEuros(p.titulo + " " + p.conteudo)) };
+        },
         pub: {
           async criar(x) { exige(); const r = { ...P("grupo", "", null, "ideia", ""), responsavel_id: null, plataformas: [], ...x, criado_por: euId, atualizado_por: euId }; ler().publicacoes.push(r);
             if (r.responsavel_id && r.responsavel_id !== euId) notificar(r.responsavel_id, "marketing", "Publicação atribuída a ti", r.titulo, "#publicacao-" + r.id); guardar(); gravar(db); return structuredClone(r); },
@@ -855,6 +873,19 @@ export function criarDemo() {
           d.mensagens.push({ id: d.seq++, conversa_id: c.id, papel: "user", texto: mensagem, ferramentas: [], criado_em: agora() });
           await new Promise((r) => setTimeout(r, 700));
           const minhas = db.tarefas.filter((t) => t.responsavel_id === euId && t.estado !== "concluido");
+          const sup = db.perfis.find((p) => p.supervisor_id === euId && p.ativo);
+          if (sup && /prop(õe|oe|or) tarefas/i.test(mensagem)) {
+            const dia = (n) => { const x = new Date(); x.setDate(x.getDate() + n); return ymd(x); };
+            [["Exemplo · Editar o reel da semana", "Cortar para 30 segundos e legendar.", "twentysix", "alta", dia(1), "O reel está planeado para esta semana e ainda não tem responsável."],
+             ["Exemplo · Responder aos comentários do Instagram", "Todos os dias ao fim da manhã.", "barbearia", "media", dia(3), "Há comentários por responder desde segunda-feira."]]
+              .forEach(([titulo, notas, marca, prioridade, prazo, motivo]) => { if (!db.propostas.some((x) => x.estado === "pendente" && x.titulo === titulo)) db.propostas.unshift({ id: uid(), lote: "l-" + uid(), tipo: "nova", destinatario_id: sup.id, aprovador_id: euId, pedido_por: euId,
+                tarefa_id: null, publicacao_id: null, titulo, notas, marca, prioridade, prazo, motivo, estado: "pendente", decidido_por: null, decidido_em: null, criado_em: agora() }); });
+            gravar(db);
+            const resposta = "**Modo de demonstração.** Analisei as tarefas pendentes e as publicações sem responsável e deixei **2 propostas** para " + sup.nome.split(" ")[0] + ". Nada lhe chega até aprovares cada uma.";
+            const m = { id: d.seq++, conversa_id: c.id, papel: "assistant", texto: resposta, ferramentas: ["tarefas", "marketing", "propor_tarefas"], criado_em: agora() };
+            d.mensagens.push(m); c.atualizado_em = agora(); guardar(d);
+            return { conversa_id: c.id, resposta, ferramentas: m.ferramentas, id: m.id, criado_em: m.criado_em, pedidos_mes: d.mensagens.filter((x) => x.papel === "assistant").length, limite: d.config.limite_mensal };
+          }
           const resposta = "**Modo de demonstração.** Aqui o assistente responderia com a IA, consultando os dados a que tens acesso.\n\nPor exemplo, tens neste momento " + minhas.length + (minhas.length === 1 ? " tarefa por fazer" : " tarefas por fazer") +
             (minhas.length ? ":\n" + minhas.slice(0, 5).map((t) => "- " + t.titulo).join("\n") : ".") + "\n\nNa versão real, também escreve descrições, legendas, emails e resumos a partir do que pedires.";
           const m = { id: d.seq++, conversa_id: c.id, papel: "assistant", texto: resposta, ferramentas: ["tarefas"], criado_em: agora() };
@@ -862,6 +893,22 @@ export function criarDemo() {
           return { conversa_id: c.id, resposta, ferramentas: m.ferramentas, id: m.id, criado_em: m.criado_em, pedidos_mes: d.mensagens.filter((x) => x.papel === "assistant").length, limite: d.config.limite_mensal };
         },
         async renomear(id, titulo) { const d = ler(); const c = d.conversas.find((x) => x.id === id); if (c) c.titulo = titulo; guardar(d); },
+        async propostas() { const e = eu(); return structuredClone((db.propostas || []).filter((x) => x.aprovador_id === euId || x.pedido_por === euId || eGestor(e))); },
+        async decidir(id, aprovar) {
+          const x = (db.propostas || []).find((y) => y.id === id); if (!x) throw new Error("Proposta não encontrada.");
+          if (x.aprovador_id !== euId && !eGestor(eu())) throw new Error("Só " + nome(x.aprovador_id) + " pode decidir esta proposta.");
+          if (x.estado !== "pendente") throw new Error("Esta proposta já foi decidida.");
+          x.estado = aprovar ? "aprovada" : "recusada"; x.decidido_por = euId; x.decidido_em = agora();
+          if (aprovar) {
+            const dest = db.perfis.find((p) => p.id === x.destinatario_id);
+            const t = { id: uid(), modelo: null, marca: x.marca, titulo: x.titulo, freq: "unica", prioridade: x.prioridade, notas: x.notas, checklist: [], checklist_periodo: "", prazo: x.prazo,
+              departamento_id: dest?.departamento_id || null, responsavel_id: x.destinatario_id, estado: "por_fazer", estado_periodo: "unica", criado_por: euId, criado_em: agora(), atualizado_em: agora(), concluido_por: null, concluido_em: null };
+            db.tarefas.push(t); x.tarefa_id = t.id; emitir("tarefas", "INSERT", structuredClone(t));
+            notificar(x.destinatario_id, "tarefa_atribuida", "Nova tarefa para ti", nome(euId) + " atribuiu-te: " + t.titulo, "#tarefa-" + t.id);
+          }
+          gravar(db); return x.tarefa_id;
+        },
+        subscreverPropostas() { return () => {}; },
         async apagar(id) { const d = ler(); d.conversas = d.conversas.filter((x) => x.id !== id); d.mensagens = d.mensagens.filter((x) => x.conversa_id !== id); guardar(d); },
         async uso() { const d = ler(); const mes = agora().slice(0, 7); const por = {}; d.mensagens.filter((m) => m.papel === "assistant").forEach((m) => { const c = d.conversas.find((x) => x.id === m.conversa_id); if (c) por[c.perfil_id] = (por[c.perfil_id] || 0) + 1; });
           return Object.entries(por).map(([perfil_id, pedidos]) => ({ perfil_id, mes, pedidos, tokens_in: 0, tokens_out: 0 })); },

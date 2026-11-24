@@ -305,6 +305,14 @@ O que passa a existir:
 
 O ficheiro é lido no computador de quem importa e só os números ficam na Central (por mês, loja, barbeiro e serviço): marcações, canceladas, clientes diferentes, clientes novos, clientes ativos, habituais e os que deixaram de vir, e os dias e horas com mais movimento. Nomes, contactos e notas de clientes nunca saem do computador. Para atualizar, exporta outra vez e importa o ficheiro novo.
 
+### 3z. Contas com acesso limitado e propostas de tarefas do assistente
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/27-acessos-propostas.sql` → **Run**.
+2. Edge Functions → `assistente` → cola outra vez o código atual → **Deploy**.
+3. Na app (direção): **Equipa** → a pessoa → **Gerir conta**:
+   - **Responsável direto**: quem responde por esta pessoa. Vê as tarefas dela, pode dar-lhe tarefas e aprova o que o assistente propuser.
+   - **Acesso limitado**: a pessoa só vê as suas tarefas, as mensagens e o módulo do seu departamento. Tudo o que tiver valores em euros (€, EUR, euros) nas tarefas, publicações e documentos fica escondido para ela, na base de dados e não só no ecrã, e não consegue escrever valores em euros.
+4. O responsável direto abre **Propostas de tarefas** → **Pedir propostas**. O assistente analisa as tarefas pendentes e as publicações sem responsável e propõe tarefas. Nada chega à pessoa até o responsável carregar em **Aprovar e atribuir** em cada proposta (ou **Aprovar todas**).
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

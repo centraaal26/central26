@@ -16,7 +16,8 @@ const URL_SB = Deno.env.get("SUPABASE_URL")!;
 const admin = createClient(URL_SB, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } });
 const FORNECEDOR = (Deno.env.get("IA_FORNECEDOR") || (Deno.env.get("ANTHROPIC_API_KEY") ? "anthropic" : Deno.env.get("GROQ_API_KEY") ? "groq" : "")).toLowerCase();
 const MODELO = Deno.env.get("ASSISTENTE_MODELO") || (FORNECEDOR === "groq" ? "openai/gpt-oss-120b" : "claude-sonnet-5-5");
-const POR_DIA = 5;
+const POR_DIA = 5;       // clientes (seguimentos, recompra, risco)
+const PRIMEIROS_DIA = 3; // leads para o primeiro contacto de venda
 
 const PERGUNTAS: Record<string, string> = {
   m01: "Nome e como gosta de ser tratado", m02: "Cargo na barbearia", m03: "Telefone direto ou WhatsApp", m04: "Email", m05: "Melhor dia, hora e canal para o contactar",
@@ -74,15 +75,20 @@ function estatisticas(vendas: any[]) {
 // ---------------------------- escolher os clientes do dia ----------------------------
 async function gerar(dia: string) {
   const [clientes, vendas, contactos, recentes] = await Promise.all([
-    todas<any>((a, b) => admin.from("crm_clientes").select("id, nome, etapa, tipo, codigo_multixop, score, prioridade, responsavel_id").neq("tipo", "interno").neq("etapa", "perdido").range(a, b)),
+    todas<any>((a, b) => admin.from("crm_clientes").select("id, nome, etapa, tipo, codigo_multixop, score, prioridade, responsavel_id, telefone, whatsapp, instagram, email").neq("tipo", "interno").neq("etapa", "perdido").range(a, b)),
     todas<any>((a, b) => admin.from("crm_vendas").select("data, cliente_codigo, valor, tipo, descricao, qtd").range(a, b)),
     todas<any>((a, b) => admin.from("crm_contactos").select("cliente_id, criado_em, data_proximo, proximo_passo").order("criado_em", { ascending: false }).range(a, b)),
-    todas<any>((a, b) => admin.from("crm_abordagens").select("cliente_id, dia").gte("dia", new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10)).range(a, b)),
+    todas<any>((a, b) => admin.from("crm_abordagens").select("cliente_id, dia").gte("dia", new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)).range(a, b)),
   ]);
+  // leads que já têm proposta na Prospeção não entram (não se contacta a mesma barbearia por dois lados)
+  const { data: prs } = await admin.from("prs_propostas").select("cliente_id").limit(5000);
+  const naProspecao = new Set((prs || []).map((x: any) => x.cliente_id));
   const { por } = estatisticas(vendas);
   const ultimo = new Map<string, any>();
   for (const c of contactos) if (!ultimo.has(c.cliente_id)) ultimo.set(c.cliente_id, c);
-  const jaSugerido = new Set(recentes.map((r) => r.cliente_id));
+  const lim14 = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
+  const jaSugerido = new Set(recentes.filter((r) => r.dia >= lim14).map((r) => r.cliente_id)), sugerido30 = new Set(recentes.map((r) => r.cliente_id));
+  const primeiros: { id: string; tipo: string; motivo: string; pontos: number }[] = [];
   const cand: { id: string; tipo: string; motivo: string; pontos: number }[] = [];
   for (const c of clientes) {
     if (jaSugerido.has(c.id)) continue;
@@ -95,30 +101,67 @@ async function gerar(dia: string) {
       cand.push({ id: c.id, tipo: "recompra", pontos: 100 + Math.min(s.total / 100, 50), motivo: "Costuma encomendar a cada " + s.ritmo + " dias e a última encomenda foi há " + s.dias + " dias (" + eur(s.total) + " no período)." });
     } else if (s && s.dias != null && s.dias > 90 && s.dias <= 180 && s.total >= 300) {
       cand.push({ id: c.id, tipo: "risco", pontos: 70 + Math.min(s.total / 100, 30), motivo: "Sem compras há " + s.dias + " dias, depois de " + eur(s.total) + " no período." });
-    } else if (c.etapa === "lead" && !u && ((c.score || 0) >= 60 || /alta/i.test(c.prioridade || ""))) {
-      cand.push({ id: c.id, tipo: "lead", pontos: 40 + (c.score || 0) / 3, motivo: "Lead com pontuação " + (c.score ?? "—") + " e ainda sem nenhum contacto." });
+    } else if (c.etapa === "lead" && !u && !sugerido30.has(c.id) && !naProspecao.has(c.id) && (c.telefone || c.whatsapp || c.instagram || c.email)) {
+      const p = (c.score || 0) + (/alta/i.test(c.prioridade || "") ? 30 : /m[eé]dia/i.test(c.prioridade || "") ? 10 : 0);
+      if (p >= 40) primeiros.push({ id: c.id, tipo: "primeiro", pontos: p, motivo: "Ainda não é cliente nem foi contactado" + (c.score != null ? " · pontuação " + c.score : "") + (c.prioridade ? " · prioridade " + String(c.prioridade).toLowerCase() : "") + "." });
     }
   }
   cand.sort((a, b) => b.pontos - a.pontos);
-  const escolhidos: typeof cand = []; let leads = 0;
-  for (const x of cand) { if (x.tipo === "lead" && leads >= 2) continue; if (x.tipo === "lead") leads++; escolhidos.push(x); if (escolhidos.length >= POR_DIA) break; }
+  primeiros.sort((a, b) => b.pontos - a.pontos);
+  const escolhidos = [...cand.slice(0, POR_DIA), ...primeiros.slice(0, PRIMEIROS_DIA)];
   if (escolhidos.length) {
     await admin.from("crm_abordagens").upsert(escolhidos.map((x, i) => ({ dia, cliente_id: x.id, ordem: i, tipo: x.tipo, motivo: x.motivo })), { onConflict: "dia,cliente_id", ignoreDuplicates: true });
   }
-  return cand.length;
+  return cand.length + primeiros.length;
+}
+
+// ------------------------------- Google Maps (opcional) -------------------------------
+// Com GOOGLE_PLACES_KEY: avaliação, horário, comentários e até 3 fotos da barbearia (para a IA estimar as cadeiras).
+type Imagem = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+async function dadosGoogle(c: any): Promise<{ texto: string; imagens: Imagem[]; fonte: Fonte | null }> {
+  const chave = Deno.env.get("GOOGLE_PLACES_KEY"); if (!chave) return { texto: "", imagens: [], fonte: null };
+  try {
+    const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": chave, "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,places.regularOpeningHours.weekdayDescriptions,places.reviews,places.photos,places.websiteUri" },
+      body: JSON.stringify({ textQuery: c.nome + " " + (c.concelho || c.morada || ""), languageCode: "pt-PT", regionCode: "PT", maxResultCount: 1 }),
+    });
+    const p = (await r.json().catch(() => ({})))?.places?.[0];
+    if (!r.ok || !p) return { texto: "", imagens: [], fonte: null };
+    const linhas = [
+      "Nome no Google: " + (p.displayName?.text || ""), p.formattedAddress && "Morada: " + p.formattedAddress,
+      p.rating && "Avaliação: " + p.rating + " (" + (p.userRatingCount || 0) + " avaliações)", p.websiteUri && "Site: " + p.websiteUri,
+      p.regularOpeningHours?.weekdayDescriptions?.length && "Horário: " + p.regularOpeningHours.weekdayDescriptions.join("; "),
+      (p.reviews || []).length && "Comentários de clientes (excertos, sem nomes):\n" + (p.reviews || []).slice(0, 5).map((x: any) => "- " + String(x.originalText?.text || x.text?.text || "").replace(/\s+/g, " ").slice(0, 280)).join("\n"),
+    ].filter(Boolean).join("\n");
+    const imagens: Imagem[] = [];
+    for (const f of (p.photos || []).slice(0, 3)) {
+      try {
+        const im = await fetch("https://places.googleapis.com/v1/" + f.name + "/media?maxWidthPx=1000&key=" + chave);
+        if (!im.ok) continue;
+        const tipo = (im.headers.get("content-type") || "image/jpeg").split(";")[0];
+        if (!/^image\/(jpeg|png|webp|gif)$/.test(tipo)) continue;
+        const b = new Uint8Array(await im.arrayBuffer()); if (b.length > 3_500_000) continue;
+        let bin = ""; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode(...b.subarray(i, i + 0x8000));
+        imagens.push({ type: "image", source: { type: "base64", media_type: tipo, data: btoa(bin) } });
+      } catch { /* segue sem esta foto */ }
+    }
+    return { texto: linhas, imagens, fonte: p.googleMapsUri ? { titulo: "Google Maps", url: p.googleMapsUri } : null };
+  } catch { return { texto: "", imagens: [], fonte: null }; }
 }
 
 // ------------------------------------- IA -------------------------------------
 type Fonte = { titulo: string; url: string };
-async function pedirIA(sistema: string, pedido: string, pesquisar: boolean): Promise<{ texto: string; fontes: Fonte[]; tin: number; tout: number }> {
+async function pedirIA(sistema: string, pedido: string, pesquisar: boolean, imagens: Imagem[] = []): Promise<{ texto: string; fontes: Fonte[]; tin: number; tout: number }> {
   if (FORNECEDOR === "anthropic") {
-    const corpo: Record<string, unknown> = { model: MODELO, max_tokens: 2500, system: sistema, messages: [{ role: "user", content: pedido }] };
+    const conteudo = imagens.length ? [...imagens, { type: "text", text: pedido }] : pedido;
+    const corpo: Record<string, unknown> = { model: MODELO, max_tokens: 3000, system: sistema, messages: [{ role: "user", content: conteudo }] };
     if (pesquisar) corpo.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 4, user_location: { type: "approximate", country: "PT", timezone: "Europe/Lisbon" } }];
     const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify(corpo) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       const msg = j?.error?.message || r.statusText;
-      if (pesquisar && r.status === 400 && /web_search|tool/i.test(msg)) return pedirIA(sistema, pedido + "\n\n(A pesquisa na web não está disponível: usa só os dados do CRM.)", false);
+      if (pesquisar && r.status === 400 && /web_search|tool/i.test(msg)) return pedirIA(sistema, pedido + "\n\n(A pesquisa na web não está disponível: usa só os dados que tens.)", false, imagens);
       if (r.status === 429) throw new Error("A IA está com muitos pedidos. Tenta daqui a um minuto.");
       if (/credit|billing/i.test(msg)) throw new Error("A conta da Anthropic está sem saldo.");
       throw new Error("A IA respondeu com um erro (" + r.status + "): " + msg);
@@ -223,7 +266,34 @@ Deno.serve(async (req) => {
       const { data: a } = await admin.from("crm_abordagens").select("*").eq("id", String(corpo.id || "")).maybeSingle();
       if (!a) return json({ erro: "Sugestão não encontrada." }, 404);
       const { c, mk, ficha, conhecido, emFalta } = await contexto(a.cliente_id);
-      const pedido = `Prepara a abordagem de hoje a este cliente da TwentySix, com o método Mackay 66.
+      const primeiro = a.tipo === "primeiro" || a.tipo === "lead";
+      const g = primeiro ? await dadosGoogle(c) : { texto: "", imagens: [] as Imagem[], fonte: null };
+      const pedido = primeiro ? `Prepara o PRIMEIRO contacto de venda da TwentySix com esta barbearia (ainda não é cliente e nunca foi contactada).
+Primeiro analisa o negócio, depois escreve a mensagem de apresentação. O objetivo do primeiro contacto é apresentar a marca e conseguir uma conversa ou visita, não vender logo.
+
+FICHA NO CRM
+${ficha}
+${g.texto ? "\nGOOGLE MAPS\n" + g.texto : ""}
+${g.imagens.length ? "\nEm cima tens " + g.imagens.length + " fotos públicas da barbearia (Google Maps): conta as cadeiras de barbeiro que se veem e repara no estilo da loja e nos produtos à vista." : ""}
+
+Pesquisa na web a barbearia «${c.nome}»${c.concelho ? " (" + c.concelho + ")" : ""}: site, página de marcações (Booksy, Fresha, Buk… mostram a equipa e os serviços), redes da loja e Google. Só informação pública do negócio.
+Responde com este JSON:
+{
+ "analise": {
+   "cadeiras": "número ou intervalo + como chegaste lá (fotos, equipa na página de marcações…) + certeza (alta, média, baixa); se não souberes, «não se sabe»",
+   "barbeiros": "quantos e de onde vem a informação, ou «não se sabe»",
+   "avaliacao": "nota e número de avaliações no Google, se houver",
+   "perfil": "1 frase: estilo, posicionamento e preço",
+   "necessidades": ["3 a 5 necessidades prováveis desta barbearia, ligadas ao que vimos"],
+   "propor": ["2 a 4 coisas concretas da TwentySix a propor: produtos, consumíveis, cadeiras, formação 26 Academy ou condições PRO"]
+ },
+ "resumo": "2 ou 3 frases com o essencial para quem vai contactar",
+ "abordagem": "3 a 5 linhas começadas por «- »: canal, melhor altura, pretexto e o que levar",
+ "mensagem": "mensagem de apresentação para WhatsApp ou Instagram (máximo 550 caracteres), personalizada com o que encontraste, sem «você», sem links, assinada com [nome] · TwentySix",
+ "descobrir": ["3 perguntas Mackay para a primeira conversa"],
+ "sugestoes": { "id da pergunta": { "v": "resposta curta", "fonte": "URL" } }
+}
+Em «sugestoes» só entram perguntas destes ids: ${PUBLICAS.join(", ")}, e só com factos de fontes públicas (com URL).` : `Prepara a abordagem de hoje a este cliente da TwentySix, com o método Mackay 66.
 Porquê hoje: ${a.motivo}
 
 FICHA NO CRM
@@ -245,13 +315,20 @@ Responde com este JSON:
  "sugestoes": { "id da pergunta": { "v": "resposta curta", "fonte": "URL" } }
 }
 Em «sugestoes» só entram perguntas sem resposta destes ids: ${PUBLICAS.join(", ")}, e só com factos encontrados em fontes públicas (com URL).`;
-      const r = await pedirIA(SISTEMA, pedido, FORNECEDOR === "anthropic");
+      const r = await pedirIA(SISTEMA, pedido, FORNECEDOR === "anthropic", g.imagens);
+      if (g.fonte && !r.fontes.some((f) => f.url === g.fonte!.url)) r.fontes.unshift(g.fonte);
       const j = lerJson(r.texto);
       if (!j) throw new Error("A IA não devolveu uma resposta válida. Tenta outra vez.");
       const n = await guardarSugestoes(a.cliente_id, mk, j.sugestoes || {}, r.fontes);
       const { data: nova } = await admin.from("crm_abordagens").update({
         resumo: String(j.resumo || "").slice(0, 1500), abordagem: String(j.abordagem || "").slice(0, 2000), mensagem: String(j.mensagem || "").slice(0, 900),
         descobrir: (Array.isArray(j.descobrir) ? j.descobrir : []).slice(0, 5).map((x: unknown) => String(x).slice(0, 200)), fontes: r.fontes.slice(0, 8), preparada_em: new Date().toISOString(),
+        analise: primeiro && j.analise && typeof j.analise === "object" ? {
+          cadeiras: String(j.analise.cadeiras || "").slice(0, 300), barbeiros: String(j.analise.barbeiros || "").slice(0, 300), avaliacao: String(j.analise.avaliacao || "").slice(0, 120),
+          perfil: String(j.analise.perfil || "").slice(0, 300), fotos: g.imagens.length,
+          necessidades: (Array.isArray(j.analise.necessidades) ? j.analise.necessidades : []).slice(0, 6).map((x: unknown) => String(x).slice(0, 200)),
+          propor: (Array.isArray(j.analise.propor) ? j.analise.propor : []).slice(0, 5).map((x: unknown) => String(x).slice(0, 200)),
+        } : {},
       }).eq("id", a.id).select("*").single();
       await admin.rpc("ia_registar_uso", { p_perfil: sessao.user.id, p_mes: dia.slice(0, 7), p_in: r.tin, p_out: r.tout });
       return json({ abordagem: nova, sugestoes: n });

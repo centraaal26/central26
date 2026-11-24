@@ -2249,4 +2249,10 @@ body.protegida img{-webkit-user-drag:none}
 .mk66-sug{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13px;background:var(--warn-bg);border-radius:8px;padding:6px 8px}
 .mk66-sug span{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
 .mk66-sug a{font-size:12px}
+.mk66-analise{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+.mk66-analise div{background:var(--sunken);border-radius:8px;padding:6px 8px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.mk66-analise span{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.mk66-analise b{font-weight:500;font-size:13px;overflow-wrap:anywhere}
+.mk66-rot{margin:6px 0 0!important;font-size:12px;font-weight:600;color:var(--muted)}
+.mk66-nota{margin:4px 0 0;font-size:13px;max-width:72ch}
 @media (max-width:820px){.mk66-lista{grid-template-columns:1fr}}

@@ -32,7 +32,7 @@ export const GRUPOS_MACKAY = [
 ];
 export const PERGUNTAS_MACKAY = Object.fromEntries(GRUPOS_MACKAY.flatMap(([, l]) => l));
 const TOTAL = Object.keys(PERGUNTAS_MACKAY).length;
-const TIPOS = { seguimento: "Seguimento", recompra: "Hora de encomendar", risco: "Em risco", lead: "Lead" };
+const TIPOS = { seguimento: "Seguimento", recompra: "Hora de encomendar", risco: "Em risco", lead: "Lead", primeiro: "Primeiro contacto" };
 
 export function criarMackay(ctx) {
   const { S, api, esc, I, toast, falha, render, renderPainel, abrir } = ctx;
@@ -67,6 +67,14 @@ export function criarMackay(ctx) {
       '<p class="mk66-motivo">' + esc(a.motivo) + "</p>";
     if (compacto) return h + "</article>";
     if (a.preparada_em) {
+      const an = a.analise || {};
+      if (an.cadeiras || an.barbeiros || (an.necessidades || []).length) {
+        const dado = (r, v) => v ? '<div><span>' + r + "</span><b>" + esc(v) + "</b></div>" : "";
+        h += '<div class="mk66-bloco"><b>Análise da barbearia' + (an.fotos ? " · " + an.fotos + (an.fotos === 1 ? " foto vista" : " fotos vistas") : "") + '</b><div class="mk66-analise">' +
+          dado("Cadeiras", an.cadeiras) + dado("Barbeiros", an.barbeiros) + dado("Google", an.avaliacao) + dado("Perfil", an.perfil) + "</div>" +
+          ((an.necessidades || []).length ? '<p class="mk66-rot">Necessidades prováveis</p><ul>' + an.necessidades.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") +
+          ((an.propor || []).length ? '<p class="mk66-rot">O que propor</p><ul>' + an.propor.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") + "</div>";
+      }
       h += (a.resumo ? '<div class="mk66-bloco"><b>O que sabemos</b><p>' + esc(a.resumo) + "</p></div>" : "") +
         (a.abordagem ? '<div class="mk66-bloco"><b>Como abordar</b><ul>' + linhas(a.abordagem).map((l) => "<li>" + l + "</li>").join("") + "</ul></div>" : "") +
         (a.mensagem ? '<div class="mk66-bloco"><b>Primeira mensagem</b><p class="mk66-msg">' + esc(a.mensagem) + '</p><div class="acts"><button class="btn sec" data-acao="mk66-copiar" data-id="' + a.id + '">' + I.copiar + "Copiar</button>" +
@@ -75,7 +83,7 @@ export function criarMackay(ctx) {
         ((a.fontes || []).length ? '<p class="mk66-fontes">Fontes: ' + a.fontes.slice(0, 4).map((f) => '<a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titulo || f.url) + "</a>").join(" · ") + "</p>" : "");
     }
     h += '<div class="acts mk66-acts">' + (a.estado === "sugerida" ? (!a.preparada_em
-      ? '<button class="btn pri" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + I.ia + (prep ? "A preparar (pode levar 1 minuto)…" : "Preparar abordagem") + "</button>"
+      ? '<button class="btn pri" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + I.ia + (prep ? "A preparar (pode levar 1 minuto)…" : ["primeiro", "lead"].includes(a.tipo) ? "Analisar e preparar" : "Preparar abordagem") + "</button>"
       : '<button class="btn sec" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + (prep ? "A preparar…" : "Preparar de novo") + "</button>") +
       '<button class="btn pri" data-acao="mk66-feita" data-id="' + a.id + '">' + I.tarefas + "Feita</button>" +
       '<button class="btn sec" data-acao="mk66-ignorar" data-id="' + a.id + '">Hoje não</button>'
@@ -85,14 +93,16 @@ export function criarMackay(ctx) {
 
   function vista() {
     garantir();
-    let h = '<div class="mk66-intro"><div><h2>Abordar hoje</h2><p class="muted">Todos os dias o assistente escolhe no CRM os clientes que vale a pena contactar: quem já devia ter encomendado, seguimentos marcados, clientes em risco e leads prometedores. Para cada um prepara a abordagem com o método Mackay 66.</p></div></div>';
+    let h = '<div class="mk66-intro"><div><h2>Abordar hoje</h2><p class="muted">Todos os dias o assistente escolhe no CRM quem vale a pena contactar: clientes que já deviam ter encomendado, seguimentos marcados e clientes em risco, mais algumas barbearias para o primeiro contacto de venda. Para cada um prepara a abordagem com o método Mackay 66.</p></div></div>';
     if (M.estado === "falta") return h + '<div class="vazio"><h3>Falta instalar</h3><p>No Supabase, corre <b>supabase/29-mackay-abordagens.sql</b> e publica a função <b>crm-abordar</b> (README, passo 3z-d).</p></div>';
     if (M.estado === "erro") return h + '<div class="aviso erro">Não foi possível preparar a lista: ' + esc(M.erro || "") + ' <button class="btn sec" data-acao="mk66-recarregar">Tentar outra vez</button></div>';
     if (M.estado !== "pronto") return h + '<div class="tabela"><div class="esqueleto"><i style="width:55%"></i></div><div class="esqueleto"><i style="width:40%"></i></div></div>';
     if (M.aviso) h += '<div class="aviso"><span>' + esc(M.aviso) + "</span></div>";
     if (!M.lista.length) return h + '<div class="vazio"><h3>Hoje não há clientes a abordar</h3><p>Ninguém está atrasado nas encomendas nem há seguimentos marcados. Amanhã há uma lista nova.</p></div>';
     const pend = pendentes(), feitos = M.lista.filter((a) => a.estado !== "sugerida");
-    h += '<div class="mk66-lista">' + pend.map((a) => cartao(a)).join("") + "</div>";
+    const eNovo = (a) => a.tipo === "primeiro" || a.tipo === "lead", cli = pend.filter((a) => !eNovo(a)), novos = pend.filter(eNovo);
+    if (cli.length) h += '<h3 class="mk66-sub">Clientes <span class="n">' + cli.length + '</span></h3><div class="mk66-lista">' + cli.map((a) => cartao(a)).join("") + "</div>";
+    if (novos.length) h += '<h3 class="mk66-sub">Primeiro contacto de venda <span class="n">' + novos.length + '</span></h3><p class="muted mk66-nota">Barbearias que ainda não são clientes. O assistente analisa cada uma (cadeiras, barbeiros, avaliação, necessidades e o que propor) e escreve a mensagem de apresentação.</p><div class="mk66-lista">' + novos.map((a) => cartao(a)).join("") + "</div>";
     if (!pend.length) h += '<div class="vazio"><h3>Lista de hoje tratada</h3><p>Amanhã há uma lista nova.</p></div>';
     if (feitos.length) h += '<h3 class="mk66-sub">Tratados hoje <span class="n">' + feitos.length + '</span></h3><div class="mk66-lista">' + feitos.map((a) => cartao(a, true)).join("") + "</div>";
     return h;

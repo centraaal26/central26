@@ -289,7 +289,7 @@ export function criarDemo() {
             const cli = d.clientes.filter((c) => c.etapa === "cliente").slice(0, 3), lead = d.clientes.find((c) => c.etapa === "lead" && c.score >= 80);
             const MOT = [["recompra", "Costuma encomendar a cada 30 dias e a última encomenda foi há 52 dias (exemplo)."], ["risco", "Sem compras há 110 dias, depois de 1 240 € no período (exemplo)."], ["seguimento", "Seguimento marcado para hoje: enviar catálogo das cadeiras (exemplo)."]];
             cli.forEach((c, i) => d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: c.id, ordem: i, tipo: MOT[i][0], motivo: MOT[i][1], resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" }));
-            if (lead) d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: lead.id, ordem: 3, tipo: "lead", motivo: "Lead com pontuação " + lead.score + " e ainda sem nenhum contacto (exemplo).", resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" });
+            if (lead) d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: lead.id, ordem: 3, tipo: "primeiro", motivo: "Ainda não é cliente nem foi contactado · pontuação " + lead.score + " (exemplo).", resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" });
             guardar();
           }
           return { dia: hojeD(), lista: structuredClone(d.abordagens.filter((a) => a.dia === hojeD())) };
@@ -298,6 +298,8 @@ export function criarDemo() {
           await new Promise((r) => setTimeout(r, 700));
           const d = ler(), a = d.abordagens.find((x) => x.id === id); if (!a) throw new Error("Sugestão não encontrada.");
           const c = d.clientes.find((x) => x.id === a.cliente_id);
+          if (a.tipo === "primeiro") a.analise = { cadeiras: "4 (exemplo · contadas nas fotos do Google, certeza média)", barbeiros: "3 (exemplo · equipa na página de marcações)", avaliacao: "4,8 (212 avaliações) · exemplo", perfil: "Barbearia moderna, preço médio, clientela jovem (exemplo).", fotos: 3,
+            necessidades: ["Ceras e pós com fixação forte para fades (exemplo)", "Consumíveis: golas e lâminas em quantidade (exemplo)", "Produtos de revenda ao balcão (exemplo)"], propor: ["Kit de amostras PRO (exemplo)", "Formação de fade na 26 Academy (exemplo)"] };
           Object.assign(a, { resumo: "Exemplo · " + c.nome + " compra sobretudo ceras e champô. No modo de demonstração não há pesquisa na web nem IA.",
             abordagem: "- Ligar a meio da manhã, antes do movimento do almoço\n- Pretexto: novidade da cera mate e reposição do champô\n- Propor o patamar PRO, que fica a 300 € desta encomenda",
             mensagem: "Olá! Daqui é o [nome] da TwentySix. Reparei que já está na altura de repor as ceras e o champô. Esta semana temos a cera mate nova: quer que lhe junte umas unidades para experimentar? Abraço, [nome]",

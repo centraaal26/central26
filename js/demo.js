@@ -280,7 +280,39 @@ export function criarDemo() {
       const novoCliente = (o) => ({ id: uid(), codigo_multixop: null, chave_lead: null, nome: "", nome_corrigido: false, nif: "", tipo: "lead", etapa: "lead", origem: "manual", morada: "", codigo_postal: "",
         freguesia: "", concelho: "", distrito: "", telefone: "", email: "", website: "", instagram: "", data_aniversario: null, responsavel_id: null, score: null, notas: "",
         criado_em: agora(), atualizado_em: agora(), atualizado_por: euId, ...o });
+      // Método Mackay 66 na demonstração: lista do dia a partir dos clientes de exemplo e abordagem de exemplo (sem IA)
+      const hojeD = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+      const abordagens = {
+        async hoje() {
+          const d = ler(); d.abordagens = d.abordagens || [];
+          if (!d.abordagens.some((a) => a.dia === hojeD())) {
+            const cli = d.clientes.filter((c) => c.etapa === "cliente").slice(0, 3), lead = d.clientes.find((c) => c.etapa === "lead" && c.score >= 80);
+            const MOT = [["recompra", "Costuma encomendar a cada 30 dias e a última encomenda foi há 52 dias (exemplo)."], ["risco", "Sem compras há 110 dias, depois de 1 240 € no período (exemplo)."], ["seguimento", "Seguimento marcado para hoje: enviar catálogo das cadeiras (exemplo)."]];
+            cli.forEach((c, i) => d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: c.id, ordem: i, tipo: MOT[i][0], motivo: MOT[i][1], resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" }));
+            if (lead) d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: lead.id, ordem: 3, tipo: "lead", motivo: "Lead com pontuação " + lead.score + " e ainda sem nenhum contacto (exemplo).", resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" });
+            guardar();
+          }
+          return { dia: hojeD(), lista: structuredClone(d.abordagens.filter((a) => a.dia === hojeD())) };
+        },
+        async preparar(id) {
+          await new Promise((r) => setTimeout(r, 700));
+          const d = ler(), a = d.abordagens.find((x) => x.id === id); if (!a) throw new Error("Sugestão não encontrada.");
+          const c = d.clientes.find((x) => x.id === a.cliente_id);
+          Object.assign(a, { resumo: "Exemplo · " + c.nome + " compra sobretudo ceras e champô. No modo de demonstração não há pesquisa na web nem IA.",
+            abordagem: "- Ligar a meio da manhã, antes do movimento do almoço\n- Pretexto: novidade da cera mate e reposição do champô\n- Propor o patamar PRO, que fica a 300 € desta encomenda",
+            mensagem: "Olá! Daqui é o [nome] da TwentySix. Reparei que já está na altura de repor as ceras e o champô. Esta semana temos a cera mate nova: quer que lhe junte umas unidades para experimentar? Abraço, [nome]",
+            descobrir: ["Quem decide as compras na barbearia?", "Que marcas revendem ao balcão?", "Qual é o maior desafio da loja este ano?"], preparada_em: agora() });
+          guardar(); return { abordagem: structuredClone(a), sugestoes: 0 };
+        },
+        async pesquisar() { await new Promise((r) => setTimeout(r, 500)); throw new Error("No modo de demonstração não há pesquisa na web."); },
+        async estado(id, estado) { const d = ler(), a = d.abordagens.find((x) => x.id === id); if (a) { a.estado = estado; guardar(); } },
+      };
+      const mackay = {
+        async ler(id) { const d = ler(); return structuredClone((d.mackay || {})[id] || null); },
+        async guardar(id, campos) { const d = ler(); d.mackay = d.mackay || {}; d.mackay[id] = { cliente_id: id, respostas: {}, sugestoes: {}, fontes: [], ...(d.mackay[id] || {}), ...campos, atualizado_em: agora() }; guardar(); return structuredClone(d.mackay[id]); },
+      };
       return {
+        abordagens, mackay,
         async carregar() { const d = ler(); return structuredClone({ clientes: d.clientes, produtos: d.produtos, vendas: d.vendas, contactos: d.contactos, importacoes: d.importacoes, custos: d.custos || [] }); },
         async custo(codigo, valor) {
           const d = ler(); if (!eGestor(eu())) throw new Error("Só a direção muda o custo dos produtos.");

@@ -331,6 +331,12 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 4. Na app: encomenda com transporte **Nacex** → **Criar envio Nacex** (volumes e peso). A Central devolve a etiqueta em PDF e guarda a carta de porte como tracking. **Etiqueta (PDF)** volta a imprimi-la; **Atualizar estado** pergunta à Nacex (também é feito sozinho quando a Logística abre as encomendas, de 30 em 30 minutos): em trânsito passa a «em rota», entregue passa a «entregue».
 5. A Nacex começa em modo de testes (envios fictícios, carta de porte com 9s). Quando os testes estiverem bem, pede a ativação do modo real a atencion.informatica@nacex.es; a Central mostra os envios de teste com um aviso.
 
+### 3z-d. Método Mackay 66 e clientes a abordar
+1. SQL Editor → **New query** → cola o conteúdo de `supabase/29-mackay-abordagens.sql` → **Run**.
+2. Edge Functions → **Deploy a new function** → nome `crm-abordar` → cola `supabase/functions/crm-abordar/index.ts` → **Deploy**. Usa a mesma chave do assistente; a pesquisa na web só funciona com o Claude (ANTHROPIC_API_KEY) e tem de estar ativa na consola da Anthropic.
+3. Na app: **Comercial → Abordar hoje**. Todos os dias (o primeiro a abrir o Comercial gera a lista) o assistente escolhe até 5 clientes: seguimentos marcados, clientes que já deviam ter encomendado, clientes em risco e leads prometedores. Quem já foi sugerido nos últimos 14 dias ou contactado nesta semana fica de fora. **Preparar abordagem** pesquisa a barbearia e devolve o que sabemos, como abordar, a primeira mensagem (copiar ou abrir no WhatsApp) e o que descobrir na conversa.
+4. Na ficha de cada cliente: **Perfil Mackay 66**, com as 66 perguntas adaptadas a barbearias. O assistente só pesquisa informação pública da loja e deixa sugestões com a fonte, que só ficam guardadas depois de alguém as aceitar. Não se guardam dados sensíveis (saúde, religião, política, vida familiar).
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

@@ -146,6 +146,17 @@ export function criarApi() {
     },
     // Gestão da equipa pelas funções SQL do script 02; se ainda não existirem, tenta a função de servidor antiga
     crm: {
+      // Método Mackay 66: clientes a abordar hoje (escolhidos e preparados pela função «crm-abordar») e o perfil de cada cliente
+      abordagens: {
+        async hoje() { return invocar("crm-abordar", { acao: "hoje" }); },
+        async preparar(id) { return invocar("crm-abordar", { acao: "preparar", id }); },
+        async pesquisar(clienteId) { return invocar("crm-abordar", { acao: "perfil", cliente_id: clienteId }); },
+        async estado(id, estado) { ok(await sb.from("crm_abordagens").update({ estado }).eq("id", id)); },
+      },
+      mackay: {
+        async ler(clienteId) { return ok(await sb.from("crm_mackay").select("*").eq("cliente_id", clienteId).maybeSingle()); },
+        async guardar(clienteId, campos) { return ok(await sb.from("crm_mackay").upsert({ cliente_id: clienteId, ...campos }).select().single()); },
+      },
       async carregar() {
         const [clientes, produtos, vendas, contactos, importacoes] = await Promise.all([
           todas(() => sb.from("crm_clientes").select("*").order("nome")),

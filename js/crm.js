@@ -180,7 +180,8 @@ export function criarCrm(ctx) {
     const ref = C.estado === "pronto" ? calc().ref : "";
     let h = '<div class="cab"><div><div class="eyebrow neutro">Departamento Comercial' + (ref ? " · faturação até " + esc(rotData(ref)) : "") + "</div><h1>Comercial</h1></div>" +
       (C.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="crm-novo">' + I.plus + "Novo cliente ou lead</button></div>" : "") + "</div>";
-    const tabs = [["clientes", "Clientes e leads"], ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"]];
+    const nAbordar = ctx.abordar?.contagem() || 0;
+    const tabs = [["clientes", "Clientes e leads"], ...(ctx.abordar ? [["abordar", "Abordar hoje" + (nAbordar ? " (" + nAbordar + ")" : "")]] : []), ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"]];
     if (podeImportar(S.eu)) tabs.push(["importar", "Importar"]);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="crm-tab" data-tab="' + k + '" aria-selected="' + (C.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (C.estado === "erro") {
@@ -192,6 +193,7 @@ export function criarCrm(ctx) {
       return h + '<div class="vazio"><h3>O CRM ainda está vazio</h3><p>Importa o ficheiro de dados iniciais (clientes e vendas do SAF-T de janeiro a setembro e as barbearias das bases de leads) ou um SAF-T exportado do Multixop.</p>' +
         (podeImportar(S.eu) ? '<div class="acts"><button class="btn pri" data-acao="crm-tab" data-tab="importar">Importar dados</button></div>' : "<p>Pede à administração ou ao chefe do Comercial para importar os dados.</p>") + "</div>";
     }
+    if (C.tab === "abordar" && ctx.abordar) return h + ctx.abordar.vista();
     if (C.tab === "funil") return h + vistaFunil();
     if (C.tab === "analise") return h + vistaAnalise();
     if (C.tab === "proformas" && ctx.vistaProformas) return h + ctx.vistaProformas();
@@ -223,6 +225,7 @@ export function criarCrm(ctx) {
       '<button class="kpi" data-acao="crm-ir" data-v="risco"><span>Em risco</span><b>' + num(risco) + '</b></button>' +
       '<button class="kpi" data-acao="crm-ir" data-v="leads"><span>Leads por trabalhar</span><b>' + num(leads) + "</b></button></div>" +
       (seg.length ? '<div class="seg-lista">' + seg.slice(0, 5).map((x) => '<button class="seg-linha" data-acao="crm-abrir" data-id="' + x.cliente_id + '"><span><b>' + esc(C.clientes[x.cliente_id].nome) + "</b><small>" + esc(x.proximo_passo || "Voltar a contactar") + '</small></span><small class="' + (x.data_proximo < hj ? "at" : "") + '">' + (x.data_proximo < hj ? "Atrasado · " : x.data_proximo === hj ? "Hoje · " : "") + esc(rotData(x.data_proximo)) + "</small></button>").join("") + "</div>" : "") +
+      (ctx.abordar ? ctx.abordar.blocoInicio() : "") +
       "</section>";
   }
   const contagem = () => (C.estado !== "pronto" ? 0 : seguimentos().filter((x) => x.data_proximo <= ymd(new Date())).length);
@@ -584,6 +587,7 @@ export function criarCrm(ctx) {
     h += cont.length ? '<div class="feed">' + cont.map((x) => '<div class="feed-item">' + av(x.autor_id) + '<span class="txt"><b>' + esc(TIPOS_CONTACTO[x.tipo] || x.tipo) + "</b> · " + esc(nomeDe(x.autor_id) || "Alguém") +
       (x.texto ? "<br>" + esc(x.texto) : "") + (x.proximo_passo ? '<br><span class="muted">Próximo passo: ' + esc(x.proximo_passo) + (x.data_proximo ? " · " + esc(rotData(x.data_proximo)) : "") + "</span>" : "") + '</span><span class="q">' + haQuanto(x.criado_em) + "</span></div>").join("") + "</div>" : '<p class="muted" style="margin:0">Ainda sem contactos registados.</p>';
     h += "</section>";
+    if (ctx.abordar && c.tipo !== "interno") h += ctx.abordar.seccao(c);
     if (s) {
       const prefs = [...s.produtos.entries()].sort((a, b) => b[1].qtd - a[1].qtd).slice(0, 8);
       h += '<section class="p-sec"><h3>O que compra</h3><div class="barras-h">' + prefs.map(([d, x]) => '<div class="bh"><span class="bh-r">' + esc(d) + '</span><span class="bh-v">' + num(x.qtd) + " un. <small>" + eur(x.valor) + '</small></span><div class="barra-p"><i style="width:' + Math.max(2, (x.qtd / prefs[0][1].qtd) * 100) + '%"></i></div></div>').join("") + "</div></section>";

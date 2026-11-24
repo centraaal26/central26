@@ -181,3 +181,25 @@ export function paginador(r, acao, rotulo = "registos", extra = "") {
     '<button class="pg-n pg-ant" data-acao="' + acao + '" data-p="' + (r.pag - 1) + '"' + extra + (r.pag === 1 ? " disabled" : "") + ' aria-label="Página anterior">' + SETA_PG + "</button>" + h +
     '<button class="pg-n" data-acao="' + acao + '" data-p="' + (r.pag + 1) + '"' + extra + (r.pag === r.paginas ? " disabled" : "") + ' aria-label="Página seguinte">' + SETA_PG + "</button></span></nav>";
 }
+
+// Morada portuguesa → rua, código postal e localidade, aceitando a localidade antes ou depois do código postal
+// («Rua X, 10, 4400-123 Vila Nova de Gaia», «Rua X, 10, Vila Nova de Gaia, 4400-123», «4400 123», «4400123»)
+export function partirMorada(texto) {
+  let t = String(texto || "").replace(/\s+/g, " ").trim().replace(/[,\s]*\bPortugal\s*$/i, "");
+  const m = t.match(/(?<!\d)(\d{4})\s?[-–]?\s?(\d{3})(?!\d)/);
+  if (!m) return { rua: t.replace(/[,\s]+$/, ""), cp: "", localidade: "" };
+  let antes = t.slice(0, m.index).replace(/[,\s–-]+$/, "").trim();
+  const depois = t.slice(m.index + m[0].length).replace(/^[,\s–-]+/, "").trim();
+  let localidade = depois.split(",")[0].trim();
+  if (!localidade) {
+    const partes = antes.split(",").map((x) => x.trim()).filter(Boolean);
+    if (partes.length >= 2 && !/\d/.test(partes[partes.length - 1])) { localidade = partes.pop(); antes = partes.join(", "); }
+    else if (partes.length === 1) { // sem vírgulas: «Rua X 10 Vila Nova de Gaia 4400-123»
+      const mm = antes.match(/^(.*\d)\s+(\p{Lu}[^\d,]*)$/u);
+      if (mm) { antes = mm[1].trim(); localidade = mm[2].trim(); }
+    }
+  }
+  return { rua: antes, cp: m[1] + "-" + m[2], localidade };
+}
+export const normalizarCp = (cp) => { const m = String(cp || "").match(/(\d{4})\s?[-–]?\s?(\d{3})/); return m ? m[1] + "-" + m[2] : String(cp || "").trim(); };
+

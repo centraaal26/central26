@@ -1,5 +1,5 @@
 // Central 26 — Logística: encomendas (com fatura e preparação artigo a artigo), rotas otimizadas e locais.
-import { MES, MES_L, DIA, ymd, normalizar, haQuanto, eGestor, PRIORIDADES, paginar, paginador } from "./dados.js";
+import { MES, MES_L, DIA, ymd, normalizar, haQuanto, eGestor, PRIORIDADES, paginar, paginador, partirMorada, normalizarCp } from "./dados.js";
 import { localizar, calcularRota, ligacoesGoogle, navegarGoogle, navegarWaze, desenharMapa } from "./geo.js";
 
 export const ESTADOS_ENC = { nova: "Nova", em_preparacao: "Em preparação", pronta: "Pronta", em_rota: "Em rota", entregue: "Entregue", cancelada: "Cancelada" };
@@ -241,11 +241,15 @@ export function criarLogistica(ctx) {
     return mold(h, pe);
   }
   /* ---------- envio pela Nacex: ficha para copiar para o portal e tracking ---------- */
+  // Morada de envio: a da ficha do cliente (proforma) ou a da encomenda, com o código postal e a localidade em qualquer ordem
+  function moradaEnvio(e) {
+    const v = e.envio || {}, p = partirMorada(v.morada || e.morada), q = v.morada ? partirMorada(e.morada) : { cp: "", localidade: "" };
+    return { rua: p.rua, cp: normalizarCp(v.cp) || p.cp || q.cp, localidade: v.localidade || p.localidade || q.localidade || S.crm?.clientes?.[e.crm_cliente_id]?.concelho || "" };
+  }
   function dadosEnvio(e) {
-    const v = e.envio || {};
-    const cp = v.cp || (String(e.morada).match(/\b\d{4}-\d{3}\b/) || [""])[0];
+    const v = e.envio || {}, m = moradaEnvio(e);
     return [["Serviço", v.servico || "27"], ["Nome", v.nome || e.cliente_nome], ["Telefone", v.telefone || e.contacto], ["Telemóvel", v.telemovel || ""],
-      ["Morada", String(v.morada || e.morada || "").replace(/,?\s*\d{4}-\d{3}.*$/, "").trim()], ["Código postal", cp], ["Email", v.email || ""], ["Referência", ref(e) + (e.fatura_numero ? " · " + e.fatura_numero : "")]];
+      ["Morada", m.rua], ["Código postal", m.cp], ["Email", v.email || ""], ["Referência", ref(e) + (e.fatura_numero ? " · " + e.fatura_numero : "")]];
   }
   // Estados da Nacex em português
   const NX_EST = { DOCUMENTADO: "Envio criado, à espera de recolha", RECOGIDO: "Recolhido pela Nacex", TRANSITO: "Em trânsito", REPARTO: "Em distribuição", OK: "Entregue", INCIDENCIA: "Incidência" };
@@ -287,9 +291,8 @@ export function criarLogistica(ctx) {
   }
   // Dados que seguem para a Nacex (a localidade vem da ficha do cliente ou do que vem depois do código postal na morada)
   function dadosNacex(e) {
-    const d = dadosEnvio(e), v = e.envio || {};
-    const loc = v.localidade || (String(e.morada || "").match(/\d{4}-\d{3}\s+(.+)$/) || [])[1] || "";
-    return [d[1], d[2], d[3], d[4], d[5], ["Localidade", loc], d[6]];
+    const d = dadosEnvio(e);
+    return [d[1], d[2], d[3], d[4], d[5], ["Localidade", moradaEnvio(e).localidade], d[6]];
   }
   // Etiqueta: no computador vai direta para a janela de impressão (ou imprime sozinha, se o Chrome estiver em modo de impressão automática);
   // no telemóvel, ou se a impressão não abrir, abre o PDF

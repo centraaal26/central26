@@ -25,6 +25,26 @@ const limpo = (v: unknown, max: number) => String(v ?? "").replace(/[|\r\n]+/g, 
 const hojeNacex = () => new Date().toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", year: "numeric" });
 const ref = (e: { numero: number }) => "E-" + String(e.numero).padStart(4, "0");
 
+// Morada portuguesa → rua, código postal e localidade (a localidade pode vir antes ou depois do código postal). Igual a js/dados.js.
+function partirMorada(texto: unknown) {
+  let t = String(texto || "").replace(/\s+/g, " ").trim().replace(/[,\s]*\bPortugal\s*$/i, "");
+  const m = t.match(/(?<!\d)(\d{4})\s?[-–]?\s?(\d{3})(?!\d)/);
+  if (!m || m.index === undefined) return { rua: t.replace(/[,\s]+$/, ""), cp: "", localidade: "" };
+  let antes = t.slice(0, m.index).replace(/[,\s–-]+$/, "").trim();
+  const depois = t.slice(m.index + m[0].length).replace(/^[,\s–-]+/, "").trim();
+  let localidade = depois.split(",")[0].trim();
+  if (!localidade) {
+    const partes = antes.split(",").map((x) => x.trim()).filter(Boolean);
+    if (partes.length >= 2 && !/\d/.test(partes[partes.length - 1])) { localidade = partes.pop() || ""; antes = partes.join(", "); }
+    else if (partes.length === 1) {
+      const mm = antes.match(/^(.*\d)\s+(\p{Lu}[^\d,]*)$/u);
+      if (mm) { antes = mm[1].trim(); localidade = mm[2].trim(); }
+    }
+  }
+  return { rua: antes, cp: m[1] + "-" + m[2], localidade };
+}
+const normalizarCp = (cp: unknown) => { const m = String(cp || "").match(/(\d{4})\s?[-–]?\s?(\d{3})/); return m ? m[1] + "-" + m[2] : String(cp || "").trim(); };
+
 async function chamar(metodo: string, dados: Record<string, string>): Promise<string> {
   const u = env("NACEX_UTILIZADOR"), p = env("NACEX_CHAVE");
   if (!u || !p) throw new Error("Faltam as credenciais da Nacex (NACEX_UTILIZADOR e NACEX_CHAVE) nos Secrets da função «nacex».");
@@ -79,9 +99,16 @@ Deno.serve(async (req) => {
       const del = env("NACEX_DELEGACAO"), cli = env("NACEX_CLIENTE");
       if (!del || !cli) return json({ erro: "Faltam a agência e o código de cliente da Nacex (NACEX_DELEGACAO e NACEX_CLIENTE) nos Secrets da função «nacex»." }, 400);
       const v = (e.envio || {}) as Record<string, any>;
-      const cp = limpo(v.cp || (String(e.morada || "").match(/\b\d{4}-\d{3}\b/) || [""])[0], 15);
-      const morada = limpo(String(v.morada || e.morada || "").replace(/,?\s*\d{4}-\d{3}.*$/, ""), 60);
-      const localidade = limpo(v.localidade || (String(e.morada || "").match(/\d{4}-\d{3}\s+(.+)$/) || [])[1] || "", 40);
+      // a localidade pode vir antes ou depois do código postal; sem ela, usa o concelho da ficha do cliente
+      const pm = partirMorada(v.morada || e.morada), pe = v.morada ? partirMorada(e.morada) : { cp: "", localidade: "" };
+      let conc = "";
+      if (!v.localidade && !pm.localidade && !pe.localidade && e.crm_cliente_id) {
+        const { data: cl } = await admin.from("crm_clientes").select("concelho").eq("id", e.crm_cliente_id).maybeSingle();
+        conc = cl?.concelho || "";
+      }
+      const cp = limpo(normalizarCp(v.cp) || pm.cp || pe.cp, 15);
+      const morada = limpo(pm.rua, 60);
+      const localidade = limpo(v.localidade || pm.localidade || pe.localidade || conc, 40);
       const tel = limpo(v.telefone || e.contacto || v.telemovel, 20);
       const falta = [!morada && "morada", !cp && "código postal", !localidade && "localidade", !tel && "telefone"].filter(Boolean);
       if (falta.length) return json({ erro: "Faltam dados de envio: " + falta.join(", ") + ". Corrige a ficha do cliente ou a encomenda." }, 400);

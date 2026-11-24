@@ -11,6 +11,7 @@ import { criarLojas } from "./lojas.js";
 import { criarEquipaLote } from "./equipa-lote.js";
 import { criarEstatBar } from "./estatisticas-bar.js";
 import { criarPropostas } from "./propostas.js";
+import { sincronizarProtecao } from "./protecao.js";
 import { criarChat } from "./chat.js";
 import { criarAgenda, podeGerirAgenda } from "./agenda.js";
 import { criarLogistica, podeEncomendas } from "./logistica.js";
@@ -468,6 +469,7 @@ function render() {
   else if (S.fase === "mudar-password") app.innerHTML = vistaMudarPassword();
   else if (S.fase === "sem-perfil") app.innerHTML = vistaSemPerfil();
   else app.innerHTML = vistaApp();
+  sincronizarProtecao(["a-carregar", "entrar", "mudar-password", "sem-perfil"].includes(S.fase) ? null : S.eu); // contas dos barbeiros
   renderPainel();
   ajustarEcra(app);
   if (pesquisaAtiva?.aberta()) pesquisaAtiva.atualizar();

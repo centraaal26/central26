@@ -2166,3 +2166,26 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
   .prop-lista,.prop-inicio .prop-lista{grid-template-columns:1fr}
   .prop-grupo h2 .prop-todas{margin-left:0}
 }
+
+/* ---------- Proteção de ecrã (contas dos barbeiros) ---------- */
+#marca-agua{position:fixed;inset:0;pointer-events:none;z-index:9998;overflow:hidden}
+.ma-grelha{position:absolute;top:-50%;left:-50%;width:200%;height:200%;display:flex;flex-wrap:wrap;gap:64px 80px;align-content:flex-start;transform:rotate(-24deg)}
+.ma-grelha span{font:600 13px/1 var(--f-body);color:var(--ink);opacity:.08;white-space:nowrap}
+#cortina{display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;padding:24px}
+body.tapada #cortina{display:flex}
+.cortina-c{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.cortina-m{font-family:var(--f-display);font-size:30px;text-transform:uppercase;letter-spacing:.02em;color:var(--ink)}
+.cortina-c p{margin:0;color:var(--muted)}
+body.protegida{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body.protegida input,body.protegida textarea,body.protegida [contenteditable="true"]{-webkit-user-select:text;user-select:text}
+body.protegida img{-webkit-user-drag:none}
+.vp{all:unset;cursor:pointer;position:relative;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;min-width:120px;min-height:30px;padding:0 8px}
+.vp-v{filter:blur(8px);transition:filter .15s}
+.vp-r{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:600 11px var(--f-body);color:var(--muted);background:color-mix(in srgb,var(--sunken) 70%,transparent);border-radius:6px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;padding:0 8px}
+.vp.vp-on .vp-v{filter:none}
+.vp.vp-on .vp-r{display:none}
+.vp:focus-visible{outline:2px solid var(--b);outline-offset:2px}
+@media print{
+  body.protegida>*{display:none!important}
+  body.protegida::before{content:"A impressão não está disponível nesta conta.";display:block;padding:40px;font:16px sans-serif}
+}

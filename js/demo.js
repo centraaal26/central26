@@ -10,7 +10,7 @@ const CHAVE_EU = "central26-demo-eu";
 
 const DEPS = [
   ["direcao", "Direção", 1], ["administrativo", "Administrativo e Operacional", 2], ["operacional", "Operacional", 3],
-  ["comercial", "Comercial", 4], ["marketing", "Marketing e Multimédia", 5], ["logistica", "Logística", 6], ["tecnologico", "Tecnológico", 7],
+  ["comercial", "Comercial", 4], ["marketing", "Marketing e Multimédia", 5], ["logistica", "Logística", 6], ["tecnologico", "Tecnológico", 7], ["barbearias", "Barbearias", 8],
 ].map(([id, nome, ordem]) => ({ id, nome, ordem }));
 
 const PESSOAS = [
@@ -23,6 +23,7 @@ const PESSOAS = [
   ["p-isaac", "Isaac Maia", "Departamento Tecnológico", "tecnologico", "admin"],
   ["p-loja", "Responsável de Loja (exemplo)", "Responsável da loja", "operacional", "colaborador"],
   ["p-mkt", "Colaborador de Marketing (exemplo)", "Conteúdos e redes sociais", "marketing", "colaborador"],
+  ["p-barbeiro", "Barbeiro (exemplo)", "Barbeiro", "barbearias", "colaborador"],
 ].map(([id, nome, cargo, departamento_id, papel]) => ({
   id, nome, cargo, departamento_id, papel, email: id.slice(2) + "@exemplo.pt", telefone: "", ativo: true, mudar_password: false, gere_agenda: id === "p-samuel",
   restrito: id === "p-mkt", supervisor_id: id === "p-mkt" ? "p-goncalo" : null,
@@ -83,7 +84,8 @@ function gravar(db) { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } c
 export function criarDemo() {
   let db = ler();
   // dados de demonstração antigos: junta a pessoa com acesso limitado (exemplo) e as propostas do assistente
-  if (!db.perfis.some((p) => p.id === "p-mkt")) { db.perfis.push(structuredClone(PESSOAS.find((p) => p.id === "p-mkt"))); gravar(db); }
+  ["p-mkt", "p-barbeiro"].forEach((id) => { if (!db.perfis.some((p) => p.id === id)) { db.perfis.push(structuredClone(PESSOAS.find((p) => p.id === id))); gravar(db); } });
+  if (!db.departamentos.some((d) => d.id === "barbearias")) { db.departamentos.push(structuredClone(DEPS.find((d) => d.id === "barbearias"))); gravar(db); }
   if (!db.propostas) {
     const dia = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
     db.propostas = [

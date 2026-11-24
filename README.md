@@ -313,6 +313,13 @@ O ficheiro é lido no computador de quem importa e só os números ficam na Cent
    - **Acesso limitado**: a pessoa só vê as suas tarefas, as mensagens e o módulo do seu departamento. Tudo o que tiver valores em euros (€, EUR, euros) nas tarefas, publicações e documentos fica escondido para ela, na base de dados e não só no ecrã, e não consegue escrever valores em euros.
 4. O responsável direto abre **Propostas de tarefas** → **Pedir propostas**. O assistente analisa as tarefas pendentes e as publicações sem responsável e propõe tarefas. Nada chega à pessoa até o responsável carregar em **Aprovar e atribuir** em cada proposta (ou **Aprovar todas**).
 
+### 3z-b. Proteção de ecrã nas contas dos barbeiros
+Automática para as contas do departamento Barbearias (nunca para a direção). Nenhuma aplicação web consegue impedir a 100% uma captura de ecrã, por isso a Central:
+1. mostra uma marca de água com o nome da pessoa e a hora em todo o ecrã, para qualquer captura ficar identificada;
+2. tapa o ecrã quando a app sai de primeiro plano (mudar de aplicação, outra janela, tecla Print Screen); para voltar carrega-se em **Continuar**;
+3. esconde os valores até a pessoa tocar neles, e voltam a esconder-se ao fim de 6 segundos;
+4. não deixa copiar, abrir o menu de contexto, arrastar nem imprimir.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

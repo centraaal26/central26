@@ -258,7 +258,8 @@ export function criarLogistica(ctx) {
     let h = '<section class="p-sec nacex"><h3>Envio pela Nacex</h3>';
     if (nx && nx.expe_codigo) {
       const est = nx.estado || "DOCUMENTADO";
-      h += (nx.teste ? '<div class="aviso"><span>A ligação à Nacex ainda está em <b>modo de testes</b>: este envio não é real. Quando a Nacex ativar o modo real, cancela-o e cria-o de novo.</span></div>' : "") +
+      h += (nx.cancelar_erro ? '<div class="aviso"><span>A encomenda foi cancelada, mas a Nacex não aceitou cancelar o envio: ' + esc(nx.cancelar_erro) + '. Cancela-o no portal da Nacex ou liga para a agência.</span></div>' : "") +
+        (nx.teste ? '<div class="aviso"><span>A ligação à Nacex ainda está em <b>modo de testes</b>: este envio não é real. Quando a Nacex ativar o modo real, cancela-o e cria-o de novo.</span></div>' : "") +
         '<div class="nx-envio"><div class="nx-est nx-' + esc(est.toLowerCase()) + '"><i></i><b>' + esc(NX_EST[est] || est) + "</b>" + (nx.estado_data ? "<small>" + esc(nx.estado_data) + (nx.estado_obs ? " · " + esc(nx.estado_obs) : "") + "</small>" : "") + "</div>" +
         '<div class="nx-campos">' + [["Carta de porte", nx.albaran], ["Serviço", nx.servico], ["Entrega prevista", nx.data_prevista], ["Volumes", nx.volumes + (nx.volumes == 1 ? " volume" : " volumes") + " · " + String(nx.peso).replace(".", ",") + " kg"], ["Agência de entrega", nx.agencia_entrega]]
           .filter(([, v]) => v).map(([r, v]) => '<div class="nx-linha"><span>' + r + "</span><b>" + esc(v) + "</b><i></i></div>").join("") + "</div></div>" +

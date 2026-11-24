@@ -5,12 +5,13 @@
 //   NACEX_CHAVE       palavra-passe em MD5 (tal como a Nacex a fornece)
 //   NACEX_DELEGACAO   agência do cliente (del_cli)
 //   NACEX_CLIENTE     código de cliente / n.º de abonado (num_cli)
-// Só quem trata de encomendas (pode_encomendas) pode usar esta função.
+// Só quem trata de encomendas (pode_encomendas) pode usar esta função. A exceção é o aviso da base de dados
+// (com o segredo_webhook) quando uma encomenda com envio é cancelada: aí a função cancela o envio na Nacex.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-segredo",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (corpo: unknown, estado = 200) => new Response(JSON.stringify(corpo), { status: estado, headers: { ...cors, "Content-Type": "application/json" } });
@@ -71,6 +72,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ erro: "Método não suportado." }, 405);
   try {
+    const corpo = await req.json().catch(() => ({}));
+    const acao = String(corpo.acao || "");
+
+    // chamada da base de dados quando uma encomenda com envio é cancelada: cancela o envio na Nacex
+    if (acao === "cancelar_canceladas") {
+      const { data: s } = await admin.from("configuracao_privada").select("valor").eq("chave", "segredo_webhook").maybeSingle();
+      if (!s?.valor || req.headers.get("x-segredo") !== s.valor) return json({ erro: "Não autorizado." }, 401);
+      return json({ ok: true, ...(await cancelarCanceladas()) });
+    }
+
     const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     const { data: sessao } = await admin.auth.getUser(token);
     if (!sessao?.user) return json({ erro: "A sessão expirou. Volta a entrar." }, 401);
@@ -78,14 +89,12 @@ Deno.serve(async (req) => {
     const { data: pode } = await sb.rpc("pode_encomendas");
     if (!pode) return json({ erro: "Só a Logística, quem fatura e a direção tratam dos envios." }, 403);
 
-    const corpo = await req.json().catch(() => ({}));
-    const acao = String(corpo.acao || "");
-
     // estado de todos os envios em curso (chamado quando a Logística abre as encomendas)
     if (acao === "atualizar") {
       const { data: l } = await admin.from("log_encomendas").select("id, numero, estado, nacex").not("nacex", "is", null).not("estado", "in", "(entregue,cancelada)").limit(60);
       let mudaram = 0;
       for (const e of l || []) { try { if (await estado(e)) mudaram++; } catch { /* segue para o próximo */ } }
+      await cancelarCanceladas().catch(() => null); // rede de segurança, se o aviso da base de dados falhar
       return json({ ok: true, vistos: (l || []).length, mudaram });
     }
 
@@ -158,6 +167,26 @@ Deno.serve(async (req) => {
     return json({ erro: (err as Error)?.message || String(err) }, 500);
   }
 });
+
+// Encomendas canceladas que ainda têm envio ativo na Nacex: cancela o envio (os de teste só se limpam).
+// Se a Nacex recusar (por exemplo, já foi recolhido), guarda o motivo para a Logística ver e não volta a tentar sozinha.
+async function cancelarCanceladas() {
+  const { data: l } = await admin.from("log_encomendas").select("id, numero, nacex").eq("estado", "cancelada").not("nacex", "is", null).limit(20);
+  let canceladas = 0, recusadas = 0;
+  for (const e of l || []) {
+    const nx = (e.nacex || {}) as Record<string, any>;
+    if (!nx.expe_codigo || nx.cancelar_erro || nx.estado === "OK") continue;
+    try {
+      if (!nx.teste) await chamar("cancelExpedicion", { expe_codigo: String(nx.expe_codigo) });
+      await admin.from("log_encomendas").update({ nacex: null, tracking: "" }).eq("id", e.id);
+      canceladas++;
+    } catch (err) {
+      await admin.from("log_encomendas").update({ nacex: { ...nx, cancelar_erro: limpo((err as Error)?.message || String(err), 300), cancelar_em: new Date().toISOString() } }).eq("id", e.id);
+      recusadas++;
+    }
+  }
+  return { canceladas, recusadas };
+}
 
 // Consulta o estado na Nacex e acerta a encomenda: em trânsito → «em rota»; entregue (OK) → «entregue»
 async function estado(e: { id: string; estado: string; nacex: Record<string, any> }) {

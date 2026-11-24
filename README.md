@@ -330,6 +330,7 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
    - `NACEX_CLIENTE`: o código de cliente (n.º de abonado).
 4. Na app: encomenda com transporte **Nacex** → **Criar envio Nacex** (volumes e peso). A Central devolve a etiqueta em PDF e guarda a carta de porte como tracking. **Etiqueta (PDF)** volta a imprimi-la; **Atualizar estado** pergunta à Nacex (também é feito sozinho quando a Logística abre as encomendas, de 30 em 30 minutos): em trânsito passa a «em rota», entregue passa a «entregue».
 5. A Nacex começa em modo de testes (envios fictícios, carta de porte com 9s). Quando os testes estiverem bem, pede a ativação do modo real a atencion.informatica@nacex.es; a Central mostra os envios de teste com um aviso.
+6. Cancelar uma encomenda que já tem envio na Nacex cancela também o envio na Nacex (corre `supabase/31-nacex-cancelar-auto.sql`; a função `nacex` é publicada com «Verify JWT» desligado porque faz a sua própria verificação: sessão com `pode_encomendas`, ou o `segredo_webhook` no aviso da base de dados). Se a Nacex recusar (por exemplo, já foi recolhido), a encomenda mostra o motivo para se tratar à mão.
 
 ### 3z-d. Método Mackay 66 e clientes a abordar
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/29-mackay-abordagens.sql` → **Run**.

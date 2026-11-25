@@ -91,8 +91,9 @@ export function criarCrm(ctx) {
     estado: "por-carregar", erro: "", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [],
     tab: "clientes", vista: "clientes", q: "", fEtapa: "", fEstado: "", fDistrito: "", fResp: "", ordem: "", pag: 1,
     funilDistrito: "", funilResp: "", periodo: "", importacao: null, aImportar: null, versao: 0,
+    marca: (() => { try { return localStorage.getItem("central26-crm-marca") || "todas"; } catch { return "todas"; } })(),
   });
-  let cache = null, desligar = null;
+  let desligar = null;
 
   /* ---------- dados ---------- */
   async function carregar() {
@@ -127,11 +128,16 @@ export function criarCrm(ctx) {
   }
 
   /* ---------- cálculos ---------- */
-  function calc() {
-    if (cache && cache.versao === C.versao) return cache;
+  // TwentySix e 26 Tech: as vendas da 26 Tech são as dos produtos da linha «tech»; o resto é da TwentySix
+  const eTech = (v) => C.produtos[v.produto_codigo]?.linha === "tech";
+  const vendasDe = (m = C.marca) => (m === "tech" ? C.vendas.filter(eTech) : m === "twentysix" ? C.vendas.filter((v) => !eTech(v)) : C.vendas);
+  const caches = {};
+  function calc(m = C.marca) {
+    if (caches[m] && caches[m].versao === C.versao) return caches[m];
     const porCod = new Map();
     let ref = "";
-    for (const v of C.vendas) {
+    for (const v of C.vendas) if (v.data > ref) ref = v.data; // a data de referência é a mesma para as duas marcas
+    for (const v of vendasDe(m)) {
       if (v.data > ref) ref = v.data;
       let r = porCod.get(v.cliente_codigo);
       if (!r) porCod.set(v.cliente_codigo, (r = { total: 0, docs: new Map(), datas: new Set(), produtos: new Map(), nc: 0, tech: false }));
@@ -153,13 +159,20 @@ export function criarCrm(ctx) {
       r.estado = r.dias == null ? "sem" : r.dias <= 30 ? "ativo" : r.dias <= 90 ? "morno" : r.dias <= 180 ? "risco" : "perdido";
       r.aContactar = r.compras >= 4 && r.ritmo && r.dias > r.ritmo * 1.5;
     }
-    cache = { versao: C.versao, porCod, ref };
-    return cache;
+    caches[m] = { versao: C.versao, porCod, ref };
+    return caches[m];
   }
-  const statsDe = (c) => (c.codigo_multixop ? calc().porCod.get(c.codigo_multixop) : null) || null;
+  const statsDe = (c, m = C.marca) => (c.codigo_multixop ? calc(m).porCod.get(c.codigo_multixop) : null) || null;
   const estadoDe = (c) => statsDe(c)?.estado || "sem";
   const listaClientes = () => Object.values(C.clientes);
-  const visiveis = () => listaClientes().filter((c) => c.tipo !== "interno");
+  // Na vista de uma marca: os clientes que lhe compraram e os leads dessa marca (os leads sem marca são da TwentySix)
+  function daMarca(c) {
+    if (C.marca === "todas") return true;
+    if (statsDe(c)) return true;
+    const comprou = !!statsDe(c, "todas");
+    return C.marca === "tech" ? c.marca === "tech" && !comprou : c.marca !== "tech" && !comprou;
+  }
+  const visiveis = () => listaClientes().filter((c) => c.tipo !== "interno" && daMarca(c));
 
   /* ---------- gravação ---------- */
   const timers = {};
@@ -184,6 +197,9 @@ export function criarCrm(ctx) {
     const tabs = [["clientes", "Clientes e leads"], ...(ctx.abordar ? [["abordar", "Abordar hoje" + (nAbordar ? " (" + nAbordar + ")" : "")]] : []), ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"], ...(ctx.loja ? [["loja", "Loja online"]] : [])];
     if (podeImportar(S.eu)) tabs.push(["importar", "Importar"]);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="crm-tab" data-tab="' + k + '" aria-selected="' + (C.tab === k) + '">' + r + "</button>").join("") + "</div>";
+    if (["clientes", "funil", "mapa", "analise"].includes(C.tab) && C.estado === "pronto")
+      h += '<div class="crm-marcas" role="group" aria-label="Marca">' + [["todas", "Tudo"], ["twentysix", "TwentySix"], ["tech", "26 Tech"]].map(([k, r]) =>
+        '<button data-acao="crm-marca" data-m="' + k + '" aria-pressed="' + (C.marca === k) + '"' + (k !== "todas" ? ' data-marca-cor="' + k + '"' : "") + "><i></i>" + r + "</button>").join("") + "</div>";
     if (C.estado === "erro") {
       if (C.erro === "falta-script") return h + '<div class="vazio"><h3>Falta instalar o CRM na base de dados</h3><p>No Supabase, abre o SQL Editor, cola o ficheiro <b>supabase/03-crm.sql</b> do GitHub e carrega em Run. Depois recarrega esta página.</p></div>';
       return h + '<div class="aviso erro">Não foi possível carregar o CRM: ' + esc(C.erro) + ' <button class="btn sec" data-acao="crm-recarregar">Tentar outra vez</button></div>';
@@ -328,9 +344,10 @@ export function criarCrm(ctx) {
 
   /* ---------- Análise ---------- */
   function vistaAnalise() {
+    const todasM = vendasDe();
     const meses = [...new Set(C.vendas.map((v) => v.data.slice(0, 7)))].sort();
     const p = C.periodo;
-    const vendas = !p ? C.vendas : p === "3m" ? C.vendas.filter((v) => meses.slice(-3).includes(v.data.slice(0, 7))) : C.vendas.filter((v) => v.data.startsWith(p));
+    const vendas = !p ? todasM : p === "3m" ? todasM.filter((v) => meses.slice(-3).includes(v.data.slice(0, 7))) : todasM.filter((v) => v.data.startsWith(p));
     const ft = vendas.filter((v) => v.tipo !== "NC"), nc = vendas.filter((v) => v.tipo === "NC");
     const total = vendas.reduce((s, v) => s + +v.valor, 0);
     const docs = new Set(ft.map((v) => v.documento)), compradores = new Set(ft.map((v) => v.cliente_codigo));
@@ -545,7 +562,7 @@ export function criarCrm(ctx) {
     const moldura = (conteudo, pe) => '<div class="veu" data-acao="fechar"></div><aside class="painel largo" role="dialog" aria-label="Ficha de cliente" data-marca="twentysix"><div class="p-scroll">' + conteudo + "</div>" + (pe ? '<div class="p-pe">' + pe + "</div>" : "") + "</aside>";
     if (!c) return moldura('<div class="p-topo"><span class="migalha">Comercial</span><button class="ib" data-acao="fechar" aria-label="Fechar">' + I.x + "</button></div>" +
       (C.estado === "pronto" ? '<div class="vazio"><h3>Cliente indisponível</h3><p>Foi eliminado ou não tens acesso.</p></div>' : '<div class="esqueleto"><i style="width:60%"></i></div>'));
-    const s = statsDe(c), e = s?.estado || "sem";
+    const s = statsDe(c, "todas"), e = s?.estado || "sem";
     let h = '<div class="p-topo"><span class="migalha"><i></i>Comercial / ' + esc(c.etapa === "cliente" ? "Cliente" : "Lead") + '</span><span class="acts">' +
       '<button class="ib" data-acao="crm-tarefa" data-id="' + c.id + '">' + I.plus + "Tarefa</button>" +
       (c.tipo !== "interno" ? '<button class="ib" data-acao="enc-nova" data-cliente="' + c.id + '">' + (I.camiao || I.plus) + "Encomenda</button>" : "") +
@@ -565,6 +582,7 @@ export function criarCrm(ctx) {
       '<label for="cf-etapa">Etapa</label><select id="cf-etapa">' + Object.entries(ETAPAS).map(([k, r]) => '<option value="' + k + '"' + (c.etapa === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
       '<label for="cf-resp">Responsável</label><select id="cf-resp"><option value="">Sem responsável</option>' + pessoas.map((p) => '<option value="' + p.id + '"' + (c.responsavel_id === p.id ? " selected" : "") + ">" + esc(p.nome) + "</option>").join("") + "</select>" +
       '<label for="cf-tipo">Tipo</label><select id="cf-tipo">' + Object.entries(TIPOS).map(([k, r]) => '<option value="' + k + '"' + (c.tipo === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
+      '<label for="cf-marca">Marca</label><select id="cf-marca">' + [["", "TwentySix"], ["tech", "26 Tech"]].map(([k, r]) => '<option value="' + k + '"' + ((c.marca || "") === k ? " selected" : "") + ">" + r + "</option>").join("") + "</select>" +
       campo("cf-aniv", "Aniversário", c.data_aniversario, "date") +
       campo("cf-tel", "Telefone", c.telefone, "tel", ' autocomplete="off"') + campo("cf-email", "Email", c.email, "email", ' autocomplete="off"') +
       campo("cf-ig", "Instagram", c.instagram, "url", ' placeholder="https://instagram.com/…"') + campo("cf-web", "Site", c.website, "url", ' placeholder="https://…"') +
@@ -618,6 +636,7 @@ export function criarCrm(ctx) {
     const id = el.dataset.id;
     switch (acao) {
       case "crm-tab": C.tab = el.dataset.tab; render(); return true;
+      case "crm-marca": C.marca = el.dataset.m; C.pag = 1; try { localStorage.setItem("central26-crm-marca", C.marca); } catch { /* */ } render(); return true;
       case "crm-recarregar": carregar(); return true;
       case "crm-ver-margens": C.verMargens = !C.verMargens; render(); return true;
       case "crm-vista": C.vista = el.dataset.v; C.fEstado = ""; C.pag = 1; if (C.tab !== "clientes") C.tab = "clientes"; render(); return true;
@@ -642,7 +661,7 @@ export function criarCrm(ctx) {
       }
       case "crm-tarefa": {
         const c = C.clientes[id]; if (!c) return true;
-        const s = statsDe(c);
+        const s = statsDe(c, "todas");
         criarTarefa({ titulo: "Contactar " + c.nome, marca: s?.tech ? "tech" : "twentysix", freq: "unica", prioridade: s?.aContactar ? "alta" : "media",
           responsavel_id: c.responsavel_id || S.eu.id, departamento_id: "comercial",
           notas: "Cliente do CRM: " + c.nome + (c.telefone ? "\nTelefone: " + c.telefone : "") + (s ? "\nÚltima compra: " + rotData(s.ultima) + " (há " + s.dias + " dias)" : "") })
@@ -673,6 +692,7 @@ export function criarCrm(ctx) {
     if (t.id === "cf-etapa") { gravar(id, { etapa: t.value }); return true; }
     if (t.id === "cf-resp") { gravar(id, { responsavel_id: t.value || null }); return true; }
     if (t.id === "cf-tipo") { gravar(id, { tipo: t.value }); return true; }
+    if (t.id === "cf-marca") { gravar(id, { marca: t.value || null }); return true; }
     if (t.id === "cf-dist") { gravar(id, { distrito: t.value }); return true; }
     if (t.id === "cf-aniv") { gravar(id, { data_aniversario: t.value || null }); return true; }
     if (t.id === "cf-cod") { gravar(id, { codigo_multixop: t.value.trim() || null }); return true; }
@@ -701,7 +721,7 @@ export function criarCrm(ctx) {
         if (c.etapa === "lead" && ["chamada", "visita", "whatsapp", "email", "reuniao"].includes(tipo)) gravar(id, { etapa: "contactado" });
         if (c.etapa !== "cliente" && tipo === "proposta") gravar(id, { etapa: "proposta" });
         if (prox && $("#ct-tarefa").checked) {
-          await criarTarefa({ titulo: prox + " · " + c.nome, marca: statsDe(c)?.tech ? "tech" : "twentysix", freq: "unica", prioridade: "media", prazo: data,
+          await criarTarefa({ titulo: prox + " · " + c.nome, marca: statsDe(c, "todas")?.tech || c.marca === "tech" ? "tech" : "twentysix", freq: "unica", prioridade: "media", prazo: data,
             responsavel_id: c.responsavel_id || S.eu.id, departamento_id: "comercial", notas: "Cliente do CRM: " + c.nome + (c.telefone ? "\nTelefone: " + c.telefone : "") + (texto ? "\nÚltimo contacto: " + texto : "") });
           toast("Contacto registado e tarefa criada");
         } else toast("Contacto registado");
@@ -723,6 +743,6 @@ export function criarCrm(ctx) {
   }
   function mudarEtapa(id, etapa) { if (C.clientes[id] && C.clientes[id].etapa !== etapa) gravar(id, { etapa }); }
 
-  function reiniciar() { MAPA.reiniciar(); if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); cache = null; }
+  function reiniciar() { MAPA.reiniciar(); if (desligar) { desligar(); desligar = null; } Object.assign(C, { estado: "por-carregar", clientes: {}, produtos: {}, vendas: [], contactos: [], importacoes: [], importacao: null, tab: "clientes" }); for (const k in caches) delete caches[k]; }
   return { vista, painel, clique, mudar, escrever, submeter, mudarEtapa, carregar, aplicar, reiniciar, blocoInicio, contagem, estado: () => C.estado };
 }

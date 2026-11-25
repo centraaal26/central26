@@ -350,6 +350,11 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 - Com o envio criado na Nacex, a encomenda passa a «Concluída» no site e o cliente recebe a nota com o link de seguimento. Se o site cancelar ou reembolsar uma encomenda ainda não enviada, a Central cancela-a e avisa a Logística.
 - As vendas do site ficam em `woo_encomendas` sem nomes nem contactos (só código postal e localidade), para o separador Loja online.
 
+### 3z-f. Comercial por marca (TwentySix e 26 Tech)
+- Corre `supabase/34-crm-marcas.sql`. Em **Clientes e leads**, **Funil**, **Mapa** e **Análise** há o seletor **Tudo · TwentySix · 26 Tech** (fica lembrado no aparelho).
+- As vendas da 26 Tech são as dos produtos da linha «26 Tech» (lasers, Emsculpt, aluguer de equipamentos); o resto é da TwentySix. Um cliente aparece na marca a que comprou.
+- Os leads sem compras são da TwentySix, a não ser que na ficha se escolha **Marca: 26 Tech** (por exemplo, clínicas). A ficha do cliente mostra sempre todas as compras.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

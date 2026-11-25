@@ -277,8 +277,8 @@ export function criarDemo() {
           ["3800", "Aveiro", "Aveiro"], ["4520", "Santa Maria da Feira", "Aveiro"], ["3000", "Coimbra", "Coimbra"], ["2400", "Leiria", "Leiria"], ["1000", "Lisboa", "Lisboa"], ["3500", "Viseu", "Viseu"]];
         const PRE = ["Barbearia Exemplo", "Barber Studio Exemplo", "Salão Exemplo", "Barbearia Clássica Exemplo"];
         const PRODS = [["E01", "Cera modeladora 100 ml (exemplo)", 8.9, 3.1], ["E02", "Cera mate 100 ml (exemplo)", 8.9, 3.3], ["E03", "Pó texturizante (exemplo)", 7.5, 2.4], ["E04", "Óleo para barba 30 ml (exemplo)", 9.8, 3.6],
-          ["E05", "After shave 100 ml (exemplo)", 8.4, null], ["E06", "Champô 1000 ml (exemplo)", 16, 6.2], ["E07", "Gola de corte (exemplo)", 4.2, null], ["E08", "Avental de barbeiro (exemplo)", 19.5, 8.5], ["E09", "Lâminas 100 un. (exemplo)", 11, null]];
-        const d = { clientes: [], produtos: PRODS.map(([codigo, descricao]) => ({ codigo, descricao, grupo: "EXEMPLO", linha: "produtos" })), vendas: [], contactos: [], importacoes: [], seq: 1,
+          ["E05", "After shave 100 ml (exemplo)", 8.4, null], ["E06", "Champô 1000 ml (exemplo)", 16, 6.2], ["E07", "Gola de corte (exemplo)", 4.2, null], ["E08", "Avental de barbeiro (exemplo)", 19.5, 8.5], ["E09", "Lâminas 100 un. (exemplo)", 11, null], ["T01", "Aluguer de equipamento de estética (exemplo)", 390, null]];
+        const d = { clientes: [], produtos: PRODS.map(([codigo, descricao]) => ({ codigo, descricao, grupo: "EXEMPLO", linha: codigo.startsWith("T") ? "tech" : "produtos" })), vendas: [], contactos: [], importacoes: [], seq: 1,
           custos: PRODS.filter((x) => x[3] != null).map(([codigo, , , custo]) => ({ produto_codigo: codigo, custo, atualizado_em: agora() })) };
         for (let i = 0; i < 38; i++) {
           const [cp, loc, dist] = esc(LOC);
@@ -301,7 +301,7 @@ export function criarDemo() {
             const ci = Math.floor(Math.pow(rnd(), 1.6) * 38); if (ci % 9 === 4 && m < 5) continue; if (ci % 11 === 7 && m < 3) continue;
             const data = ymd(new Date(base.getFullYear(), base.getMonth(), 1 + Math.floor(rnd() * dias))), nc = rnd() < 0.012, linhas = 1 + Math.floor(rnd() * 3);
             for (let l = 1; l <= linhas; l++) {
-              const [codigo, descricao, preco] = PRODS[Math.floor(Math.pow(rnd(), 1.4) * PRODS.length)], qtd = [1, 2, 3, 6, 6, 12][Math.floor(rnd() * 6)];
+              const [codigo, descricao, preco] = PRODS[Math.floor(Math.pow(rnd(), 1.4) * PRODS.length)], qtd = codigo.startsWith("T") ? 1 : [1, 2, 3, 6, 6, 12][Math.floor(rnd() * 6)];
               d.vendas.push({ documento: (nc ? "NC EX/" : "FT EX/") + doc, linha: l, tipo: nc ? "NC" : "FT", data, cliente_codigo: String(100 + ci), produto_codigo: codigo, descricao, qtd, preco, valor: Math.round(preco * qtd * (nc ? -1 : 1) * 100) / 100 });
             }
             doc++;

@@ -2301,3 +2301,12 @@ body.protegida img{-webkit-user-drag:none}
   .woo-ult td:nth-child(4){grid-area:3/1;font-size:12.5px;color:var(--muted)}
   .woo-ult td:nth-child(6){grid-area:3/2;font-size:13px;text-align:right}
 }
+
+/* Comercial: TwentySix / 26 Tech */
+.crm-marcas{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 14px}
+.crm-marcas button{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 13px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:13px;font-weight:600;color:var(--muted)}
+.crm-marcas button i{display:none;width:8px;height:8px;border-radius:50%}
+.crm-marcas button[data-marca-cor] i{display:block}
+.crm-marcas button[data-marca-cor="twentysix"] i{background:var(--c-twentysix,#8a6a2f)}
+.crm-marcas button[data-marca-cor="tech"] i{background:var(--c-tech,#3f6fa8)}
+.crm-marcas button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}

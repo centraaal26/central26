@@ -124,6 +124,14 @@ export function criarDemo() {
     async mudarPassword() { const p = eu(); if (p) p.mudar_password = false; gravar(db); },
     async meuPerfil(id) { return db.perfis.find((p) => p.id === id) || null; },
     async nacex(acao, dados) { return ganchos.nacex(acao, dados || {}); },
+    // Impressão automática no modo de demonstração: a estação fica só neste aparelho e não imprime nada
+    impressao: {
+      async estado() { let n = null; try { n = localStorage.getItem("central26-estacao-etiquetas"); } catch {} return { estacao: n }; },
+      async batimento() {}, async desligar() {},
+      async pedir() { throw new Error("No modo de demonstração não há etiquetas reais para imprimir."); },
+      async reclamar() { return null; }, async concluir() {},
+      subscrever() { return () => {}; },
+    },
     // Leitura de caixa (exemplo): sem IA, a «leitura» devolve sempre o mesmo exemplo
     caixa: (() => {
       const dia = (n) => ymd(new Date(Date.now() - n * 864e5));

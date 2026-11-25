@@ -367,6 +367,13 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 4. Cada barbeiro vê em **Os meus números** só os seus serviços e entradas, dia a dia e por serviço, comparados com a média da loja (sem nomes). Os valores ficam escondidos até tocar. O total faturado só o veem a direção e o responsável da loja.
 - Metas e prémios: aparecem quando a direção os definir.
 
+### 3z-i. Impressão automática das etiquetas da Nacex
+1. Corre `supabase/36-impressao-etiquetas.sql`.
+2. No computador ao lado da impressora de etiquetas: Logística → Encomendas → **Impressão automática das etiquetas** → **Ligar neste computador**. Deixa essa janela da Central aberta (pode ficar por trás de outras).
+3. A partir daí, cada envio criado na Nacex, em qualquer aparelho, entra numa fila e esse computador imprime a etiqueta sozinho. No telemóvel aparece também **Mandar para a impressora** para voltar a imprimir.
+4. Para imprimir sem a janela de impressão: impressora de etiquetas como predefinida e o Chrome aberto por um atalho com `--kiosk-printing`. Papel 100 × 150 mm.
+- Só entram na fila envios criados enquanto há uma estação ligada (visto nos últimos 3 minutos). Pedidos com mais de 2 horas são ignorados, para não sair uma pilha de etiquetas antigas.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

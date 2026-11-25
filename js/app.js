@@ -261,6 +261,7 @@ async function entrarNaApp(u) {
   await recarregar();
   if (desligar) desligar();
   desligar = api.subscrever(eu.id, aoMudar);
+  if (podeEncomendas(eu)) LOG.arrancarEstacao();
   if (S.rota === "tarefa" && S.param) abrirTarefa(S.param);
   if (S.rota === "cliente" && S.param) { S.aberto = { tipo: "cliente", id: S.param }; render(); }
   if (S.rota === "agenda" && S.param) { S.aberto = { tipo: "evento", id: S.param }; render(); }

@@ -23,8 +23,12 @@ export function criarLogistica(ctx) {
   const { S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, fechar, nomeDe, ativos, crm, podeCrm, $ } = ctx;
   const stk = ctx.stk || (() => null);
   const G = (S.log = { estado: "por-carregar", locais: {}, encomendas: {}, rotas: {}, tab: "encomendas", filtro: "ativas", q: "", minhas: false,
-    nova: null, aCalcular: null, verFeitas: false });
+    nova: null, aCalcular: null, verFeitas: false, imp: { remota: null, local: null, ultima: null } });
   let desligar = null;
+  // estação de impressão (este computador imprime as etiquetas que entram na fila)
+  const CHAVE_EST = "central26-estacao-etiquetas";
+  const lerEst = () => { try { return localStorage.getItem(CHAVE_EST) || null; } catch { return null; } };
+  const IMP = { bater: null, ronda: null, estado: null, desl: null, ocupado: false };
 
   async function carregar() {
     if (G.estado === "a-carregar") return;
@@ -37,6 +41,8 @@ export function criarLogistica(ctx) {
       G.estado = "pronto";
       if (!desligar) desligar = api.log.subscrever(aoMudar);
       setTimeout(atualizarNacex, 1500);
+      estadoImpressao();
+      if (!IMP.estado) IMP.estado = setInterval(estadoImpressao, 120000);
     } catch (e) { G.estado = /PGRST205|log_encomendas|Could not find/i.test(String(e?.message)) ? "falta-script" : "erro"; G.erro = e.message; }
     agendarRender();
     if (["encomenda", "enc-nova"].includes(S.aberto?.tipo)) renderPainel(true);
@@ -116,7 +122,7 @@ export function criarLogistica(ctx) {
     const pg = paginar(l, G.pag, 15); G.pag = pg.pag;
     h += l.length ? '<div class="enc-lista">' + pg.itens.map(linhaEnc).join("") + "</div>" + paginador(pg, "log-pag", "encomendas") : '<div class="vazio"><h3>' + (G.filtro === "ativas" ? "Nada por tratar" : "Sem encomendas aqui") + "</h3><p>" +
       (G.filtro === "ativas" ? "Quando o Comercial ou a direção enviarem uma encomenda, ela aparece aqui e a Logística recebe um aviso." : "Muda o filtro para ver outras encomendas.") + "</p></div>";
-    return h;
+    return h + blocoEstacao();
   }
 
   // Bloco para o início
@@ -264,7 +270,8 @@ export function criarLogistica(ctx) {
         '<div class="nx-envio"><div class="nx-est nx-' + esc(est.toLowerCase()) + '"><i></i><b>' + esc(NX_EST[est] || est) + "</b>" + (nx.estado_data ? "<small>" + esc(nx.estado_data) + (nx.estado_obs ? " · " + esc(nx.estado_obs) : "") + "</small>" : "") + "</div>" +
         '<div class="nx-campos">' + [["Carta de porte", nx.albaran], ["Serviço", nx.servico], ["Entrega prevista", nx.data_prevista], ["Volumes", nx.volumes + (nx.volumes == 1 ? " volume" : " volumes") + " · " + String(nx.peso).replace(".", ",") + " kg"], ["Agência de entrega", nx.agencia_entrega]]
           .filter(([, v]) => v).map(([r, v]) => '<div class="nx-linha"><span>' + r + "</span><b>" + esc(v) + "</b><i></i></div>").join("") + "</div></div>" +
-        '<div class="acts">' + (pode ? '<button class="btn pri" data-acao="nx-etiqueta"' + (ocupado ? " disabled" : "") + ">" + I.nota + "Imprimir etiqueta</button>" +
+        '<div class="acts">' + (pode && G.imp.remota && G.imp.remota !== G.imp.local ? '<button class="btn pri" data-acao="nx-fila"' + (ocupado ? " disabled" : "") + ">" + I.nota + "Mandar para a impressora</button>" : "") +
+        (pode ? '<button class="btn ' + (G.imp.remota && G.imp.remota !== G.imp.local ? "sec" : "pri") + '" data-acao="nx-etiqueta"' + (ocupado ? " disabled" : "") + ">" + (G.imp.remota && G.imp.remota !== G.imp.local ? "" : I.nota) + "Imprimir etiqueta</button>" +
           '<button class="btn sec" data-acao="nx-etiqueta-pdf"' + (ocupado ? " disabled" : "") + ">Abrir PDF</button>" : "") +
         (nx.seguimento ? '<a class="btn sec" href="' + esc(nx.seguimento) + '" target="_blank" rel="noopener">' + I.out + "Seguimento na Nacex</a>" : "") +
         (pode ? '<button class="btn sec" data-acao="nx-estado"' + (ocupado ? " disabled" : "") + ">Atualizar estado</button>" : "") + "</div>" +
@@ -310,8 +317,8 @@ export function criarLogistica(ctx) {
     if (!w) { const a = document.createElement("a"); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); }
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
-  function imprimirPdf(base64, nome) {
-    if (telemovel()) { abrirPdf(base64, nome); return; }
+  function imprimirPdf(base64, nome, estacao) {
+    if (!estacao && telemovel()) { abrirPdf(base64, nome); return; }
     const url = pdfUrl(base64);
     document.getElementById("nx-impressao")?.remove();
     const f = document.createElement("iframe");
@@ -329,12 +336,79 @@ export function criarLogistica(ctx) {
       if (acao === "criar" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, tracking: r.nacex.albaran, transportadora: "nacex" }; toast(r.nacex.teste ? "Envio de teste criado na Nacex" : "Envio criado na Nacex · " + r.nacex.albaran); }
       if (acao === "estado" && atual) { G.encomendas[e.id] = { ...atual, nacex: r.nacex, estado: r.estado || atual.estado }; toast("Estado atualizado"); }
       if (acao === "cancelar" && atual) { G.encomendas[e.id] = { ...atual, nacex: null, tracking: "" }; toast("Envio cancelado na Nacex"); }
-      if (r.pdf) (extra?.abrir ? abrirPdf : imprimirPdf)(r.pdf, "Etiqueta-" + ref(e) + ".pdf");
+      let naEstacao = null;
+      if (acao === "criar" && r.pdf && api.impressao) { await estadoImpressao(); naEstacao = G.imp.remota; }
+      if (naEstacao) toast("Etiqueta enviada para a impressora («" + naEstacao + "»)");
+      else if (r.pdf) (extra?.abrir ? abrirPdf : imprimirPdf)(r.pdf, "Etiqueta-" + ref(e) + ".pdf");
     } catch (err) { falha(err); }
     G.nxOcupado = null; agendarRender(); renderPainel(true);
   }
   // Ao abrir a Logística, pede à Nacex o estado dos envios em curso (no máximo de 30 em 30 minutos)
   let nxVisto = 0;
+  /* ---------- impressão automática das etiquetas ---------- */
+  async function estadoImpressao() {
+    if (!api.impressao) return;
+    G.imp.vistoEm = Date.now();
+    try { const r = await api.impressao.estado(); G.imp.remota = r?.estacao || null; } catch { G.imp.remota = null; }
+    if (G.imp.local && !lerEst()) pararEstacao(false);
+    agendarRender(); if (S.aberto?.tipo === "encomenda") renderPainel();
+  }
+  function arrancarEstacao() {
+    const nome = lerEst();
+    if (!nome || !api.impressao || !podeEncomendas(S.eu) || telemovel()) return;
+    pararEstacao(false); G.imp.local = nome;
+    const bater = () => api.impressao.batimento(nome).catch(() => null);
+    bater(); IMP.bater = setInterval(bater, 60000);
+    IMP.desl = api.impressao.subscrever(() => processarFila());
+    IMP.ronda = setInterval(processarFila, 30000);
+    setTimeout(processarFila, 2500);
+  }
+  function pararEstacao(esquecer) {
+    clearInterval(IMP.bater); clearInterval(IMP.ronda); IMP.bater = IMP.ronda = null;
+    if (IMP.desl) { IMP.desl(); IMP.desl = null; }
+    if (esquecer && G.imp.local) { const n = G.imp.local; try { localStorage.removeItem(CHAVE_EST); } catch {} api.impressao?.desligar(n).catch(() => null); }
+    G.imp.local = null;
+  }
+  async function processarFila() {
+    if (IMP.ocupado || !G.imp.local) return;
+    IMP.ocupado = true;
+    try {
+      for (let i = 0; i < 20; i++) {
+        const job = await api.impressao.reclamar(G.imp.local);
+        if (!job) break;
+        const rf = "E-" + String(job.numero || 0).padStart(4, "0");
+        let erro = null;
+        try {
+          const r = await api.nacex("etiqueta", { id: job.encomenda_id });
+          if (!r?.pdf) throw new Error("A Nacex não devolveu a etiqueta.");
+          imprimirPdf(r.pdf, "Etiqueta-" + rf + ".pdf", true);
+        } catch (e) { erro = e?.message || String(e); }
+        await api.impressao.concluir(job.id, erro).catch(() => null);
+        G.imp.ultima = { ref: rf, hora: new Date(), erro };
+        agendarRender();
+        await new Promise((ok) => setTimeout(ok, 8000)); // deixa a etiqueta sair antes da seguinte
+      }
+    } catch { /* tenta outra vez na próxima ronda */ }
+    IMP.ocupado = false;
+  }
+  function blocoEstacao() {
+    if (!api.impressao || telemovel() || !(podeTratar() || eGestor(S.eu))) return "";
+    const im = G.imp, hora = (d) => d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+    let h = '<section class="imp-est' + (im.local ? " on" : "") + '"><div class="imp-txt">';
+    if (im.local) {
+      h += "<b>Este computador imprime as etiquetas da Nacex</b><span>Estação «" + esc(im.local) + "». Deixa esta janela da Central aberta. Cada envio criado na Nacex, também no telemóvel, sai aqui sozinho." +
+        (im.ultima ? " Última: " + esc(im.ultima.ref) + " às " + hora(im.ultima.hora) + (im.ultima.erro ? ' <em class="erro">(falhou: ' + esc(im.ultima.erro) + ")</em>" : "") : "") + "</span></div>" +
+        '<button class="btn sec" data-acao="imp-desligar">Desligar</button>';
+    } else {
+      h += (im.remota ? "<b>As etiquetas saem no computador «" + esc(im.remota) + "»</b><span>Quando alguém cria um envio na Nacex, a etiqueta é impressa lá sozinha.</span>"
+        : "<b>Impressão automática das etiquetas</b><span>Liga num computador ao lado da impressora de etiquetas: cada envio criado na Nacex, também no telemóvel, passa a sair lá sozinho.</span>") +
+        '</div><label class="imp-nome"><span class="sr">Nome deste computador</span><input id="imp-nome" value="Logística" maxlength="40" placeholder="Nome deste computador"></label>' +
+        '<button class="btn ' + (im.remota ? "sec" : "pri") + '" data-acao="imp-ligar">' + (im.remota ? "Usar este computador" : "Ligar neste computador") + "</button>";
+    }
+    h += '<details class="imp-ajuda"><summary>Imprimir sem a janela de impressão</summary><p class="muted">Neste computador, põe a impressora de etiquetas como <b>predefinida</b> e abre a Central por um atalho do Chrome com <code>--kiosk-printing</code> no fim do campo «Destino» (botão direito no atalho → Propriedades). Sem isto, o Chrome mostra a janela de impressão e basta carregar em Imprimir. Papel de 100 × 150 mm, tamanho real.</p></details>';
+    return h + "</section>";
+  }
+
   function atualizarNacex() {
     if (!api.nacex || !podeEntregar() || Date.now() - nxVisto < 30 * 60000) return;
     if (!encomendas().some((e) => e.nacex?.expe_codigo && !["entregue", "cancelada"].includes(e.estado))) return;
@@ -568,6 +642,18 @@ export function criarLogistica(ctx) {
       case "nx-etiqueta": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("etiqueta", e); return true; }
       case "nx-etiqueta-pdf": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("etiqueta", e, { abrir: true }); return true; }
       case "nx-estado": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("estado", e); return true; }
+      case "nx-fila": {
+        const e = G.encomendas[S.aberto?.id]; if (!e) return true;
+        api.impressao.pedir(e.id).then(() => toast("Etiqueta enviada para a impressora («" + G.imp.remota + "»)")).catch((err) => { falha(err); estadoImpressao(); });
+        return true;
+      }
+      case "imp-ligar": {
+        const nome = (document.getElementById("imp-nome")?.value || "").trim() || "Logística";
+        try { localStorage.setItem(CHAVE_EST, nome.slice(0, 40)); } catch { toast("Este navegador não deixa guardar a definição.", true); return true; }
+        arrancarEstacao(); G.imp.remota = nome.slice(0, 40); render(); toast("Este computador passa a imprimir as etiquetas");
+        return true;
+      }
+      case "imp-desligar": pararEstacao(true); setTimeout(estadoImpressao, 800); render(); toast("Impressão automática desligada neste computador"); return true;
       case "nx-cancelar": G.nxCancelar = S.aberto?.id; renderPainel(true); return true;
       case "nx-cancelar-nao": G.nxCancelar = null; renderPainel(true); return true;
       case "nx-cancelar-sim": { const e = G.encomendas[S.aberto?.id]; if (e) nacex("cancelar", e); return true; }
@@ -586,7 +672,7 @@ export function criarLogistica(ctx) {
         if (podeCrm(S.eu) && S.crm?.estado === "por-carregar") Promise.resolve(crm().carregar()).then(() => { if (S.aberto?.tipo === "enc-nova") { guardarNova(); renderPainel(true); } });
         return true;
       }
-      case "enc-abrir": abrir({ tipo: "encomenda", id }); return true;
+      case "enc-abrir": abrir({ tipo: "encomenda", id }); if (Date.now() - (G.imp.vistoEm || 0) > 10000) estadoImpressao(); return true;
       case "enc-estado": { const e = G.encomendas[id]; if (e) gravarEnc(id, { estado: el.dataset.v }).then((r) => r && toast(ref(r) + " · " + ESTADOS_ENC[r.estado])); return true; }
       case "enc-item": {
         const e = G.encomendas[S.aberto?.id]; if (!e) return true;
@@ -723,8 +809,8 @@ export function criarLogistica(ctx) {
     }
     return false;
   }
-  function reiniciar() { if (desligar) { desligar(); desligar = null; } Object.assign(G, { estado: "por-carregar", locais: {}, encomendas: {}, rotas: {}, nova: null }); }
+  function reiniciar() { if (desligar) { desligar(); desligar = null; } pararEstacao(false); clearInterval(IMP.estado); IMP.estado = null; G.imp = { remota: null, local: null, ultima: null }; Object.assign(G, { estado: "por-carregar", locais: {}, encomendas: {}, rotas: {}, nova: null }); }
   const contagem = () => (podeTratar() ? porTratar().filter((e) => e.estado === "nova").length : 0);
 
-  return { vista, painel, clique, escrever, mudar, tecla, submeter, carregar, blocoInicio, reiniciar, contagem, estado: () => G.estado };
+  return { vista, painel, clique, escrever, mudar, tecla, submeter, carregar, blocoInicio, reiniciar, contagem, arrancarEstacao, estado: () => G.estado };
 }

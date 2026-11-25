@@ -2362,3 +2362,18 @@ body.protegida img{-webkit-user-drag:none}
   .bar-dd>div{grid-template-columns:90px 1fr auto}
 }
 @media (max-width:820px){.tabbar:has(a:nth-child(6)) a{font-size:9.5px;letter-spacing:-.01em}}
+/* Impressão automática das etiquetas (estação) */
+.imp-est{margin-top:18px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;border:1px dashed var(--line);border-radius:12px;background:var(--surface)}
+.imp-est.on{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
+.imp-est .imp-txt{flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:3px}
+.imp-est .imp-txt b{font-size:14.5px}
+.imp-est .imp-txt span{font-size:13.5px;color:var(--muted);line-height:1.4}
+.imp-est.on .imp-txt span{color:var(--ink)}
+.imp-est .imp-txt em.erro{color:var(--danger);font-style:normal}
+.imp-est .imp-nome input{width:170px;height:38px;padding:0 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;outline:none}
+.imp-est .imp-nome input:focus{border-color:var(--b)}
+@media (max-width:820px){.imp-est .imp-nome,.imp-est .imp-nome input{width:100%}}
+.imp-est .imp-ajuda{flex-basis:100%;font-size:13px}
+.imp-est .imp-ajuda summary{cursor:pointer;color:var(--muted)}
+.imp-est .imp-ajuda p{margin:6px 0 0;font-size:13px}
+.imp-est code{font-family:var(--f-mono);font-size:12px;background:var(--sunken);padding:1px 5px;border-radius:5px}

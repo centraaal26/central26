@@ -441,6 +441,21 @@ export function criarApi() {
 
     // Envios pela Nacex (função «nacex» no servidor; as credenciais nunca chegam ao navegador)
     async nacex(acao, dados) { return invocar("nacex", { acao, ...(dados || {}) }); },
+    // Impressão automática das etiquetas: um computador ao lado da impressora fica como estação (script 36)
+    impressao: {
+      async estado() { return ok(await sb.rpc("imp_estado")); },
+      async batimento(nome) { ok(await sb.rpc("imp_batimento", { p_nome: nome })); },
+      async desligar(nome) { ok(await sb.rpc("imp_desligar", { p_nome: nome })); },
+      async pedir(id) { return ok(await sb.rpc("imp_pedir", { p_encomenda: id })); },
+      async reclamar(nome) { return ok(await sb.rpc("imp_reclamar", { p_nome: nome })); },
+      async concluir(id, erro) { ok(await sb.rpc("imp_concluir", { p_id: id, p_erro: erro || null })); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-impressao")
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "log_impressoes" }, () => cb())
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     // Leitura de caixa das barbearias e «Os meus números» (script 35 e função «leitura-caixa»)
     caixa: {
       async carregar(loja) {

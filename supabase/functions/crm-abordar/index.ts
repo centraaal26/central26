@@ -1,7 +1,7 @@
 // Central 26 · crm-abordar
 // Método Mackay 66 no Comercial. Todos os dias escolhe no CRM os clientes a abordar (o primeiro a abrir o Comercial
 // no dia gera a lista) e, a pedido, prepara cada abordagem com a IA: o que sabemos do cliente, como abordar,
-// a primeira mensagem e o que descobrir na conversa. A IA pode pesquisar na web informação PÚBLICA da barbearia
+// a primeira mensagem e o que descobrir na conversa. Também procura clínicas no Google Maps para a 26 Tech (ação «clinicas»). A IA pode pesquisar na web informação PÚBLICA da barbearia
 // (site, ficha no Google, redes da loja, notícias); nunca dados pessoais sensíveis.
 // Usa as mesmas chaves do assistente (ANTHROPIC_API_KEY ou GROQ_API_KEY). Só quem tem acesso ao CRM a pode usar.
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -18,6 +18,7 @@ const FORNECEDOR = (Deno.env.get("IA_FORNECEDOR") || (Deno.env.get("ANTHROPIC_AP
 const MODELO = Deno.env.get("ASSISTENTE_MODELO") || (FORNECEDOR === "groq" ? "openai/gpt-oss-120b" : "claude-sonnet-5-5");
 const POR_DIA = 5;       // clientes (seguimentos, recompra, risco)
 const PRIMEIROS_DIA = 3; // leads para o primeiro contacto de venda
+const PRIMEIROS_TECH_DIA = 2; // clínicas para o primeiro contacto da 26 Tech
 
 const PERGUNTAS: Record<string, string> = {
   m01: "Nome e como gosta de ser tratado", m02: "Cargo na barbearia", m03: "Telefone direto ou WhatsApp", m04: "Email", m05: "Melhor dia, hora e canal para o contactar",
@@ -39,6 +40,15 @@ const PERGUNTAS: Record<string, string> = {
 // perguntas que se podem responder com fontes públicas da barbearia (nunca as pessoais)
 const PUBLICAS = ["m11", "m12", "m13", "m14", "m15", "m16", "m17", "m18", "m19", "m20", "m21", "m22", "m25", "m26", "m35", "m39", "m44", "m45", "m46", "m56", "m64"];
 
+// tipos de clínica para a prospeção da 26 Tech (pesquisa no Google Maps)
+const CLINICAS: Record<string, { nome: string; pesquisas: string[] }> = {
+  estetica: { nome: "Estética e medicina estética", pesquisas: ["clínica de estética", "medicina estética"] },
+  laser: { nome: "Depilação a laser", pesquisas: ["depilação a laser"] },
+  dermatologia: { nome: "Dermatologia", pesquisas: ["clínica de dermatologia"] },
+  ginasios: { nome: "Ginásios e spas", pesquisas: ["ginásio", "spa"] },
+};
+const norm = (s: unknown) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const digitos = (s: unknown) => String(s ?? "").replace(/\D/g, "").slice(-9);
 const hojeLisboa = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
 const mediana = (l: number[]) => { const s = [...l].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -75,7 +85,7 @@ function estatisticas(vendas: any[]) {
 // ---------------------------- escolher os clientes do dia ----------------------------
 async function gerar(dia: string) {
   const [clientes, vendas, contactos, recentes] = await Promise.all([
-    todas<any>((a, b) => admin.from("crm_clientes").select("id, nome, etapa, tipo, codigo_multixop, score, prioridade, responsavel_id, telefone, whatsapp, instagram, email").neq("tipo", "interno").neq("etapa", "perdido").range(a, b)),
+    todas<any>((a, b) => admin.from("crm_clientes").select("id, nome, etapa, tipo, codigo_multixop, score, prioridade, responsavel_id, telefone, whatsapp, instagram, email, marca").neq("tipo", "interno").neq("etapa", "perdido").range(a, b)),
     todas<any>((a, b) => admin.from("crm_vendas").select("data, cliente_codigo, valor, tipo, descricao, qtd").range(a, b)),
     todas<any>((a, b) => admin.from("crm_contactos").select("cliente_id, criado_em, data_proximo, proximo_passo").order("criado_em", { ascending: false }).range(a, b)),
     todas<any>((a, b) => admin.from("crm_abordagens").select("cliente_id, dia").gte("dia", new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)).range(a, b)),
@@ -89,6 +99,7 @@ async function gerar(dia: string) {
   const lim14 = new Date(Date.now() - 14 * 864e5).toISOString().slice(0, 10);
   const jaSugerido = new Set(recentes.filter((r) => r.dia >= lim14).map((r) => r.cliente_id)), sugerido30 = new Set(recentes.map((r) => r.cliente_id));
   const primeiros: { id: string; tipo: string; motivo: string; pontos: number }[] = [];
+  const primeirosTech: { id: string; tipo: string; motivo: string; pontos: number }[] = [];
   const cand: { id: string; tipo: string; motivo: string; pontos: number }[] = [];
   for (const c of clientes) {
     if (jaSugerido.has(c.id)) continue;
@@ -103,16 +114,63 @@ async function gerar(dia: string) {
       cand.push({ id: c.id, tipo: "risco", pontos: 70 + Math.min(s.total / 100, 30), motivo: "Sem compras há " + s.dias + " dias, depois de " + eur(s.total) + " no período." });
     } else if (c.etapa === "lead" && !u && !sugerido30.has(c.id) && !naProspecao.has(c.id) && (c.telefone || c.whatsapp || c.instagram || c.email)) {
       const p = (c.score || 0) + (/alta/i.test(c.prioridade || "") ? 30 : /m[eé]dia/i.test(c.prioridade || "") ? 10 : 0);
-      if (p >= 40) primeiros.push({ id: c.id, tipo: "primeiro", pontos: p, motivo: "Ainda não é cliente nem foi contactado" + (c.score != null ? " · pontuação " + c.score : "") + (c.prioridade ? " · prioridade " + String(c.prioridade).toLowerCase() : "") + "." });
+      if (p >= 40) (c.marca === "tech" ? primeirosTech : primeiros).push({ id: c.id, tipo: c.marca === "tech" ? "tech" : "primeiro", pontos: p, motivo: (c.marca === "tech" ? "Clínica que ainda não é cliente da 26 Tech nem foi contactada" : "Ainda não é cliente nem foi contactado") + (c.score != null ? " · pontuação " + c.score : "") + (c.prioridade ? " · prioridade " + String(c.prioridade).toLowerCase() : "") + "." });
     }
   }
   cand.sort((a, b) => b.pontos - a.pontos);
   primeiros.sort((a, b) => b.pontos - a.pontos);
-  const escolhidos = [...cand.slice(0, POR_DIA), ...primeiros.slice(0, PRIMEIROS_DIA)];
+  primeirosTech.sort((a, b) => b.pontos - a.pontos);
+  const escolhidos = [...cand.slice(0, POR_DIA), ...primeiros.slice(0, PRIMEIROS_DIA), ...primeirosTech.slice(0, PRIMEIROS_TECH_DIA)];
   if (escolhidos.length) {
     await admin.from("crm_abordagens").upsert(escolhidos.map((x, i) => ({ dia, cliente_id: x.id, ordem: i, tipo: x.tipo, motivo: x.motivo })), { onConflict: "dia,cliente_id", ignoreDuplicates: true });
   }
-  return cand.length + primeiros.length;
+  return cand.length + primeiros.length + primeirosTech.length;
+}
+
+// ------------------------- Prospeção de clínicas (26 Tech) -------------------------
+// Procura no Google Maps clínicas de um distrito e junta-as ao CRM como leads da 26 Tech (sem repetir).
+async function procurarClinicas(distrito: string, tipos: string[]) {
+  const chave = Deno.env.get("GOOGLE_PLACES_KEY");
+  if (!chave) throw new Error("Falta a chave do Google Maps (GOOGLE_PLACES_KEY) nos Secrets do Supabase.");
+  const existentes = await todas<any>((a, b) => admin.from("crm_clientes").select("nome, distrito, telefone, externo_id").range(a, b));
+  const ext = new Set(existentes.map((x) => x.externo_id).filter(Boolean));
+  const nomes = new Set(existentes.map((x) => norm(x.nome) + "|" + norm(x.distrito)));
+  const tels = new Set(existentes.map((x) => digitos(x.telefone)).filter((t) => t.length === 9));
+  const novos: any[] = []; let vistos = 0;
+  for (const t of tipos) {
+    const tipo = CLINICAS[t]; if (!tipo) continue;
+    for (const q of tipo.pesquisas) {
+      const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Goog-Api-Key": chave,
+          "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.businessStatus,places.rating,places.userRatingCount" },
+        body: JSON.stringify({ textQuery: q + " distrito de " + distrito + ", Portugal", languageCode: "pt-PT", regionCode: "PT", pageSize: 20 }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 403 ? "O Google recusou a chave do Maps: confirma que a Places API (New) está ativa e que a chave a pode usar." : "O Google Maps respondeu com um erro (" + r.status + ").");
+      for (const pl of d.places || []) {
+        vistos++;
+        if (pl.businessStatus === "CLOSED_PERMANENTLY") continue;
+        const comp = (k: string) => (pl.addressComponents || []).find((a: any) => (a.types || []).includes(k))?.longText || "";
+        const nome = String(pl.displayName?.text || "").trim().slice(0, 140); if (!nome) continue;
+        const dist = comp("administrative_area_level_1") || distrito, tel = pl.nationalPhoneNumber || pl.internationalPhoneNumber || "";
+        const id = "google:" + pl.id, chaveNome = norm(nome) + "|" + norm(dist);
+        if (ext.has(id) || nomes.has(chaveNome) || (digitos(tel).length === 9 && tels.has(digitos(tel)))) continue;
+        ext.add(id); nomes.add(chaveNome); if (digitos(tel).length === 9) tels.add(digitos(tel));
+        const nota = pl.rating ? String(pl.rating).replace(".", ",") + " ★ · " + (pl.userRatingCount || 0) + " avaliações" : "sem avaliações";
+        let score = 30 + (tel ? 20 : 0) + (pl.websiteUri ? 10 : 0) + (pl.rating >= 4.5 ? 15 : pl.rating >= 4 ? 10 : 0) + ((pl.userRatingCount || 0) >= 50 ? 15 : (pl.userRatingCount || 0) >= 10 ? 8 : 0);
+        score = Math.min(95, score);
+        novos.push({
+          chave_lead: norm(nome) + "|" + norm(comp("administrative_area_level_2") || comp("locality") || dist), externo_id: id, nome, tipo: "lead", etapa: "lead", origem: "prospecao", marca: "tech",
+          distrito: dist, concelho: comp("administrative_area_level_2") || comp("locality"), morada: String(pl.formattedAddress || "").slice(0, 300), telefone: tel, website: pl.websiteUri || "",
+          link_mapa: pl.googleMapsUri || "", fonte: "Google Maps", tipo_negocio: tipo.nome, score, confianca: "Alta", estado_prospecao: "A validar",
+          motivo: "Encontrada no Google Maps (" + tipo.nome + " · " + nota + ")", recolhido_em: hojeLisboa(),
+        });
+      }
+    }
+  }
+  if (novos.length) { const { error } = await admin.from("crm_clientes").upsert(novos, { onConflict: "chave_lead", ignoreDuplicates: true }); if (error) throw new Error(error.message); }
+  return { vistos, novos: novos.length };
 }
 
 // ------------------------------- Google Maps (opcional) -------------------------------
@@ -196,6 +254,14 @@ Regras:
 - Nunca inventes factos. Se não encontrares, não preenchas. Cada facto público vem com a fonte (URL).
 - Responde só com um objeto JSON válido, sem texto antes nem depois.`;
 
+const SISTEMA_TECH = `És o assistente comercial da 26 Tech, do Grupo 26 (Vila Nova de Gaia): vende equipamentos profissionais de estética a clínicas e centros — laser de díodo de 4 ondas para depilação, Emsculpt e EMS para modelação corporal e tonificação, e máquina de limpeza de pele (skin cleaning).
+Nesta fase a 26 Tech propõe VENDA dos equipamentos (não aluguer).
+Regras:
+- Escreve SEMPRE em português de Portugal, nunca do Brasil. Nunca uses «você»: trata a pessoa pelo nome e usa formas neutras.
+- Se pesquisares na web, procura só informação PÚBLICA do negócio (site, ficha no Google, redes da clínica, tabela de serviços). Nunca dados pessoais nem de saúde de clientes.
+- Nunca inventes factos, preços, condições, certificações ou resultados clínicos. Não prometas resultados de saúde. Se não souberes, diz «não se sabe».
+- Responde só com um objeto JSON válido, sem texto antes nem depois.`;
+
 async function contexto(clienteId: string) {
   const { data: c } = await admin.from("crm_clientes").select("*").eq("id", clienteId).maybeSingle();
   if (!c) throw new Error("Cliente não encontrado.");
@@ -266,9 +332,34 @@ Deno.serve(async (req) => {
       const { data: a } = await admin.from("crm_abordagens").select("*").eq("id", String(corpo.id || "")).maybeSingle();
       if (!a) return json({ erro: "Sugestão não encontrada." }, 404);
       const { c, mk, ficha, conhecido, emFalta } = await contexto(a.cliente_id);
-      const primeiro = a.tipo === "primeiro" || a.tipo === "lead";
+      const tech = a.tipo === "tech";
+      const primeiro = a.tipo === "primeiro" || a.tipo === "lead" || tech;
       const g = primeiro ? await dadosGoogle(c) : { texto: "", imagens: [] as Imagem[], fonte: null };
-      const pedido = primeiro ? `Prepara o PRIMEIRO contacto de venda da TwentySix com esta barbearia (ainda não é cliente e nunca foi contactada).
+      const pedido = tech ? `Prepara o PRIMEIRO contacto de venda da 26 Tech com esta clínica (ainda não é cliente e nunca foi contactada).
+Primeiro analisa o negócio, depois escreve a mensagem de apresentação. O objetivo é apresentar a 26 Tech e conseguir uma conversa ou uma demonstração do equipamento, não fechar a venda logo.
+
+FICHA NO CRM
+${ficha}
+${g.texto ? "\nGOOGLE MAPS\n" + g.texto : ""}
+${g.imagens.length ? "\nEm cima tens " + g.imagens.length + " fotos públicas da clínica (Google Maps): repara nas cabines ou salas, nos equipamentos à vista e no estilo do espaço." : ""}
+
+Pesquisa na web a clínica «${c.nome}»${c.concelho ? " (" + c.concelho + ")" : ""}: site, tabela de serviços e preços, redes da clínica e Google. Só informação pública do negócio.
+Responde com este JSON:
+{
+ "analise": {
+   "servicos": "os tratamentos que a clínica já faz (depilação, laser, modelação corporal, limpeza de pele…), ou «não se sabe»",
+   "cabines": "número de cabines ou salas de tratamento + de onde vem + certeza (alta, média, baixa); se não souberes, «não se sabe»",
+   "equipa": "tamanho da equipa e especialidades, ou «não se sabe»",
+   "avaliacao": "nota e número de avaliações no Google, se houver",
+   "perfil": "1 frase: tipo de clínica, posicionamento e preço",
+   "necessidades": ["3 a 5 necessidades prováveis desta clínica, ligadas ao que vimos (ex.: ainda não faz laser, equipamento antigo, quer novos tratamentos)"],
+   "propor": ["2 a 4 equipamentos da 26 Tech que fazem sentido para esta clínica e porquê"]
+ },
+ "resumo": "2 ou 3 frases com o essencial para quem vai contactar",
+ "abordagem": "3 a 5 linhas começadas por «- »: canal, melhor altura, pretexto (por exemplo, demonstração) e o que levar",
+ "mensagem": "mensagem de apresentação para WhatsApp ou email (máximo 550 caracteres), personalizada com o que encontraste, sem «você», sem links, sem preços, assinada com [nome] · 26 Tech",
+ "descobrir": ["3 perguntas para a primeira conversa (o que já fazem, que equipamento têm, quem decide a compra)"]
+}` : primeiro ? `Prepara o PRIMEIRO contacto de venda da TwentySix com esta barbearia (ainda não é cliente e nunca foi contactada).
 Primeiro analisa o negócio, depois escreve a mensagem de apresentação. O objetivo do primeiro contacto é apresentar a marca e conseguir uma conversa ou visita, não vender logo.
 
 FICHA NO CRM
@@ -315,15 +406,20 @@ Responde com este JSON:
  "sugestoes": { "id da pergunta": { "v": "resposta curta", "fonte": "URL" } }
 }
 Em «sugestoes» só entram perguntas sem resposta destes ids: ${PUBLICAS.join(", ")}, e só com factos encontrados em fontes públicas (com URL).`;
-      const r = await pedirIA(SISTEMA, pedido, FORNECEDOR === "anthropic", g.imagens);
+      const r = await pedirIA(tech ? SISTEMA_TECH : SISTEMA, pedido, FORNECEDOR === "anthropic", g.imagens);
       if (g.fonte && !r.fontes.some((f) => f.url === g.fonte!.url)) r.fontes.unshift(g.fonte);
       const j = lerJson(r.texto);
       if (!j) throw new Error("A IA não devolveu uma resposta válida. Tenta outra vez.");
-      const n = await guardarSugestoes(a.cliente_id, mk, j.sugestoes || {}, r.fontes);
+      const n = tech ? 0 : await guardarSugestoes(a.cliente_id, mk, j.sugestoes || {}, r.fontes);
+      const lista = (x: unknown, n: number) => (Array.isArray(x) ? x : []).slice(0, n).map((y: unknown) => String(y).slice(0, 200));
       const { data: nova } = await admin.from("crm_abordagens").update({
         resumo: String(j.resumo || "").slice(0, 1500), abordagem: String(j.abordagem || "").slice(0, 2000), mensagem: String(j.mensagem || "").slice(0, 900),
         descobrir: (Array.isArray(j.descobrir) ? j.descobrir : []).slice(0, 5).map((x: unknown) => String(x).slice(0, 200)), fontes: r.fontes.slice(0, 8), preparada_em: new Date().toISOString(),
-        analise: primeiro && j.analise && typeof j.analise === "object" ? {
+        analise: tech && j.analise && typeof j.analise === "object" ? {
+          servicos: String(j.analise.servicos || "").slice(0, 300), cabines: String(j.analise.cabines || "").slice(0, 300), equipa: String(j.analise.equipa || "").slice(0, 300),
+          avaliacao: String(j.analise.avaliacao || "").slice(0, 120), perfil: String(j.analise.perfil || "").slice(0, 300), fotos: g.imagens.length,
+          necessidades: lista(j.analise.necessidades, 6), propor: lista(j.analise.propor, 5),
+        } : primeiro && j.analise && typeof j.analise === "object" ? {
           cadeiras: String(j.analise.cadeiras || "").slice(0, 300), barbeiros: String(j.analise.barbeiros || "").slice(0, 300), avaliacao: String(j.analise.avaliacao || "").slice(0, 120),
           perfil: String(j.analise.perfil || "").slice(0, 300), fotos: g.imagens.length,
           necessidades: (Array.isArray(j.analise.necessidades) ? j.analise.necessidades : []).slice(0, 6).map((x: unknown) => String(x).slice(0, 200)),
@@ -332,6 +428,24 @@ Em «sugestoes» só entram perguntas sem resposta destes ids: ${PUBLICAS.join("
       }).eq("id", a.id).select("*").single();
       await admin.rpc("ia_registar_uso", { p_perfil: sessao.user.id, p_mes: dia.slice(0, 7), p_in: r.tin, p_out: r.tout });
       return json({ abordagem: nova, sugestoes: n });
+    }
+
+    if (acao === "clinicas") {
+      const distrito = String(corpo.distrito || "").trim().slice(0, 40);
+      const tipos = (Array.isArray(corpo.tipos) ? corpo.tipos : []).map(String).filter((t: string) => CLINICAS[t]);
+      if (!distrito || !tipos.length) return json({ erro: "Escolhe o distrito e pelo menos um tipo de clínica." }, 400);
+      const r = await procurarClinicas(distrito, tipos);
+      // junta à lista de hoje até 2 clínicas para o primeiro contacto (se ainda não houver)
+      const { data: hojeTech } = await admin.from("crm_abordagens").select("id").eq("dia", dia).eq("tipo", "tech");
+      let acrescentadas = 0;
+      if ((hojeTech || []).length < PRIMEIROS_TECH_DIA && r.novos) {
+        const { data: melhores } = await admin.from("crm_clientes").select("id, score, tipo_negocio").eq("marca", "tech").eq("etapa", "lead").eq("recolhido_em", dia).order("score", { ascending: false }).limit(PRIMEIROS_TECH_DIA - (hojeTech || []).length);
+        const { data: ult } = await admin.from("crm_abordagens").select("ordem").eq("dia", dia).order("ordem", { ascending: false }).limit(1);
+        let ordem = (ult?.[0]?.ordem ?? -1) + 1;
+        const linhas = (melhores || []).map((c: any) => ({ dia, cliente_id: c.id, ordem: ordem++, tipo: "tech", motivo: "Clínica encontrada hoje no Google Maps (" + (c.tipo_negocio || "clínica") + ") · pontuação " + c.score + "." }));
+        if (linhas.length) { await admin.from("crm_abordagens").upsert(linhas, { onConflict: "dia,cliente_id", ignoreDuplicates: true }); acrescentadas = linhas.length; }
+      }
+      return json({ ok: true, ...r, acrescentadas });
     }
 
     if (acao === "perfil") {

@@ -355,6 +355,11 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 - As vendas da 26 Tech são as dos produtos da linha «26 Tech» (lasers, Emsculpt, aluguer de equipamentos); o resto é da TwentySix. Um cliente aparece na marca a que comprou.
 - Os leads sem compras são da TwentySix, a não ser que na ficha se escolha **Marca: 26 Tech** (por exemplo, clínicas). A ficha do cliente mostra sempre todas as compras.
 
+### 3z-g. Clínicas para a 26 Tech
+- Em **Comercial → Abordar hoje**, no fim, **Procurar clínicas para a 26 Tech**: escolhe o distrito e os tipos (estética e medicina estética, depilação a laser, dermatologia, ginásios e spas). A Central pesquisa no Google Maps (precisa da `GOOGLE_PLACES_KEY`) e junta as clínicas que ainda não estão no CRM como leads da 26 Tech, sem repetir.
+- Todos os dias entram até 2 clínicas no **Primeiro contacto 26 Tech**. «Analisar e preparar» vê o que a clínica já faz, cabines, equipa e avaliação, e escreve a mensagem de apresentação para a venda dos equipamentos (laser de díodo, Emsculpt/EMS, limpeza de pele), sem preços nem promessas de resultados.
+- Publica a função `crm-abordar` de novo depois de atualizar.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

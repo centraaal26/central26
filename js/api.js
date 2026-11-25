@@ -151,6 +151,7 @@ export function criarApi() {
         async hoje() { return invocar("crm-abordar", { acao: "hoje" }); },
         async preparar(id) { return invocar("crm-abordar", { acao: "preparar", id }); },
         async pesquisar(clienteId) { return invocar("crm-abordar", { acao: "perfil", cliente_id: clienteId }); },
+        async clinicas(distrito, tipos) { return invocar("crm-abordar", { acao: "clinicas", distrito, tipos }); },
         async estado(id, estado) { ok(await sb.from("crm_abordagens").update({ estado }).eq("id", id)); },
       },
       mackay: {

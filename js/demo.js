@@ -331,15 +331,30 @@ export function criarDemo() {
           await new Promise((r) => setTimeout(r, 700));
           const d = ler(), a = d.abordagens.find((x) => x.id === id); if (!a) throw new Error("Sugestão não encontrada.");
           const c = d.clientes.find((x) => x.id === a.cliente_id);
+          if (a.tipo === "tech") a.analise = { servicos: "Depilação com luz pulsada e limpezas de pele; ainda não faz laser (exemplo).", cabines: "3 (exemplo · fotos do Google, certeza média)", equipa: "4 esteticistas (exemplo)", avaliacao: "4,7 (98 avaliações) · exemplo",
+            perfil: "Clínica de estética de bairro, preço médio (exemplo).", fotos: 2, necessidades: ["Oferecer depilação a laser, que a concorrência já tem (exemplo)", "Tratamentos de modelação corporal (exemplo)"], propor: ["Laser de díodo de 4 ondas (exemplo)", "Emsculpt para modelação corporal (exemplo)"] };
           if (a.tipo === "primeiro") a.analise = { cadeiras: "4 (exemplo · contadas nas fotos do Google, certeza média)", barbeiros: "3 (exemplo · equipa na página de marcações)", avaliacao: "4,8 (212 avaliações) · exemplo", perfil: "Barbearia moderna, preço médio, clientela jovem (exemplo).", fotos: 3,
             necessidades: ["Ceras e pós com fixação forte para fades (exemplo)", "Consumíveis: golas e lâminas em quantidade (exemplo)", "Produtos de revenda ao balcão (exemplo)"], propor: ["Kit de amostras PRO (exemplo)", "Formação de fade na 26 Academy (exemplo)"] };
-          Object.assign(a, { resumo: "Exemplo · " + c.nome + " compra sobretudo ceras e champô. No modo de demonstração não há pesquisa na web nem IA.",
+          if (a.tipo === "tech") Object.assign(a, { resumo: "Exemplo · " + c.nome + " faz depilação com luz pulsada e limpezas de pele, mas ainda não tem laser. No modo de demonstração não há pesquisa na web nem IA.",
+            abordagem: "- Ligar a meio da manhã, entre marcações\n- Pretexto: demonstração do laser de díodo na clínica\n- Levar a ficha técnica e casos de clínicas parecidas",
+            mensagem: "Olá! Daqui é o [nome] da 26 Tech. Vi que a clínica já faz depilação e limpezas de pele. Trabalhamos com o laser de díodo de 4 ondas, que muitas clínicas usam para dar o salto na depilação. Faz sentido marcarmos uma demonstração aí na clínica? [nome] · 26 Tech",
+            descobrir: ["Que equipamentos usam hoje na depilação?", "Quem decide a compra de equipamentos?", "Que tratamentos querem acrescentar este ano?"], preparada_em: agora() });
+          else Object.assign(a, { resumo: "Exemplo · " + c.nome + " compra sobretudo ceras e champô. No modo de demonstração não há pesquisa na web nem IA.",
             abordagem: "- Ligar a meio da manhã, antes do movimento do almoço\n- Pretexto: novidade da cera mate e reposição do champô\n- Propor o patamar PRO, que fica a 300 € desta encomenda",
             mensagem: "Olá! Daqui é o [nome] da TwentySix. Reparei que já está na altura de repor as ceras e o champô. Esta semana temos a cera mate nova: quer que lhe junte umas unidades para experimentar? Abraço, [nome]",
             descobrir: ["Quem decide as compras na barbearia?", "Que marcas revendem ao balcão?", "Qual é o maior desafio da loja este ano?"], preparada_em: agora() });
           guardar(); return { abordagem: structuredClone(a), sugestoes: 0 };
         },
         async pesquisar() { await new Promise((r) => setTimeout(r, 500)); throw new Error("No modo de demonstração não há pesquisa na web."); },
+        async clinicas() {
+          await new Promise((r) => setTimeout(r, 600));
+          const d = ler(), n = d.clientes.filter((c) => c.marca === "tech").length;
+          const novos = ["Clínica Exemplo Estética", "Centro Laser Exemplo"].map((nome, i) => ({ id: uid(), nome: nome + " " + (n + i + 1), tipo: "lead", etapa: "lead", origem: "prospecao", marca: "tech", distrito: "Porto", concelho: "Porto",
+            morada: "Rua Exemplo, " + (10 + i) + ", Porto", telefone: "22000000" + i, email: "", website: "", instagram: "", score: 80 - i * 5, tipo_negocio: i ? "Depilação a laser" : "Estética e medicina estética", notas: "", criado_em: agora() }));
+          d.clientes.push(...novos);
+          novos.forEach((c, i) => d.abordagens.push({ id: uid(), dia: hojeD(), cliente_id: c.id, ordem: 10 + i, tipo: "tech", motivo: "Clínica encontrada hoje no Google Maps (" + c.tipo_negocio + ") · pontuação " + c.score + " (exemplo).", resumo: "", abordagem: "", mensagem: "", descobrir: [], fontes: [], preparada_em: null, estado: "sugerida" }));
+          guardar(); return { ok: true, vistos: 12, novos: novos.length, acrescentadas: novos.length };
+        },
         async estado(id, estado) { const d = ler(), a = d.abordagens.find((x) => x.id === id); if (a) { a.estado = estado; guardar(); } },
       };
       const mackay = {

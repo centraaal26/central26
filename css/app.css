@@ -2310,3 +2310,13 @@ body.protegida img{-webkit-user-drag:none}
 .crm-marcas button[data-marca-cor="twentysix"] i{background:var(--c-twentysix,#8a6a2f)}
 .crm-marcas button[data-marca-cor="tech"] i{background:var(--c-tech,#3f6fa8)}
 .crm-marcas button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+/* Abordar hoje: 26 Tech e procura de clínicas */
+.mk66-tipo.t-tech{background:color-mix(in srgb,var(--c-tech) 16%,transparent);color:var(--c-tech)}
+.mk66-clin{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+.mk66-clin-f{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:14px}
+.mk66-clin-f .sel{min-width:200px;max-width:none}
+.mk66-clin-t{display:flex;flex-wrap:wrap;gap:8px}
+.mk66-clin-t label{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border:1px solid var(--line);border-radius:999px;font-size:13px;cursor:pointer;background:var(--surface)}
+.mk66-clin-t input{accent-color:var(--c-tech);width:15px;height:15px}
+.mk66-clin-t label:has(input:checked){border-color:color-mix(in srgb,var(--c-tech) 55%,var(--line));background:color-mix(in srgb,var(--c-tech) 9%,var(--surface))}

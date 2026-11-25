@@ -1741,7 +1741,7 @@ const LOTE = criarEquipaLote({ S, api, esc, I, toast, renderPainel, recarregar }
 const ESTAT = criarEstatBar({ S, api, esc, I, toast, falha, render, nomeDe });
 const LOJ = criarLojas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeFinanceiro, vistaEstat: () => ESTAT.vista() });
 const PF = criarProformas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeCrm, carregarCrm: () => CRM.carregar(), aoFaturar: () => { if (LOG.estado() !== "por-carregar") LOG.carregar(); } });
-const MCK = criarMackay({ S, api, esc, I, toast, falha, render, renderPainel, abrir });
+const MCK = criarMackay({ S, api, esc, I, toast, falha, render, renderPainel, abrir, recarregarCrm: () => CRM.carregar() });
 const LOJW = criarLojaOnline({ S, api, esc, I, toast, falha, render });
 const CRM = criarCrm({ S, api, esc, I, toast, falha, render, agendarRender, renderPainel, abrir, nomeDe, ativos, av, criarTarefa, $, abordar: MCK, loja: LOJW, vistaProformas: () => PF.vista(), extraCliente: (c) => PF.blocoCliente(c) + (podeAcademy(S.eu) ? ACA.blocoCliente(c) : "") });
 const CHAT = criarChat({ S, api, esc, I, toast, falha, render, agendarRender, nomeDe, ativos, av, $, novaTarefa: (d) => abrir({ tipo: "nova", marca: "grupo", freq: "unica", ...d }) });

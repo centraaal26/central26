@@ -32,7 +32,9 @@ export const GRUPOS_MACKAY = [
 ];
 export const PERGUNTAS_MACKAY = Object.fromEntries(GRUPOS_MACKAY.flatMap(([, l]) => l));
 const TOTAL = Object.keys(PERGUNTAS_MACKAY).length;
-const TIPOS = { seguimento: "Seguimento", recompra: "Hora de encomendar", risco: "Em risco", lead: "Lead", primeiro: "Primeiro contacto" };
+const TIPOS = { seguimento: "Seguimento", recompra: "Hora de encomendar", risco: "Em risco", lead: "Lead", primeiro: "Primeiro contacto", tech: "26 Tech" };
+const TIPOS_CLINICA = [["estetica", "Estética e medicina estética"], ["laser", "Depilação a laser"], ["dermatologia", "Dermatologia"], ["ginasios", "Ginásios e spas"]];
+const DISTRITOS_PT = ["Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", "Évora", "Faro", "Guarda", "Leiria", "Lisboa", "Portalegre", "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu"];
 
 export function criarMackay(ctx) {
   const { S, api, esc, I, toast, falha, render, renderPainel, abrir } = ctx;
@@ -68,10 +70,10 @@ export function criarMackay(ctx) {
     if (compacto) return h + "</article>";
     if (a.preparada_em) {
       const an = a.analise || {};
-      if (an.cadeiras || an.barbeiros || (an.necessidades || []).length) {
-        const dado = (r, v) => v ? '<div><span>' + r + "</span><b>" + esc(v) + "</b></div>" : "";
-        h += '<div class="mk66-bloco"><b>Análise da barbearia' + (an.fotos ? " · " + an.fotos + (an.fotos === 1 ? " foto vista" : " fotos vistas") : "") + '</b><div class="mk66-analise">' +
-          dado("Cadeiras", an.cadeiras) + dado("Barbeiros", an.barbeiros) + dado("Google", an.avaliacao) + dado("Perfil", an.perfil) + "</div>" +
+      if (an.cadeiras || an.barbeiros || an.servicos || an.cabines || (an.necessidades || []).length) {
+        const dado = (r, v) => v ? '<div><span>' + r + "</span><b>" + esc(v) + "</b></div>" : "", clinica = a.tipo === "tech";
+        h += '<div class="mk66-bloco"><b>Análise da ' + (clinica ? "clínica" : "barbearia") + (an.fotos ? " · " + an.fotos + (an.fotos === 1 ? " foto vista" : " fotos vistas") : "") + '</b><div class="mk66-analise">' +
+          (clinica ? dado("Serviços", an.servicos) + dado("Cabines", an.cabines) + dado("Equipa", an.equipa) : dado("Cadeiras", an.cadeiras) + dado("Barbeiros", an.barbeiros)) + dado("Google", an.avaliacao) + dado("Perfil", an.perfil) + "</div>" +
           ((an.necessidades || []).length ? '<p class="mk66-rot">Necessidades prováveis</p><ul>' + an.necessidades.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") +
           ((an.propor || []).length ? '<p class="mk66-rot">O que propor</p><ul>' + an.propor.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") + "</div>";
       }
@@ -83,7 +85,7 @@ export function criarMackay(ctx) {
         ((a.fontes || []).length ? '<p class="mk66-fontes">Fontes: ' + a.fontes.slice(0, 4).map((f) => '<a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.titulo || f.url) + "</a>").join(" · ") + "</p>" : "");
     }
     h += '<div class="acts mk66-acts">' + (a.estado === "sugerida" ? (!a.preparada_em
-      ? '<button class="btn pri" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + I.ia + (prep ? "A preparar (pode levar 1 minuto)…" : ["primeiro", "lead"].includes(a.tipo) ? "Analisar e preparar" : "Preparar abordagem") + "</button>"
+      ? '<button class="btn pri" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + I.ia + (prep ? "A preparar (pode levar 1 minuto)…" : ["primeiro", "lead", "tech"].includes(a.tipo) ? "Analisar e preparar" : "Preparar abordagem") + "</button>"
       : '<button class="btn sec" data-acao="mk66-preparar" data-id="' + a.id + '"' + (prep ? " disabled" : "") + ">" + (prep ? "A preparar…" : "Preparar de novo") + "</button>") +
       '<button class="btn pri" data-acao="mk66-feita" data-id="' + a.id + '">' + I.tarefas + "Feita</button>" +
       '<button class="btn sec" data-acao="mk66-ignorar" data-id="' + a.id + '">Hoje não</button>'
@@ -98,14 +100,24 @@ export function criarMackay(ctx) {
     if (M.estado === "erro") return h + '<div class="aviso erro">Não foi possível preparar a lista: ' + esc(M.erro || "") + ' <button class="btn sec" data-acao="mk66-recarregar">Tentar outra vez</button></div>';
     if (M.estado !== "pronto") return h + '<div class="tabela"><div class="esqueleto"><i style="width:55%"></i></div><div class="esqueleto"><i style="width:40%"></i></div></div>';
     if (M.aviso) h += '<div class="aviso"><span>' + esc(M.aviso) + "</span></div>";
-    if (!M.lista.length) return h + '<div class="vazio"><h3>Hoje não há clientes a abordar</h3><p>Ninguém está atrasado nas encomendas nem há seguimentos marcados. Amanhã há uma lista nova.</p></div>';
+    if (!M.lista.length) return h + '<div class="vazio"><h3>Hoje não há clientes a abordar</h3><p>Ninguém está atrasado nas encomendas nem há seguimentos marcados. Amanhã há uma lista nova.</p></div>' + blocoClinicas();
     const pend = pendentes(), feitos = M.lista.filter((a) => a.estado !== "sugerida");
-    const eNovo = (a) => a.tipo === "primeiro" || a.tipo === "lead", cli = pend.filter((a) => !eNovo(a)), novos = pend.filter(eNovo);
+    const eNovo = (a) => a.tipo === "primeiro" || a.tipo === "lead", cli = pend.filter((a) => !eNovo(a) && a.tipo !== "tech"), novos = pend.filter(eNovo), tech = pend.filter((a) => a.tipo === "tech");
     if (cli.length) h += '<h3 class="mk66-sub">Clientes <span class="n">' + cli.length + '</span></h3><div class="mk66-lista">' + cli.map((a) => cartao(a)).join("") + "</div>";
     if (novos.length) h += '<h3 class="mk66-sub">Primeiro contacto de venda <span class="n">' + novos.length + '</span></h3><p class="muted mk66-nota">Barbearias que ainda não são clientes. O assistente analisa cada uma (cadeiras, barbeiros, avaliação, necessidades e o que propor) e escreve a mensagem de apresentação.</p><div class="mk66-lista">' + novos.map((a) => cartao(a)).join("") + "</div>";
+    if (tech.length) h += '<h3 class="mk66-sub">Primeiro contacto 26 Tech <span class="n">' + tech.length + '</span></h3><p class="muted mk66-nota">Clínicas que ainda não são clientes da 26 Tech. O assistente analisa cada uma (serviços que já faz, cabines, equipa, avaliação, necessidades e que equipamentos propor) e escreve a mensagem de apresentação para a venda.</p><div class="mk66-lista">' + tech.map((a) => cartao(a)).join("") + "</div>";
     if (!pend.length) h += '<div class="vazio"><h3>Lista de hoje tratada</h3><p>Amanhã há uma lista nova.</p></div>';
     if (feitos.length) h += '<h3 class="mk66-sub">Tratados hoje <span class="n">' + feitos.length + '</span></h3><div class="mk66-lista">' + feitos.map((a) => cartao(a, true)).join("") + "</div>";
-    return h;
+    return h + blocoClinicas();
+  }
+  // Prospeção de clínicas para a 26 Tech: procura no Google Maps e junta-as como leads da 26 Tech
+  function blocoClinicas() {
+    if (!api.crm?.abordagens?.clinicas) return "";
+    const oc = !!M.aProcurar, sel = M.clinicas || { distrito: "Porto", tipos: TIPOS_CLINICA.map(([k]) => k) };
+    return '<section class="cartao-sec mk66-clin"><h3>Procurar clínicas para a 26 Tech</h3><p class="muted">Pesquisa no Google Maps as clínicas de um distrito e junta as que ainda não estão no CRM como leads da 26 Tech. As melhores entram já na lista de hoje.</p>' +
+      '<div class="mk66-clin-f"><label for="mk66-dist">Distrito</label><select id="mk66-dist" class="sel"' + (oc ? " disabled" : "") + ">" + DISTRITOS_PT.map((d) => "<option" + (sel.distrito === d ? " selected" : "") + ">" + d + "</option>").join("") + "</select></div>" +
+      '<div class="mk66-clin-t" role="group" aria-label="Tipos de clínica">' + TIPOS_CLINICA.map(([k, r]) => '<label><input type="checkbox" data-mk66-tipo="' + k + '"' + (sel.tipos.includes(k) ? " checked" : "") + (oc ? " disabled" : "") + "><span>" + r + "</span></label>").join("") + "</div>" +
+      '<div class="acts"><button class="btn pri" data-acao="mk66-clinicas"' + (oc ? " disabled" : "") + ">" + (oc ? "A procurar no Google Maps…" : "Procurar clínicas") + "</button></div></section>";
   }
   function blocoInicio() {
     garantir();
@@ -171,6 +183,20 @@ export function criarMackay(ctx) {
     } catch (e) { falha(e); }
     M.aPreparar.delete(id); render(); renderPainel();
   }
+  async function procurarClinicas() {
+    if (M.aProcurar) return;
+    const distrito = document.getElementById("mk66-dist")?.value || "Porto";
+    const tipos = [...document.querySelectorAll("[data-mk66-tipo]")].filter((x) => x.checked).map((x) => x.dataset.mk66Tipo);
+    M.clinicas = { distrito, tipos };
+    if (!tipos.length) { toast("Escolhe pelo menos um tipo de clínica.", true); return; }
+    M.aProcurar = true; render();
+    try {
+      const r = await api.crm.abordagens.clinicas(distrito, tipos);
+      toast(r.novos ? r.novos + (r.novos === 1 ? " clínica nova" : " clínicas novas") + " no CRM como leads da 26 Tech" + (r.acrescentadas ? " · " + r.acrescentadas + " na lista de hoje" : "") : "Não há clínicas novas em " + distrito + " (" + r.vistos + " vistas, todas já no CRM)");
+      if (r.novos) { M.estado = "por-carregar"; if (ctx.recarregarCrm) ctx.recarregarCrm(); carregar(); }
+    } catch (e) { falha(e); }
+    M.aProcurar = false; render();
+  }
   async function marcar(id, estado) {
     const a = M.lista.find((x) => x.id === id); if (!a) return;
     const antes = a.estado; a.estado = estado; render();
@@ -195,6 +221,7 @@ export function criarMackay(ctx) {
       case "mk66-ignorar": marcar(id, "ignorada"); return true;
       case "mk66-repor": marcar(id, "sugerida"); return true;
       case "mk66-recarregar": M.estado = "por-carregar"; carregar(); return true;
+      case "mk66-clinicas": procurarClinicas(); return true;
       case "mk66-copiar": {
         const a = M.lista.find((x) => x.id === id);
         if (a) (navigator.clipboard?.writeText(a.mensagem) || Promise.reject()).then(() => toast("Mensagem copiada")).catch(() => toast("Não foi possível copiar. Seleciona o texto.", true));

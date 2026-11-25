@@ -340,6 +340,16 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 4. **Primeiro contacto de venda:** além dos clientes, a lista do dia traz até 3 barbearias que ainda não são clientes (com pontuação, com um contacto e sem proposta na Prospeção). **Analisar e preparar** estima as cadeiras e os barbeiros, a avaliação no Google, as necessidades e o que propor, e escreve a mensagem de apresentação. Corre também `supabase/30-abordagens-analise.sql`. Com a chave `GOOGLE_PLACES_KEY` nos Secrets (a mesma da Prospeção), o assistente vê até 3 fotos da barbearia no Google Maps para contar as cadeiras.
 5. Na ficha de cada cliente: **Perfil Mackay 66**, com as 66 perguntas adaptadas a barbearias. O assistente só pesquisa informação pública da loja e deixa sugestões com a fonte, que só ficam guardadas depois de alguém as aceitar. Não se guardam dados sensíveis (saúde, religião, política, vida familiar).
 
+### 3z-e. Loja online da TwentySix (WooCommerce)
+1. No Supabase, SQL Editor: corre `supabase/33-loja-online.sql` (e o `32-comissao-barbeiros.sql`, se ainda não correu).
+2. No WordPress: **WooCommerce → Definições → Avançado → API REST → Adicionar chave**. Descrição `Central 26`, permissões **Leitura/Escrita**. Copia a chave (ck_…) e o segredo (cs_…), que só aparecem uma vez.
+3. Edge Functions → **Secrets**: `WOO_URL` (https://twentysix.pt), `WOO_CHAVE` (ck_…) e `WOO_SEGREDO` (cs_…). Nunca no GitHub nem por WhatsApp.
+4. Publica a função `supabase/functions/woo` com «Verify JWT» **desligado** (faz a sua própria verificação: sessão da direção ou de quem trata de encomendas, ou o `segredo_webhook` do relógio).
+5. Na app: **Comercial → Loja online**. A direção carrega em **Testar ligação**, **Atualizar produtos** (e diz a que produto da Central corresponde cada produto do site), **Importar** o histórico e, por fim, liga **Passar as encomendas pagas para a Logística**.
+- De 10 em 10 minutos a Central lê o site. Cada encomenda paga a partir do momento em que se ligou entra na Logística com a Nacex como transporte e quem fatura recebe a tarefa de faturar no Multixop; ao escrever o número da fatura na encomenda, a tarefa fica concluída.
+- Com o envio criado na Nacex, a encomenda passa a «Concluída» no site e o cliente recebe a nota com o link de seguimento. Se o site cancelar ou reembolsar uma encomenda ainda não enviada, a Central cancela-a e avisa a Logística.
+- As vendas do site ficam em `woo_encomendas` sem nomes nem contactos (só código postal e localidade), para o separador Loja online.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

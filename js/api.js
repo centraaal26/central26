@@ -440,6 +440,27 @@ export function criarApi() {
 
     // Envios pela Nacex (função «nacex» no servidor; as credenciais nunca chegam ao navegador)
     async nacex(acao, dados) { return invocar("nacex", { acao, ...(dados || {}) }); },
+    // Loja online da TwentySix (script 33 e função «woo»)
+    woo: {
+      async carregar() {
+        const [config, produtos, encomendas] = await Promise.all([
+          sb.from("woo_config").select("*").eq("id", 1).maybeSingle(),
+          todas(() => sb.from("woo_produtos").select("*").order("nome")),
+          todas(() => sb.from("woo_encomendas").select("woo_id, numero, estado, criada_em, paga_em, total, portes, desconto, pagamento, cp, localidade, itens, encomenda_id").order("criada_em", { ascending: false })),
+        ]);
+        return { config: ok(config), produtos, encomendas };
+      },
+      async configurar(campos) { return ok(await sb.from("woo_config").update(campos).eq("id", 1).select().single()); },
+      async produto(woo_id, codigo) { return ok(await sb.from("woo_produtos").update({ produto_codigo: codigo }).eq("woo_id", woo_id).select().single()); },
+      async acao(acao, dados) { return invocar("woo", { acao, ...(dados || {}) }); },
+      subscrever(cb) {
+        const canal = sb.channel("central26-woo")
+          .on("postgres_changes", { event: "*", schema: "public", table: "woo_config" }, (p) => cb("woo_config", p.eventType, p.new, p.old))
+          .on("postgres_changes", { event: "*", schema: "public", table: "woo_encomendas" }, (p) => cb("woo_encomendas", p.eventType, p.new, p.old))
+          .subscribe();
+        return () => sb.removeChannel(canal);
+      },
+    },
     ia: {
       async conversas() { const { data, error } = await sb.from("ia_conversas").select("*").order("atualizado_em", { ascending: false }).limit(100); if (error) throw new Error(/ia_conversas|PGRST20/.test(error.message + error.code) ? "FALTA_SCRIPT" : error.message); return data; },
       async mensagens(id) { return ok(await sb.from("ia_mensagens").select("*").eq("conversa_id", id).order("id")); },

@@ -124,6 +124,39 @@ export function criarDemo() {
     async mudarPassword() { const p = eu(); if (p) p.mudar_password = false; gravar(db); },
     async meuPerfil(id) { return db.perfis.find((p) => p.id === id) || null; },
     async nacex(acao, dados) { return ganchos.nacex(acao, dados || {}); },
+    // Loja online (exemplo): vendas fictícias do site, sem ligação real
+    woo: (() => {
+      let w = null;
+      const gerar = () => {
+        const prods = [[101, "Cera modeladora 100 ml (exemplo)", 19.5, "E01"], [102, "Óleo para barba 30 ml (exemplo)", 18.9, "E04"], [103, "Pó texturizante (exemplo)", 16.5, null], [104, "Champô 1000 ml (exemplo)", 34.9, null]];
+        const locs = ["Vila Nova de Gaia", "Porto", "Lisboa", "Braga", "Maia", "Matosinhos", "Coimbra", "Aveiro"], pags = ["MB WAY", "Multibanco", "Cartão"];
+        let seed = 7; const r = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+        const encomendas = [];
+        for (let i = 0; i < 140; i++) {
+          const d = new Date(Date.now() - Math.floor(r() * 365) * 86400000), itens = [];
+          for (let k = 0, n = 1 + Math.floor(r() * 3); k < n; k++) { const p = prods[Math.floor(r() * prods.length)], q = 1 + Math.floor(r() * 2); itens.push({ woo_id: p[0], nome: p[1], qtd: q, total: Math.round(p[2] * q * 100) / 100 }); }
+          const portes = r() < 0.6 ? 4.9 : 0, est = r() < 0.06 ? "cancelled" : r() < 0.04 ? "refunded" : "completed";
+          encomendas.push({ woo_id: 9000 + i, numero: String(9000 + i), estado: est, criada_em: d.toISOString(), paga_em: d.toISOString(), total: Math.round((itens.reduce((s, x) => s + x.total, 0) + portes) * 100) / 100,
+            portes, desconto: 0, pagamento: pags[Math.floor(r() * pags.length)], cp: "", localidade: locs[Math.floor(r() * locs.length)], itens, encomenda_id: null });
+        }
+        encomendas.sort((a, b) => (a.criada_em < b.criada_em ? 1 : -1));
+        return { config: { id: 1, ativo: false, concluir_no_site: true, desde: null, ultima_sinc: agora(), ultimo_ok: agora(), ultimo_erro: "" },
+          produtos: prods.map(([woo_id, nome, preco, produto_codigo]) => ({ woo_id, nome, preco, produto_codigo })), encomendas };
+      };
+      const dados = () => (w || (w = gerar()));
+      return {
+        async carregar() { return structuredClone(dados()); },
+        async configurar(c) { const d = dados(); d.config = { ...d.config, ...c, ...(c.ativo ? { desde: agora() } : {}) }; return structuredClone(d.config); },
+        async produto(id, codigo) { const p = dados().produtos.find((x) => x.woo_id === id); p.produto_codigo = codigo; return structuredClone(p); },
+        async acao(acao) {
+          if (acao === "testar") return { ok: true, encomendas: dados().encomendas.length, produtos: dados().produtos.length };
+          if (acao === "produtos") return { ok: true, produtos: dados().produtos.length };
+          if (acao === "historico") return { ok: true, vistas: dados().encomendas.length, seguinte: null };
+          return { ok: true, vistas: 0, criadas: 0, canceladas: 0, concluidas: 0 };
+        },
+        subscrever() { return () => {}; },
+      };
+    })(),
     repor() { try { localStorage.removeItem(CHAVE); } catch { /* */ } db = ler(); },
 
     async carregar() {

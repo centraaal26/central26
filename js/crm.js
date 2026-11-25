@@ -181,7 +181,7 @@ export function criarCrm(ctx) {
     let h = '<div class="cab"><div><div class="eyebrow neutro">Departamento Comercial' + (ref ? " · faturação até " + esc(rotData(ref)) : "") + "</div><h1>Comercial</h1></div>" +
       (C.estado === "pronto" ? '<div class="acts"><button class="btn pri" data-acao="crm-novo">' + I.plus + "Novo cliente ou lead</button></div>" : "") + "</div>";
     const nAbordar = ctx.abordar?.contagem() || 0;
-    const tabs = [["clientes", "Clientes e leads"], ...(ctx.abordar ? [["abordar", "Abordar hoje" + (nAbordar ? " (" + nAbordar + ")" : "")]] : []), ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"]];
+    const tabs = [["clientes", "Clientes e leads"], ...(ctx.abordar ? [["abordar", "Abordar hoje" + (nAbordar ? " (" + nAbordar + ")" : "")]] : []), ["funil", "Funil"], ["mapa", "Mapa"], ["analise", "Análise"], ["proformas", "Proformas"], ...(ctx.loja ? [["loja", "Loja online"]] : [])];
     if (podeImportar(S.eu)) tabs.push(["importar", "Importar"]);
     h += '<div class="tabs" role="tablist">' + tabs.map(([k, r]) => '<button class="tab" role="tab" data-acao="crm-tab" data-tab="' + k + '" aria-selected="' + (C.tab === k) + '">' + r + "</button>").join("") + "</div>";
     if (C.estado === "erro") {
@@ -194,6 +194,7 @@ export function criarCrm(ctx) {
         (podeImportar(S.eu) ? '<div class="acts"><button class="btn pri" data-acao="crm-tab" data-tab="importar">Importar dados</button></div>' : "<p>Pede à administração ou ao chefe do Comercial para importar os dados.</p>") + "</div>";
     }
     if (C.tab === "abordar" && ctx.abordar) return h + ctx.abordar.vista();
+    if (C.tab === "loja" && ctx.loja) return h + ctx.loja.vista({ dado, barrasMes, barrasH });
     if (C.tab === "funil") return h + vistaFunil();
     if (C.tab === "analise") return h + vistaAnalise();
     if (C.tab === "proformas" && ctx.vistaProformas) return h + ctx.vistaProformas();
@@ -453,7 +454,7 @@ export function criarCrm(ctx) {
     if (!pares.length) return '<p class="muted">Sem vendas no período.</p>';
     // Com mais de um ano de meses, os valores só aparecem no maior e no último (os outros ao passar por cima) e o ano marca a mudança
     const muitos = pares.length > 13, anos = new Set(pares.map(([m]) => m.slice(0, 4))).size > 1;
-    const max = Math.max(...pares.map((x) => x[1]), 1), W = 640, H = anos ? 234 : 220, pe = anos ? 42 : 28, topo = 22, eixo = muitos ? 44 : 0, larg = (W - 8 - eixo) / pares.length, bw = Math.min(46, larg * 0.62);
+    const max = Math.max(...pares.map((x) => x[1]), 1), W = 640, H = anos ? 234 : 220, pe = anos ? 42 : 28, topo = 22, eixo = 44, larg = (W - 8 - eixo) / pares.length, bw = Math.min(46, larg * 0.62);
     const passo = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : max / Math.pow(10, Math.floor(Math.log10(max))) > 2 ? 1 : 0.5);
     const linhas = []; for (let v = passo; v <= max; v += passo) linhas.push(v);
     const y = (v) => H - pe - (v / max) * (H - pe - topo);

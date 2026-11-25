@@ -1453,7 +1453,8 @@ export function criarDemo() {
         async carregar() {
           const x = ler();
           if (!podeCrmD() && !eFat()) return structuredClone({ precos: [], config: x.config, proformas: [] });
-          return structuredClone({ precos: x.precos, config: x.config, proformas: x.proformas });
+          const custos = [["E01", 3.1], ["E02", 3.3], ["E03", 2.4], ["E04", 3.6]].map(([c, v]) => ({ produto_codigo: c, custo: v }));
+          return structuredClone({ precos: x.precos, config: x.config, proformas: x.proformas, custos });
         },
         async precos(lote) {
           if (!eGestor(eu())) throw new Error("Só a direção muda a tabela de preços.");

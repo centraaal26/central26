@@ -651,12 +651,14 @@ export function criarApi() {
     // Proformas da TwentySix (script 24)
     com: {
       async carregar() {
-        const [precos, config, proformas] = await Promise.all([
+        const [precos, config, proformas, custos] = await Promise.all([
           todas(() => sb.from("com_precos").select("*").order("produto_codigo")),
           sb.from("com_config").select("*").eq("id", 1).maybeSingle(),
           todas(() => sb.from("com_proformas").select("*").order("numero", { ascending: false })),
+          sb.from("crm_custos").select("produto_codigo, custo"),
         ]);
-        return { precos, config: ok(config), proformas };
+        // custos (script 20): só a direção vê a margem da proforma; sem acesso, fica por mostrar
+        return { precos, config: ok(config), proformas, custos: custos.error ? [] : custos.data };
       },
       async precos(lote) { return ok(await sb.from("com_precos").upsert(lote, { onConflict: "produto_codigo" }).select()); },
       async configurar(campos) { return ok(await sb.from("com_config").update(campos).eq("id", 1).select().single()); },

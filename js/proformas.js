@@ -56,6 +56,7 @@ export function criarProformas(ctx) {
     try {
       const d = await api.com.carregar();
       P.precos = Object.fromEntries(d.precos.map((x) => [x.produto_codigo, x]));
+      P.custos = Object.fromEntries((d.custos || []).map((x) => [x.produto_codigo, +x.custo]));
       P.config = d.config; P.proformas = Object.fromEntries(d.proformas.map((x) => [x.id, x]));
       P.estado = "pronto";
       if (!desligar && api.com.subscrever) desligar = api.com.subscrever(aoMudar);
@@ -366,6 +367,7 @@ export function criarProformas(ctx) {
       (t.descEmb ? "<div><span>Desconto de " + esc((PARC[p.parceria] || "parceria").toLowerCase()) + " (" + pct(p.desc_embaixador) + ")</span><b>−" + eur2(t.descEmb) + "</b></div>" : "") +
       (t.descExtra ? "<div><span>Desconto (" + pct(p.desconto) + ")</span><b>−" + eur2(t.descExtra) + "</b></div>" : "") +
       "<div><span>Total sem IVA</span><b>" + eur2(t.base) + "</b></div><div><span>IVA (" + pct(p.iva) + ")</span><b>" + eur2(t.iva) + '</b></div><div class="tot"><span>Total</span><b>' + eur2(t.total) + "</b></div></div>";
+    h += htmlMargem(p, t);
     const prox = PROXIMO[p.escalao];
     if (prox && t.sub > 0 && ["rascunho", "enviada"].includes(p.estado)) {
       const lim = pat()[prox], porAno = cfg().patamar_por === "ano", ja = porAno ? comprasAno(p.cliente_id) : 0, conta = ja + t.base;
@@ -376,6 +378,20 @@ export function criarProformas(ctx) {
         '<span class="pf-pat-barra"><i style="width:' + Math.min(100, Math.round((conta / lim) * 100)) + '%"></i></span></div>';
     }
     return h;
+  }
+
+  // Margem da TwentySix nesta proforma (total sem IVA menos o custo dos produtos): só a direção vê
+  function htmlMargem(p, t) {
+    if (!eGestor(S.eu) || !(t.base > 0)) return "";
+    const itens = (p.itens || []).filter((i) => +i.qtd > 0), custos = P.custos || {};
+    const sem = itens.filter((i) => custos[i.codigo] == null);
+    if (sem.length === itens.length) return '<div class="pf-margem"><span>Margem</span><small>Falta o custo destes produtos (CRM → Margens).</small></div>';
+    const custo = itens.reduce((s, i) => s + (custos[i.codigo] ?? 0) * (+i.qtd || 0), 0);
+    // sem custo conhecido, a margem conta só com a parte da proforma que tem custo
+    const baseCom = sem.length ? t.base * (itens.filter((i) => custos[i.codigo] != null).reduce((s, i) => s + +i.qtd * +i.preco, 0) / (t.sub || 1)) : t.base;
+    const m = baseCom - custo, pm = baseCom ? (m / baseCom) * 100 : 0;
+    return '<div class="pf-margem' + (pm < 20 ? " baixa" : "") + '"><span>Margem <small>só a direção vê</small></span><b>' + eur2(m) + " · " + pct(pm) + "</b>" +
+      "<small>Custo dos produtos " + eur2(custo) + (sem.length ? " · sem custo: " + esc(sem.map((i) => i.descricao || descDe(i.codigo)).join(", ")) + " (fora da conta)" : "") + "</small></div>";
   }
 
   /* ---------- impressão (o navegador guarda em PDF) ---------- */

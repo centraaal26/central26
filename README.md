@@ -285,6 +285,7 @@ Como funciona:
 - **Cliente aceitou** cria uma tarefa para quem fatura, com os artigos e o total. Quem fatura cria a fatura no Multixop e escreve o número na proforma: a encomenda passa sozinha para a Logística, com os artigos ligados ao stock (o stock desce quando fica **Pronta**).
 - **Envio pela Nacex**: a encomenda mostra os dados para copiar para o portal (serviço 27). Quando se escreve o tracking, quem fatura recebe o aviso para imprimir a etiqueta.
 - As credenciais do portal da Nacex **não** entram na Central.
+- **Margem da proforma**: a direção vê, por baixo dos totais, a margem (total sem IVA menos o custo dos produtos). Os custos são os mesmos de **CRM → Margens** (tabela `crm_custos`) e nunca vão para o GitHub.
 
 ### 3x. Lojas e parcerias (embaixador / influencer)
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/25-lojas-parcerias.sql` → **Run** (depois do 24).

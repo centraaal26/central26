@@ -2046,6 +2046,11 @@ i.lg{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-alig
 .pf-totais b{font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
 .pf-totais .tot{border-top:2px solid var(--ink);margin-top:4px;padding-top:7px;font-size:16px}
 .pf-totais .tot b{font-weight:700}
+.pf-margem{margin:10px 0 0 auto;width:min(100%,340px);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 12px;padding:9px 12px;border-radius:10px;border:1px dashed var(--line);font-size:13px;color:var(--muted)}
+.pf-margem span small{margin-left:6px;font-size:11px}
+.pf-margem b{font-family:var(--f-mono);font-weight:600;color:var(--ok);font-variant-numeric:tabular-nums}
+.pf-margem.baixa b{color:var(--warn)}
+.pf-margem>small{flex-basis:100%;font-size:12px}
 .pf-patamar{position:relative;margin-top:10px;padding:10px 12px 12px;border-radius:10px;background:var(--sunken);font-size:13px;color:var(--muted);overflow:hidden}
 .pf-patamar b{color:var(--ink)}
 .pf-pat-barra{display:block;height:5px;border-radius:3px;background:var(--line);margin-top:8px;overflow:hidden}

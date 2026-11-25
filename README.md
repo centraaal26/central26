@@ -360,6 +360,13 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 - Todos os dias entram até 2 clínicas no **Primeiro contacto 26 Tech**. «Analisar e preparar» vê o que a clínica já faz, cabines, equipa e avaliação, e escreve a mensagem de apresentação para a venda dos equipamentos (laser de díodo, Emsculpt/EMS, limpeza de pele), sem preços nem promessas de resultados.
 - Publica a função `crm-abordar` de novo depois de atualizar.
 
+### 3z-h. Leitura de caixa e «Os meus números» (barbeiros)
+1. Corre `supabase/35-leituras-caixa.sql` e publica a função `supabase/functions/leitura-caixa` (usa a `ANTHROPIC_API_KEY` do assistente; «Verify JWT» ligado).
+2. O responsável de cada loja (Lojas → Definições) tem o separador **Leitura de caixa**: no fecho, **Fotografar a leitura de caixa**. A Central lê os serviços e valores de cada barbeiro (secção «Entradas»), o total faturado e os pagamentos; o responsável confirma e guarda. Também dá para escrever à mão ou corrigir um dia.
+3. Em **Barbeiros da leitura**, liga cada nome da leitura (ex.: «JOAO») à conta do barbeiro.
+4. Cada barbeiro vê em **Os meus números** só os seus serviços e entradas, dia a dia e por serviço, comparados com a média da loja (sem nomes). Os valores ficam escondidos até tocar. O total faturado só o veem a direção e o responsável da loja.
+- Metas e prémios: aparecem quando a direção os definir.
+
 ### 3o. Seguros e viaturas
 1. SQL Editor → **New query** → cola o conteúdo de `supabase/15-seguros-viaturas.sql` → **Run**.
 2. Na app: **Seguros e viaturas** → **Viaturas** → **Nova viatura** (com as datas que já souberes) e **Prazos** → **Novo prazo** para os seguros da empresa (multirriscos, acidentes de trabalho…).

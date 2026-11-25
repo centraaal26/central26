@@ -55,7 +55,7 @@ export function criarLojas(ctx) {
 
   /* ============================== Vista ============================== */
   function vista(param) {
-    if (param && ["stock", "pedidos", "marcacoes", "cadeiras", "definicoes"].includes(param)) L.tab = param;
+    if (param && ["stock", "pedidos", "caixa", "marcacoes", "cadeiras", "definicoes"].includes(param)) L.tab = param;
     if (L.estado === "por-carregar") carregar();
     let h = '<div class="cab"><div><div class="eyebrow neutro">Barbearias</div><h1>Lojas</h1><p class="sub-cab">Stock de consumíveis e produtos, pedidos da semana, trocos e manutenção.</p></div></div>';
     if (L.estado === "erro") {
@@ -64,6 +64,7 @@ export function criarLojas(ctx) {
     }
     if (L.estado !== "pronto") return h + '<div class="tabela">' + [1, 2, 3].map((i) => '<div class="esqueleto"><i style="width:' + (30 + i * 14) + '%"></i></div>').join("") + "</div>";
     const tabs = [["stock", "Stock"], ["pedidos", "Pedidos"]];
+    if (ctx.vistaCaixa && ctx.podeCaixa?.(minhas())) tabs.push(["caixa", "Leitura de caixa"]);
     if (podeFinanceiro(eu())) tabs.push(["marcacoes", "Marcações"], ["cadeiras", "Aluguer de cadeiras"]);
     if (eGestor(eu())) tabs.push(["definicoes", "Definições"]);
     if (!tabs.some(([k]) => k === L.tab)) L.tab = "stock";
@@ -77,6 +78,10 @@ export function criarLojas(ctx) {
     const atual = lojaAtual();
     if (m.length > 1) h += '<div class="barra"><div class="seg loj-seg" role="group" aria-label="Loja">' + m.map((l) => { const f = emFalta(l.id).length;
       return '<button data-acao="loj-loja" data-v="' + l.id + '" aria-pressed="' + (atual.id === l.id) + '">' + esc(l.nome) + (f ? ' <span class="pill-at">' + f + "</span>" : "") + "</button>"; }).join("") + "</div></div>";
+    if (L.tab === "caixa" && ctx.vistaCaixa) {
+      const resp = eGestor(eu()) ? m : m.filter((l) => l.responsavel_id === eu()?.id), loja = resp.find((l) => l.id === atual.id) || resp[0];
+      return h + ctx.vistaCaixa(loja);
+    }
     return h + (L.tab === "pedidos" ? vistaPedidos(atual) : vistaStock(atual));
   }
 

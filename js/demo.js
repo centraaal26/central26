@@ -124,6 +124,35 @@ export function criarDemo() {
     async mudarPassword() { const p = eu(); if (p) p.mudar_password = false; gravar(db); },
     async meuPerfil(id) { return db.perfis.find((p) => p.id === id) || null; },
     async nacex(acao, dados) { return ganchos.nacex(acao, dados || {}); },
+    // Leitura de caixa (exemplo): sem IA, a «leitura» devolve sempre o mesmo exemplo
+    caixa: (() => {
+      const dia = (n) => ymd(new Date(Date.now() - n * 864e5));
+      const ex = (n, f) => [{ barbeiro: "JOAO", servico: "CABELO", qtd: 7 - f, valor: (7 - f) * 16 }, { barbeiro: "JOAO", servico: "COMBO", qtd: 4, valor: 96 }, { barbeiro: "NUNO", servico: "CABELO", qtd: 3 + f, valor: (3 + f) * 16 }, { barbeiro: "NUNO", servico: "COMBO", qtd: 2, valor: 48 }];
+      const soma = (e) => e.reduce((t, x) => t + x.valor, 0);
+      const w = { leituras: [1, 2, 3, 4].map((n) => { const e = ex(n, n % 3); return { id: uid(), loja_id: "madalena", dia: dia(n), entradas: e, total_entradas: soma(e), total_faturado: Math.round(soma(e) * 0.45), pagamentos: { MULTIBANCO: Math.round(soma(e) * 0.45) }, criado_em: agora() }; }),
+        alias: [{ loja_id: "madalena", nome: "JOAO", perfil_id: "p-barbeiro" }] };
+      return {
+        async carregar(loja) { return structuredClone({ leituras: w.leituras.filter((l) => l.loja_id === loja).sort((a, b) => (a.dia < b.dia ? 1 : -1)), alias: w.alias.filter((a) => a.loja_id === loja) }); },
+        async ler() {
+          await new Promise((r) => setTimeout(r, 900));
+          return { ok: true, dia: dia(0), intervalo: "exemplo", entradas: ex(0, 0), soma_entradas: 304, faturado: 136, pagamentos: { MULTIBANCO: 136 }, avisos: ["Modo de demonstração: esta leitura é sempre o mesmo exemplo, sem ler a foto."] };
+        },
+        async guardar(r) {
+          const l = { ...(w.leituras.find((x) => x.id === r.id || (x.loja_id === r.loja_id && x.dia === r.dia)) || { id: uid(), criado_em: agora() }), ...r, total_entradas: soma(r.entradas) };
+          if (!l.id) l.id = uid();
+          w.leituras = [l, ...w.leituras.filter((x) => x.id !== l.id && !(x.loja_id === l.loja_id && x.dia === l.dia))]; return structuredClone(l);
+        },
+        async apagar(id) { w.leituras = w.leituras.filter((x) => x.id !== id); },
+        async alias(loja, nome, perfil) { w.alias = w.alias.filter((a) => !(a.loja_id === loja && a.nome === nome)); if (perfil) w.alias.push({ loja_id: loja, nome, perfil_id: perfil }); },
+        async meus(de, ate) {
+          const a = w.alias.filter((x) => x.perfil_id === euId);
+          const linhas = w.leituras.filter((l) => l.dia >= de && l.dia <= ate && a.some((x) => x.loja_id === l.loja_id)).flatMap((l) => l.entradas.map((e) => ({ ...e, loja_id: l.loja_id, dia: l.dia })));
+          const minhas = linhas.filter((e) => a.some((x) => x.loja_id === e.loja_id && x.nome === e.barbeiro)).map((e) => ({ loja_id: e.loja_id, dia: e.dia, servico: e.servico, qtd: e.qtd, valor: e.valor }));
+          const n = new Set(linhas.map((e) => e.barbeiro)).size || 1;
+          return { ligado: a.length > 0, linhas: minhas, lojas: a.length ? [{ loja_id: a[0].loja_id, barbeiros: n, dias: new Set(linhas.map((e) => e.dia)).size, media_valor: soma(linhas) / n, media_servicos: linhas.reduce((t, e) => t + e.qtd, 0) / n }] : [] };
+        },
+      };
+    })(),
     // Loja online (exemplo): vendas fictícias do site, sem ligação real
     woo: (() => {
       let w = null;

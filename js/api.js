@@ -441,6 +441,28 @@ export function criarApi() {
 
     // Envios pela Nacex (função «nacex» no servidor; as credenciais nunca chegam ao navegador)
     async nacex(acao, dados) { return invocar("nacex", { acao, ...(dados || {}) }); },
+    // Leitura de caixa das barbearias e «Os meus números» (script 35 e função «leitura-caixa»)
+    caixa: {
+      async carregar(loja) {
+        const [l, a] = await Promise.all([
+          sb.from("bar_leituras").select("*").eq("loja_id", loja).order("dia", { ascending: false }).limit(90),
+          sb.from("bar_alias").select("*").eq("loja_id", loja),
+        ]);
+        return { leituras: ok(l), alias: ok(a) };
+      },
+      async ler(loja, imagem) { return invocar("leitura-caixa", { loja_id: loja, imagem, tipo: "image/jpeg" }); },
+      async guardar(r) {
+        const campos = { loja_id: r.loja_id, dia: r.dia, entradas: r.entradas, total_faturado: r.total_faturado ?? null, pagamentos: r.pagamentos || {} };
+        if (r.id) return ok(await sb.from("bar_leituras").update(campos).eq("id", r.id).select().single());
+        return ok(await sb.from("bar_leituras").upsert(campos, { onConflict: "loja_id,dia" }).select().single());
+      },
+      async apagar(id) { ok(await sb.from("bar_leituras").delete().eq("id", id)); },
+      async alias(loja, nome, perfil) {
+        if (!perfil) { ok(await sb.from("bar_alias").delete().eq("loja_id", loja).eq("nome", nome)); return; }
+        ok(await sb.from("bar_alias").upsert({ loja_id: loja, nome, perfil_id: perfil }, { onConflict: "loja_id,nome" }));
+      },
+      async meus(de, ate) { return ok(await sb.rpc("bar_meus_numeros", { p_de: de, p_ate: ate })); },
+    },
     // Loja online da TwentySix (script 33 e função «woo»)
     woo: {
       async carregar() {

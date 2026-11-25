@@ -13,6 +13,7 @@ import { criarEstatBar } from "./estatisticas-bar.js";
 import { criarPropostas } from "./propostas.js";
 import { criarMackay } from "./mackay.js";
 import { criarLojaOnline } from "./lojaonline.js";
+import { criarBarbeiros } from "./barbeiros.js";
 import { sincronizarProtecao } from "./protecao.js";
 import { criarChat } from "./chat.js";
 import { criarAgenda, podeGerirAgenda } from "./agenda.js";
@@ -245,7 +246,7 @@ async function arrancar() {
 
 function limparDados() {
   if (desligar) { desligar(); desligar = null; }
-  CRM.reiniciar(); PF.reiniciar(); LOJ.reiniciar(); ESTAT.reiniciar(); PROP.reiniciar(); MCK.reiniciar(); LOJW.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
+  CRM.reiniciar(); PF.reiniciar(); LOJ.reiniciar(); ESTAT.reiniciar(); PROP.reiniciar(); MCK.reiniciar(); LOJW.reiniciar(); BAR.reiniciar(); CHAT.reiniciar(); AGENDA.reiniciar(); LOG.reiniciar(); AUD.reiniciar(); OP.reiniciar(); FIN.reiniciar(); MK.reiniciar(); STK.reiniciar(); PRZ.reiniciar(); ACA.reiniciar(); REL.reiniciar(); PRS.reiniciar(); IA.reiniciar(); FIA.reiniciar(); S.fotos = {}; S.prefs = null;
   Object.assign(S, { user: null, eu: null, perfis: {}, deps: {}, tarefas: {}, notifs: [], atividade: [], config: {}, aberto: null, carregou: false });
 }
 
@@ -422,6 +423,7 @@ function lerRota(desenhar = true) {
     else if (r === "marketing") { rota = "marketing"; param = p || null; }
     else if (r === "stocks") { rota = "stocks"; param = p || null; }
     else if (r === "lojas") { rota = "lojas"; param = p || null; }
+    else if (r === "numeros") { rota = "numeros"; param = null; }
     else if (r === "copia") { rota = "definicoes"; setTimeout(() => $("#sec-copia")?.scrollIntoView({ block: "start", behavior: "smooth" }), 120); }
     else if (r === "stock" && p) { rota = "stock"; param = p; }
     else if (r === "prazos") { rota = "prazos"; param = p || null; }
@@ -624,6 +626,7 @@ function vistaApp() {
     if (podeMarketing(S.eu)) { const n = MK.contagem(); side += '<a href="#marketing"' + (S.rota === "marketing" || S.rota === "publicacao" ? ' aria-current="page"' : "") + ">" + I.megafone + '<span class="nm">Marketing</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
     if (podeStocks(S.eu)) { const n = STK.contagem(); side += '<a href="#stocks"' + (S.rota === "stocks" || S.rota === "stock" ? ' aria-current="page"' : "") + ">" + I.stock + '<span class="nm">Stocks</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
     if (LOJ.visivel()) { const n = LOJ.contagem(); side += '<a href="#lojas"' + atual("lojas") + ">" + I.tesoura + '<span class="nm">Lojas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
+    if (BAR.visivelNumeros()) side += '<a href="#numeros"' + atual("numeros") + ">" + I.grafico + '<span class="nm">Os meus números</span></a>';
     if (podePrazos(S.eu)) { const n = PRZ.contagem(); side += '<a href="#prazos"' + (["prazos", "prazo", "viatura"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.carro + '<span class="nm">Seguros e viaturas</span>' + (n ? '<span class="ct">' + n + "</span>" : "") + "</a>"; }
     if (podeAcademy(S.eu)) side += '<a href="#academy"' + (["academy", "formando", "formacao"].includes(S.rota) ? ' aria-current="page"' : "") + ">" + I.capelo + '<span class="nm">26 Academy</span></a>';
     if (podeFinanceiro(S.eu)) side += '<a href="#financeiro"' + atual("financeiro") + ">" + I.euro + '<span class="nm">Financeiro</span></a>';
@@ -674,6 +677,7 @@ function vistaApp() {
   else if (S.rota === "agenda") corpo = AGENDA.vista();
   else if (S.rota === "financeiro" && podeFinanceiro(S.eu)) corpo = FIN.vista(S.param);
   else if (S.rota === "lojas") corpo = LOJ.vista(S.param);
+  else if (S.rota === "numeros" && BAR.visivelNumeros()) corpo = BAR.vistaNumeros();
   else if ((S.rota === "marketing" || S.rota === "publicacao") && podeMarketing(S.eu)) corpo = MK.vista(S.rota === "marketing" ? S.param : null);
   else if ((S.rota === "stocks" || S.rota === "stock") && podeStocks(S.eu)) corpo = STK.vista(S.rota === "stocks" ? S.param : null);
   else if ((S.rota === "prospecao" || S.rota === "proposta") && podeProspecao(S.eu)) corpo = PRS.vista(S.rota === "prospecao" ? S.param : undefined);
@@ -1167,7 +1171,7 @@ function vistaDefinicoes() {
   let h = '<div class="cab"><div><div class="eyebrow neutro">' + esc(S.eu.email) + "</div><h1>Mais</h1></div></div>";
   h += '<nav class="atalhos" aria-label="Secções">' + (eRestrito(S.eu) ? [["#notificacoes", I.sino, "Notificações"], ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : [])] : [["#agenda", I.cal, "Agenda"], ["#notificacoes", I.sino, "Notificações"], ["#atividade", I.grafico, "Quem fez o quê"], ["#equipa", I.equipa, "Equipa"], ...(podeCrm(S.eu) ? [["#comercial", I.loja, "Comercial"], ["#prospecao", I.alvo, "Prospeção"]] : []),
     ...(podeEncomendas(S.eu) ? [["#logistica", I.camiao, "Logística"]] : []), ...(podeOperacional(S.eu) ? [["#operacional", I.caixa, "Fornecedores"]] : []), ...(podeMarketing(S.eu) ? [["#marketing", I.megafone, "Marketing"]] : []), ...(podeStocks(S.eu) ? [["#stocks", I.stock, "Stocks TwentySix"]] : []), ...(podePrazos(S.eu) ? [["#prazos", I.carro, "Seguros e viaturas"]] : []), ...(podeAcademy(S.eu) ? [["#academy", I.capelo, "26 Academy"]] : []), ...(eGestor(S.eu) ? [["#relatorio", I.grafico, "Relatório mensal"]] : []), ["#assistente", I.ia, "Assistente"],
-    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : []), ["#reciclagem", I.lixo, "Reciclagem"], ...(PROP.visivel() ? [["#propostas", I.ia, "Propostas de tarefas"]] : [])])
+    ...(AUD.visivel() ? [["#auditoria", I.escudo, "Auditoria dos sites"]] : []), ...(podeFinanceiro(S.eu) ? [["#financeiro", I.euro, "Financeiro"]] : []), ["#reciclagem", I.lixo, "Reciclagem"], ...(PROP.visivel() ? [["#propostas", I.ia, "Propostas de tarefas"]] : []), ...(BAR.visivelNumeros() ? [["#numeros", I.grafico, "Os meus números"]] : [])])
     .map(([href, ic, r]) => '<a href="' + href + '">' + ic + "<span>" + r + "</span>" + I.seta + "</a>").join("") + "</nav>";
   if (!S.prefs && api.preferencias) { S.prefs = { aCarregar: true }; api.preferencias.ler(S.eu.id).then((x) => { S.prefs = x; render(); }).catch(() => { S.prefs = { falta: true }; render(); }); }
   const corAtual = S.eu.cor || "";
@@ -1548,7 +1552,7 @@ document.addEventListener("click", async (e) => {
     case "foto-remover": { const antiga = S.eu.foto_path; await guardarAparencia("", S.eu.cor || ""); if (antiga) api.perfis.apagarFoto(antiga); break; }
     case "push-teste": try { const r = await api.push.teste(); toast(r.enviados ? "Notificação enviada" : "Nenhum aparelho registado. Toca em «Ativar neste aparelho»."); } catch (err) { falha(err); } break;
     case "sincronizar": api.sincronizar?.(); break;
-    default: FIA.clique(acao, el, e) || PROP.clique(acao, el) || MCK.clique(acao, el) || LOJW.clique(acao, el) || PF.clique(acao, el) || LOJ.clique(acao, el) || ESTAT.clique(acao, el) || LOTE.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
+    default: FIA.clique(acao, el, e) || PROP.clique(acao, el) || MCK.clique(acao, el) || LOJW.clique(acao, el) || BAR.clique(acao, el) || PF.clique(acao, el) || LOJ.clique(acao, el) || ESTAT.clique(acao, el) || LOTE.clique(acao, el) || CRM.clique(acao, el) || CHAT.clique(acao, el) || AGENDA.clique(acao, el) || LOG.clique(acao, el) || AUD.clique(acao, el) || OP.clique(acao, el) || FIN.clique(acao, el) || MK.clique(acao, el) || STK.clique(acao, el) || PRZ.clique(acao, el) || ACA.clique(acao, el) || REL.clique(acao, el) || PRS.clique(acao, el) || IA.clique(acao, el);
   }
 });
 
@@ -1663,7 +1667,7 @@ document.addEventListener("keydown", async (e) => {
 
 document.addEventListener("input", (e) => {
   const t = e.target;
-  if (FIA.escrever(e) || MCK.escrever(e) || LOJW.escrever(e) || PF.escrever(e) || LOJ.escrever(e) || CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e) || PRZ.escrever(e) || ACA.escrever(e) || PRS.escrever(e) || IA.escrever(e)) return;
+  if (FIA.escrever(e) || MCK.escrever(e) || LOJW.escrever(e) || BAR.escrever(e) || PF.escrever(e) || LOJ.escrever(e) || CRM.escrever(e) || CHAT.escrever(e) || LOG.escrever(e) || AUD.escrever(e) || OP.escrever(e) || FIN.escrever(e) || MK.escrever(e) || STK.escrever(e) || PRZ.escrever(e) || ACA.escrever(e) || PRS.escrever(e) || IA.escrever(e)) return;
   if (t.id === "rapida") { S.rascunho = t.value; return; }
   if (t.id === "pesquisa") { S.q = t.value; render(); return; }
   if (!S.aberto || S.aberto.tipo !== "tarefa") return;
@@ -1678,7 +1682,7 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (FIA.mudar(e) || LOJW.mudar(e) || PF.mudar(e) || LOJ.mudar(e) || ESTAT.mudar(e) || LOTE.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
+  if (FIA.mudar(e) || LOJW.mudar(e) || BAR.mudar(e) || PF.mudar(e) || LOJ.mudar(e) || ESTAT.mudar(e) || LOTE.mudar(e) || CRM.mudar(e) || AGENDA.mudar(e) || LOG.mudar(e) || AUD.mudar(e) || OP.mudar(e) || FIN.mudar(e) || MK.mudar(e) || STK.mudar(e) || PRZ.mudar(e) || ACA.mudar(e) || REL.mudar(e) || PRS.mudar(e)) return;
   if (t.id === "pf-foto" && t.files?.[0]) { mudarFoto(t.files[0]); t.value = ""; return; }
   if (t.dataset.pref && S.prefs && !S.prefs.falta) {
     const campo = t.dataset.pref, v = t.checked; S.prefs = { ...S.prefs, [campo]: v };
@@ -1739,7 +1743,8 @@ async function ativarPush() {
 
 const LOTE = criarEquipaLote({ S, api, esc, I, toast, renderPainel, recarregar });
 const ESTAT = criarEstatBar({ S, api, esc, I, toast, falha, render, nomeDe });
-const LOJ = criarLojas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeFinanceiro, vistaEstat: () => ESTAT.vista() });
+const BAR = criarBarbeiros({ S, api, esc, I, toast, falha, render, ativos });
+const LOJ = criarLojas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeFinanceiro, vistaEstat: () => ESTAT.vista(), vistaCaixa: (l) => BAR.vistaCaixa(l), podeCaixa: (l) => BAR.podeCaixa(l) });
 const PF = criarProformas({ S, api, esc, I, toast, falha, render, renderPainel, abrir, nomeDe, ativos, podeCrm, carregarCrm: () => CRM.carregar(), aoFaturar: () => { if (LOG.estado() !== "por-carregar") LOG.carregar(); } });
 const MCK = criarMackay({ S, api, esc, I, toast, falha, render, renderPainel, abrir, recarregarCrm: () => CRM.carregar() });
 const LOJW = criarLojaOnline({ S, api, esc, I, toast, falha, render });

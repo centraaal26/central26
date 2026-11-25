@@ -493,7 +493,8 @@ export function criarApi() {
         tec_itens: "id", tec_historico: "id", tec_plano: "semana", tec_referencia: "tipo", tec_config: "id",
         op_fornecedores: "id", op_contactos: "id", op_pedidos: "id", op_propostas: "id",
         fin_meses: "mes", fin_linhas: "id", fin_faturacao: "mes,espaco", fin_rubricas: "chave", fin_barbeiros: "mes,loja,barbeiro", fin_responsaveis: "mes,loja", fin_pessoal: "mes,pessoa", fin_ajustes: "mes,tipo", fin_config: "id", fin_caixa: "id", mk_publicacoes: "id", mk_documentos: "id", comentarios: "id",
-        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", loj_lojas: "id", loj_itens: "id", loj_stock: "loja_id,item_id", loj_pedidos: "id", loj_config: "id", loj_cadeiras: "id", loj_cadeiras_mes: "cadeira_id,mes", bar_stats: "nivel,mes,loja,chave", bar_horas: "loja,dow,hora", bar_importacao: "id", crm_custos: "produto_codigo" };
+        aca_formacoes: "id", aca_formandos: "id", aca_inscricoes: "formacao_id,formando_id", aca_config: "id", aca_precos: "formacao_id", com_precos: "produto_codigo", com_config: "id", com_proformas: "id", loj_lojas: "id", loj_itens: "id", loj_stock: "loja_id,item_id", loj_pedidos: "id", loj_config: "id", loj_cadeiras: "id", loj_cadeiras_mes: "cadeira_id,mes", bar_stats: "nivel,mes,loja,chave", bar_horas: "loja,dow,hora", bar_importacao: "id", crm_custos: "produto_codigo",
+        ia_propostas: "id", crm_mackay: "cliente_id", crm_abordagens: "dia,cliente_id", woo_config: "id", woo_produtos: "woo_id", woo_encomendas: "woo_id" };
       const tabelas = {}, avisos = [];
       let i = 0;
       for (const [t, ordem] of Object.entries(TABELAS)) {

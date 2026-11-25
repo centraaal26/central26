@@ -129,7 +129,8 @@ export function criarDemo() {
       async estado() { let n = null; try { n = localStorage.getItem("central26-estacao-etiquetas"); } catch {} return { estacao: n }; },
       async batimento() {}, async desligar() {},
       async pedir() { throw new Error("No modo de demonstração não há etiquetas reais para imprimir."); },
-      async reclamar() { return null; }, async concluir() {},
+      async teste() { ganchos.impTeste = { id: Date.now(), tipo: "teste", por: "Exemplo", pedido_em: new Date().toISOString() }; return true; },
+      async reclamar() { const j = ganchos.impTeste || null; ganchos.impTeste = null; return j; }, async concluir() {},
       subscrever() { return () => {}; },
     },
     // Leitura de caixa (exemplo): sem IA, a «leitura» devolve sempre o mesmo exemplo

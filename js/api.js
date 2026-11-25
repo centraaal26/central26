@@ -447,6 +447,7 @@ export function criarApi() {
       async batimento(nome) { ok(await sb.rpc("imp_batimento", { p_nome: nome })); },
       async desligar(nome) { ok(await sb.rpc("imp_desligar", { p_nome: nome })); },
       async pedir(id) { return ok(await sb.rpc("imp_pedir", { p_encomenda: id })); },
+      async teste() { return ok(await sb.rpc("imp_teste")); },
       async reclamar(nome) { return ok(await sb.rpc("imp_reclamar", { p_nome: nome })); },
       async concluir(id, erro) { ok(await sb.rpc("imp_concluir", { p_id: id, p_erro: erro || null })); },
       subscrever(cb) {

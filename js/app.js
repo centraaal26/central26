@@ -223,6 +223,9 @@ async function arrancar() {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!tinha || S.versaoNova) return;
       S.versaoNova = true; agendarRender();
+      // o computador que imprime as etiquetas fica sozinho: atualiza-se sem esperar por ninguém
+      let estacao = null; try { estacao = localStorage.getItem("central26-estacao-etiquetas"); } catch {}
+      if (estacao) setTimeout(() => location.reload(), 8000);
     });
   }
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); S.instalar = e; agendarRender(); });

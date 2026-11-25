@@ -372,6 +372,7 @@ Automática para as contas do departamento Barbearias (nunca para a direção). 
 2. No computador ao lado da impressora de etiquetas: Logística → Encomendas → **Impressão automática das etiquetas** → **Ligar neste computador**. Deixa essa janela da Central aberta (pode ficar por trás de outras).
 3. A partir daí, cada envio criado na Nacex, em qualquer aparelho, entra numa fila e esse computador imprime a etiqueta sozinho. No telemóvel aparece também **Mandar para a impressora** para voltar a imprimir.
 4. Para imprimir sem a janela de impressão: impressora de etiquetas como predefinida e o Chrome aberto por um atalho com `--kiosk-printing`. Papel 100 × 150 mm.
+- **Etiqueta de teste**: no fundo de Logística → Encomendas, «Enviar etiqueta de teste» (de qualquer aparelho) ou «Imprimir etiqueta de teste» (na própria estação). Corre `supabase/37-impressao-teste.sql`. A estação atualiza-se sozinha quando sai uma versão nova da Central.
 - Só entram na fila envios criados enquanto há uma estação ligada (visto nos últimos 3 minutos). Pedidos com mais de 2 horas são ignorados, para não sair uma pilha de etiquetas antigas.
 
 ### 3o. Seguros e viaturas

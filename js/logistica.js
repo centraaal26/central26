@@ -378,6 +378,13 @@ export function criarLogistica(ctx) {
         if (!job) break;
         const rf = "E-" + String(job.numero || 0).padStart(4, "0");
         let erro = null;
+        if (job.tipo === "teste") {
+          try { imprimirTeste(job); } catch (e) { erro = e?.message || String(e); }
+          await api.impressao.concluir(job.id, erro).catch(() => null);
+          G.imp.ultima = { ref: "etiqueta de teste", hora: new Date(), erro }; agendarRender();
+          await new Promise((ok) => setTimeout(ok, 8000));
+          continue;
+        }
         try {
           const r = await api.nacex("etiqueta", { id: job.encomenda_id });
           if (!r?.pdf) throw new Error("A Nacex não devolveu a etiqueta.");
@@ -391,18 +398,35 @@ export function criarLogistica(ctx) {
     } catch { /* tenta outra vez na próxima ronda */ }
     IMP.ocupado = false;
   }
+  // Etiqueta de teste (10 × 15 cm), impressa como uma etiqueta real
+  function imprimirTeste(job) {
+    const h = new Date(job.pedido_em || Date.now()).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+    document.getElementById("nx-impressao")?.remove();
+    const f = document.createElement("iframe");
+    f.id = "nx-impressao"; f.title = "Etiqueta de teste"; f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0";
+    f.srcdoc = '<!doctype html><html lang="pt-PT"><head><meta charset="utf-8"><style>@page{size:100mm 150mm;margin:0}html,body{margin:0}' +
+      'div{box-sizing:border-box;width:100mm;height:150mm;padding:9mm;font-family:Arial,sans-serif;border:2mm solid #000;display:flex;flex-direction:column;gap:5mm}' +
+      'h1{font-size:10mm;margin:0;letter-spacing:.3mm;white-space:nowrap}h2{font-size:7mm;margin:0}p{font-size:4.6mm;line-height:1.35;margin:0}</style></head><body><div>' +
+      "<h1>CENTRAL 26</h1><h2>Etiqueta de teste</h2><p>Pedida por " + esc(job.por || "—") + " às " + h + ".</p>" +
+      "<p>Se esta etiqueta saiu sozinha, a impressão automática das etiquetas da Nacex está a funcionar.</p><p>Pode deitar fora.</p></div></body></html>";
+    f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch { /* sem impressão */ } }, 300);
+    document.body.appendChild(f);
+    setTimeout(() => f.remove(), 120000);
+  }
   function blocoEstacao() {
-    if (!api.impressao || telemovel() || !(podeTratar() || eGestor(S.eu))) return "";
+    if (!api.impressao || !(podeTratar() || eGestor(S.eu))) return "";
+    if (telemovel()) return G.imp.remota ? '<section class="imp-est"><div class="imp-txt"><b>As etiquetas saem no computador «' + esc(G.imp.remota) + '»</b><span>Cada envio criado na Nacex é impresso lá sozinho.</span></div><button class="btn sec" data-acao="imp-teste">Enviar etiqueta de teste</button></section>' : "";
     const im = G.imp, hora = (d) => d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
     let h = '<section class="imp-est' + (im.local ? " on" : "") + '"><div class="imp-txt">';
     if (im.local) {
       h += "<b>Este computador imprime as etiquetas da Nacex</b><span>Estação «" + esc(im.local) + "». Deixa esta janela da Central aberta. Cada envio criado na Nacex, também no telemóvel, sai aqui sozinho." +
         (im.ultima ? " Última: " + esc(im.ultima.ref) + " às " + hora(im.ultima.hora) + (im.ultima.erro ? ' <em class="erro">(falhou: ' + esc(im.ultima.erro) + ")</em>" : "") : "") + "</span></div>" +
-        '<button class="btn sec" data-acao="imp-desligar">Desligar</button>';
+        '<button class="btn sec" data-acao="imp-teste">Imprimir etiqueta de teste</button><button class="btn sec" data-acao="imp-desligar">Desligar</button>';
     } else {
       h += (im.remota ? "<b>As etiquetas saem no computador «" + esc(im.remota) + "»</b><span>Quando alguém cria um envio na Nacex, a etiqueta é impressa lá sozinha.</span>"
         : "<b>Impressão automática das etiquetas</b><span>Liga num computador ao lado da impressora de etiquetas: cada envio criado na Nacex, também no telemóvel, passa a sair lá sozinho.</span>") +
         '</div><label class="imp-nome"><span class="sr">Nome deste computador</span><input id="imp-nome" value="Logística" maxlength="40" placeholder="Nome deste computador"></label>' +
+        (im.remota ? '<button class="btn sec" data-acao="imp-teste">Enviar etiqueta de teste</button>' : "") +
         '<button class="btn ' + (im.remota ? "sec" : "pri") + '" data-acao="imp-ligar">' + (im.remota ? "Usar este computador" : "Ligar neste computador") + "</button>";
     }
     h += '<details class="imp-ajuda"><summary>Imprimir sem a janela de impressão</summary><p class="muted">Neste computador, põe a impressora de etiquetas como <b>predefinida</b> e abre a Central por um atalho do Chrome com <code>--kiosk-printing</code> no fim do campo «Destino» (botão direito no atalho → Propriedades). Sem isto, o Chrome mostra a janela de impressão e basta carregar em Imprimir. Papel de 100 × 150 mm, tamanho real.</p></details>';
@@ -653,6 +677,9 @@ export function criarLogistica(ctx) {
         arrancarEstacao(); G.imp.remota = nome.slice(0, 40); render(); toast("Este computador passa a imprimir as etiquetas");
         return true;
       }
+      case "imp-teste":
+        api.impressao.teste().then(() => toast("Etiqueta de teste enviada para «" + (G.imp.local || G.imp.remota) + "»")).catch((err) => { falha(err); estadoImpressao(); });
+        return true;
       case "imp-desligar": pararEstacao(true); setTimeout(estadoImpressao, 800); render(); toast("Impressão automática desligada neste computador"); return true;
       case "nx-cancelar": G.nxCancelar = S.aberto?.id; renderPainel(true); return true;
       case "nx-cancelar-nao": G.nxCancelar = null; renderPainel(true); return true;
